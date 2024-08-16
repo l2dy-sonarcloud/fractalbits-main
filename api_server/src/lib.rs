@@ -6,18 +6,23 @@ pub use ws_client::rpc_to_nss;
 pub mod nss_ops {
     include!(concat!(env!("OUT_DIR"), "/nss_ops.rs"));
 }
+use nss_ops::*;
 
-pub fn nss_put_key(key: String, value: String) -> nss_ops::RawKeyValueOps {
-    let mut kv_op = nss_ops::RawKeyValueOps::default();
-    kv_op.set_op(nss_ops::raw_key_value_ops::Op::Put);
-    kv_op.key = key;
-    kv_op.value = value;
-    kv_op
+pub fn nss_put_inode(key: String, value: String) -> PutInodeResponse {
+    let mut _request = PutInodeRequest::default();
+    _request.key = key;
+    _request.value = value;
+
+    let mut response = PutInodeResponse::default();
+    response.result = Some(put_inode_response::Result::Ok(()));
+    response
 }
 
-pub fn nss_get_key(key: String) -> nss_ops::RawKeyValueOps {
-    let mut kv_op = nss_ops::RawKeyValueOps::default();
-    kv_op.set_op(nss_ops::raw_key_value_ops::Op::Get);
-    kv_op.key = key;
-    kv_op
+pub fn nss_get_inode(key: String) -> GetInodeResponse {
+    let mut _request = GetInodeRequest::default();
+    _request.key = key;
+
+    let mut response = GetInodeResponse::default();
+    response.result = Some(get_inode_response::Result::Value("success".to_owned()));
+    response
 }
