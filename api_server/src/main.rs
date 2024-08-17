@@ -1,7 +1,6 @@
 #![deny(warnings)]
 
-use std::net::SocketAddr;
-
+use api_server::nss_get_inode;
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::body::Frame;
@@ -9,9 +8,8 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{body::Body, Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
-
-use api_server::rpc_to_nss;
 
 /// This is our service handler. It receives a Request, routes on its
 /// path, and returns a Future of a Response.
@@ -44,8 +42,7 @@ async fn echo(
                 Frame::data(frame)
             });
 
-            // send msg to nss
-            rpc_to_nss("request from api_server").await.unwrap();
+            let _ = nss_get_inode("fractalbits.com".into()).await;
 
             Ok(Response::new(frame_stream.boxed()))
         }

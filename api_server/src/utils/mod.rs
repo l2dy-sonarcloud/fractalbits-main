@@ -1,5 +1,6 @@
 #![allow(warnings)]
 pub mod handshake;
+use crate::io_err;
 
 use std::{collections::HashMap, io::Result};
 use tokio::{
@@ -7,12 +8,6 @@ use tokio::{
     net::TcpStream,
 };
 use web_socket::WebSocket;
-
-macro_rules! io_err {
-    [$kind: ident, $msg: expr] => {
-        return Err(std::io::Error::new(std::io::ErrorKind::$kind, $msg))
-    };
-}
 
 #[derive(Debug)]
 pub struct HttpRequest {

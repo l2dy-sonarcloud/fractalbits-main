@@ -1,28 +1,72 @@
+use crate::io_err;
 use crate::utils;
-use tokio::io::*;
+use std::collections::HashMap;
+use std::io::Result;
+use std::sync::Arc;
+use tokio::io::BufReader;
+use tokio::{
+    net::TcpStream,
+    sync::{oneshot, RwLock},
+};
 use web_socket::*;
 
-pub async fn rpc_to_nss(msg: &str) -> Result<()> {
-    echo(utils::connect("127.0.0.1:9224", "/").await?, msg).await
+pub struct RpcClient {
+    requests: Arc<RwLock<HashMap<u64, oneshot::Sender<Event>>>>,
+    ws: WebSocket<BufReader<TcpStream>>,
+    next_id: u64,
 }
 
-async fn echo<IO>(mut ws: WebSocket<IO>, msg: &str) -> Result<()>
-where
-    IO: Unpin + AsyncRead + AsyncWrite,
-{
-    // let _ = ws.recv().await?; // ignore message: Request served by 4338e324
-    for _ in 0..3 {
-        ws.send(msg).await?;
-        match ws.recv().await? {
-            Event::Data { ty, data } => {
-                assert!(matches!(ty, DataType::Complete(MessageType::Text)));
-                println!("received msg from nss: {}", String::from_utf8_lossy(&*data));
-            }
-            Event::Ping(data) => ws.send_pong(data).await?,
-            Event::Pong(..) => {}
-            Event::Error(..) => return ws.close(CloseCode::ProtocolError).await,
-            Event::Close { .. } => return ws.close(()).await,
+impl RpcClient {
+    pub async fn new(url: &str, port: u32) -> Result<Self> {
+        let ws = utils::connect(&format!("{url}:{port}"), "/").await?;
+        {
+            // TODO: spawn tokio task for event loop, send results to oneshot channel
+            // tokio::spawn(async move {
+            //     while let Some(message_result) = ws_rx.next().await {
+            //         match message_result {
+            //             Ok(message) => {
+            //                 if let Err(e) =
+            //                     Self::handle_websocket_message(&streams, &requests, message).await
+            //                 {
+            //                     log::error!("{}", e);
+            //                 }
+            //             }
+            //             Err(e) => {
+            //                 log::error!("{}", e);
+            //             }
+            //         }
+            //     }
+            // });
         }
+
+        Ok(Self {
+            requests: Arc::new(RwLock::new(HashMap::new())),
+            ws,
+            next_id: 0,
+        })
     }
-    ws.close("bye!").await
+
+    pub async fn send_request(&mut self, msg: &str) -> Result<String> {
+        let request_id = self.next_id;
+        self.next_id += 1;
+
+        self.ws.send(msg).await?;
+
+        let (tx, rx) = oneshot::channel();
+
+        let mut requests = self.requests.write().await;
+        requests.insert(request_id, tx);
+        drop(requests);
+
+        let response = rx.await.unwrap();
+        if let Event::Data { ty, data } = response {
+            assert!(matches!(ty, DataType::Complete(MessageType::Text)));
+            return Ok(String::from_utf8(data.to_vec()).unwrap());
+        }
+        io_err!(InvalidData, "invalid response")
+    }
+
+    pub async fn close(self) -> Result<()> {
+        self.ws.close(()).await
+    }
 }

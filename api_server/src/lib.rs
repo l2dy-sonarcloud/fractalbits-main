@@ -1,28 +1,47 @@
 mod utils;
 mod ws_client;
 
-pub use ws_client::rpc_to_nss;
+#[macro_export]
+macro_rules! io_err {
+    [$kind: ident, $msg: expr] => {
+        return Err(std::io::Error::new(std::io::ErrorKind::$kind, $msg))
+    };
+}
+
+pub use ws_client::RpcClient;
 
 pub mod nss_ops {
     include!(concat!(env!("OUT_DIR"), "/nss_ops.rs"));
 }
 use nss_ops::*;
 
-pub fn nss_put_inode(key: String, value: String) -> PutInodeResponse {
-    let mut _request = PutInodeRequest::default();
-    _request.key = key;
-    _request.value = value;
+pub async fn nss_put_inode(key: String, value: String) -> PutInodeResponse {
+    let mut request = PutInodeRequest::default();
+    request.key = key;
+    request.value = value;
 
-    let mut response = PutInodeResponse::default();
-    response.result = Some(put_inode_response::Result::Ok(()));
-    response
+    let mut rpc_client = RpcClient::new("127.0.0.1", 9224).await.unwrap();
+    let response_str = rpc_client.send_request(&request.key).await.unwrap();
+    assert_eq!(request.key, response_str);
+    rpc_client.close().await.unwrap();
+
+    PutInodeResponse {
+        msg_id: 1,
+        result: Some(put_inode_response::Result::Ok(())),
+    }
 }
 
-pub fn nss_get_inode(key: String) -> GetInodeResponse {
-    let mut _request = GetInodeRequest::default();
-    _request.key = key;
+pub async fn nss_get_inode(key: String) -> GetInodeResponse {
+    let mut request = GetInodeRequest::default();
+    request.key = key;
 
-    let mut response = GetInodeResponse::default();
-    response.result = Some(get_inode_response::Result::Value("success".to_owned()));
-    response
+    let mut rpc_client = RpcClient::new("127.0.0.1", 9224).await.unwrap();
+    let response_str = rpc_client.send_request(&request.key).await.unwrap();
+    assert_eq!(request.key, response_str);
+    rpc_client.close().await.unwrap();
+
+    GetInodeResponse {
+        msg_id: 1,
+        result: Some(get_inode_response::Result::Value("success".to_owned())),
+    }
 }
