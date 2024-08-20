@@ -1,14 +1,14 @@
-use api_server::{nss_get_inode, nss_ops, nss_put_inode};
+use api_server::{nss_get_inode, nss_put_inode};
 use axum::{extract::Path, routing::get, Router};
-use axum_extra::protobuf::Protobuf;
 
-async fn get_obj(Path(key): Path<String>) -> Protobuf<nss_ops::GetInodeResponse> {
-    nss_get_inode(key).await.into()
+async fn get_obj(Path(key): Path<String>) -> String {
+    let resp = nss_get_inode(key).await;
+    serde_json::to_string_pretty(&resp).unwrap()
 }
 
-async fn put_obj(Path(key): Path<String>) -> Protobuf<nss_ops::PutInodeResponse> {
-    let value: String = key.chars().rev().collect();
-    nss_put_inode(key, value).await.into()
+async fn put_obj(Path(key): Path<String>, value: String) -> String {
+    let resp = nss_put_inode(key, value).await;
+    serde_json::to_string_pretty(&resp).unwrap()
 }
 
 #[tokio::main]
