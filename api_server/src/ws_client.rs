@@ -1,57 +1,66 @@
-use bytes::{Buf, BytesMut};
+use bytes::Buf;
 use soketto::{
-    connection::Sender,
+    connection::{Receiver, Sender},
     handshake::{Client, ServerResponse},
 };
 use std::collections::HashMap;
-use std::io::Result;
+use std::io;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::{
     net::TcpStream,
     sync::{oneshot, RwLock},
 };
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
+#[derive(Error, Debug)]
+#[error(transparent)]
+pub enum WebSocketError {
+    #[error("server response with redirect")]
+    Redirect,
+    #[error("server rejected with status code: {0}")]
+    RejectedWithStatusCode(u16),
+    HandShakeError(soketto::handshake::Error),
+    ConnectionErr(soketto::connection::Error),
+    OneshotRecvError(oneshot::error::RecvError),
+    EncodeError(prost::EncodeError),
+    DecodeError(prost::DecodeError),
+    #[error("internal response sending error: {0}")]
+    InternalResponseError(String),
+}
+
+impl From<io::Error> for WebSocketError {
+    fn from(err: io::Error) -> Self {
+        WebSocketError::HandShakeError(soketto::handshake::Error::Io(err))
+    }
+}
+
 pub struct RpcClient {
-    requests: Arc<RwLock<HashMap<u64, oneshot::Sender<BytesMut>>>>,
+    requests: Arc<RwLock<HashMap<u64, oneshot::Sender<Vec<u8>>>>>,
     sender: Arc<RwLock<Sender<Compat<TcpStream>>>>,
     next_id: AtomicU64,
 }
 
 impl RpcClient {
-    pub async fn new(url: &str) -> Result<Self> {
+    pub async fn new(url: &str) -> Result<Self, WebSocketError> {
         let socket = TcpStream::connect(url).await?;
         let mut client = Client::new(socket.compat(), url, "/");
-        let (sender, mut receiver) = match client.handshake().await {
+        let (sender, receiver) = match client.handshake().await {
             Ok(ServerResponse::Accepted { .. }) => client.into_builder().finish(),
-            Ok(ServerResponse::Redirect { .. }) => {
-                todo!()
-                // return Err(WebSocketTestError::Redirect);
-            }
-            #[allow(unused_variables)]
+            Ok(ServerResponse::Redirect { .. }) => return Err(WebSocketError::Redirect),
             Ok(ServerResponse::Rejected { status_code }) => {
-                todo!()
-                // return Err(WebSocketTestError::RejectedWithStatusCode(status_code))
+                return Err(WebSocketError::RejectedWithStatusCode(status_code))
             }
-            Err(_err) => {
-                todo!()
-                // return Err(WebSocketTestError::Soketto(err));
-            }
+            Err(err) => return Err(WebSocketError::HandShakeError(err)),
         };
 
         let requests = Arc::new(RwLock::new(HashMap::new()));
         {
             let requests_clone = requests.clone();
             tokio::spawn(async move {
-                loop {
-                    let mut message = Vec::new();
-                    receiver.receive_data(&mut message).await.unwrap();
-                    let mut buf = BytesMut::from_iter(message.iter());
-                    let request_id = RpcClient::extract_request_id(&mut buf);
-                    let tx: oneshot::Sender<BytesMut> =
-                        requests_clone.write().await.remove(&request_id).unwrap();
-                    _ = tx.send(buf);
+                if let Err(e) = Self::receive_message_task(receiver, requests_clone).await {
+                    eprintln!("FATAL: receive message task error: {e:?}");
                 }
             });
         }
@@ -63,15 +72,46 @@ impl RpcClient {
         })
     }
 
-    pub async fn send_request(&self, id: u64, msg: &[u8]) -> impl Buf {
+    async fn receive_message_task(
+        mut receiver: Receiver<Compat<TcpStream>>,
+        requests: Arc<RwLock<HashMap<u64, oneshot::Sender<Vec<u8>>>>>,
+    ) -> Result<(), WebSocketError> {
+        loop {
+            let mut message = Vec::new();
+            receiver
+                .receive_data(&mut message)
+                .await
+                .map_err(WebSocketError::ConnectionErr)?;
+            let request_id = RpcClient::extract_request_id(&mut message.as_slice())?;
+            let tx: oneshot::Sender<Vec<u8>> = match requests.write().await.remove(&request_id) {
+                Some(tx) => tx,
+                None => {
+                    return Err(WebSocketError::InternalResponseError(format!(
+                        "unknown request_id: {request_id}"
+                    )))
+                }
+            };
+            tx.send(message).map_err(|_| {
+                WebSocketError::InternalResponseError("receiver dropped".to_string())
+            })?;
+        }
+    }
+
+    pub async fn send_request(&self, id: u64, msg: &[u8]) -> Result<Vec<u8>, WebSocketError> {
         {
             let mut sender = self.sender.write().await;
-            sender.send_binary(msg).await.unwrap();
-            sender.flush().await.unwrap();
+            sender
+                .send_binary(msg)
+                .await
+                .map_err(WebSocketError::ConnectionErr)?;
+            sender
+                .flush()
+                .await
+                .map_err(WebSocketError::ConnectionErr)?;
         }
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(id, tx);
-        rx.await.unwrap()
+        rx.await.map_err(WebSocketError::OneshotRecvError)
     }
 
     pub fn gen_request_id(&self) -> u64 {
@@ -81,10 +121,11 @@ impl RpcClient {
         request_id
     }
 
-    fn extract_request_id(buf: &mut impl Buf) -> u64 {
-        let (tag, wire_type) = prost::encoding::decode_key(buf).unwrap();
+    fn extract_request_id(buf: &mut impl Buf) -> Result<u64, WebSocketError> {
+        let (tag, wire_type) =
+            prost::encoding::decode_key(buf).map_err(WebSocketError::DecodeError)?;
         assert_eq!(1, tag);
         assert_eq!(prost::encoding::WireType::Varint, wire_type);
-        prost::encoding::decode_varint(buf).unwrap()
+        prost::encoding::decode_varint(buf).map_err(WebSocketError::DecodeError)
     }
 }
