@@ -60,7 +60,7 @@ impl RpcClient {
             let requests_clone = requests.clone();
             tokio::spawn(async move {
                 if let Err(e) = Self::receive_message_task(receiver, requests_clone).await {
-                    eprintln!("FATAL: receive message task error: {e:?}");
+                    tracing::error!("FATAL: receive message task error: {e:?}");
                 }
             });
         }

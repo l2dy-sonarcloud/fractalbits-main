@@ -1,4 +1,3 @@
-use anyhow::Result;
 use api_server::RpcClient;
 use axum::{extract::Path, extract::State, http::StatusCode, routing::get, Router};
 use std::sync::Arc;
@@ -41,16 +40,33 @@ async fn put_obj(
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::fmt::init();
 
-    let rpc_client = RpcClient::new("127.0.0.1:9224").await?;
+    let rpc_client = match RpcClient::new("127.0.0.1:9224").await {
+        Ok(rpc_client) => rpc_client,
+        Err(e) => {
+            tracing::error!("failed to start rpc client: {e}");
+            return;
+        }
+    };
     let shared_state = Arc::new(AppState { rpc_client });
 
     let app = Router::new()
         .route("/:key", get(get_obj).post(put_obj))
         .with_state(shared_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app).await.map_err(anyhow::Error::msg)
+    let addr = "0.0.0.0:3000";
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            tracing::error!("failed to bind addr {addr}: {e}");
+            return;
+        }
+    };
+
+    tracing::info!("server started");
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("serer stopped: {e}");
+    }
 }
