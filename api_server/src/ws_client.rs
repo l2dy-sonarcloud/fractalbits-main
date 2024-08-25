@@ -1,4 +1,5 @@
 use bytes::Buf;
+use bytes::Bytes;
 use soketto::{
     connection::{Receiver, Sender},
     handshake::{Client, ServerResponse},
@@ -26,6 +27,8 @@ pub enum WebSocketError {
     OneshotRecvError(oneshot::error::RecvError),
     EncodeError(prost::EncodeError),
     DecodeError(prost::DecodeError),
+    #[error("internal request sending error: {0}")]
+    InternalRequestError(String),
     #[error("internal response sending error: {0}")]
     InternalResponseError(String),
 }
@@ -38,7 +41,7 @@ impl From<io::Error> for WebSocketError {
 
 pub struct RpcClient {
     requests: Arc<RwLock<HashMap<u64, oneshot::Sender<Vec<u8>>>>>,
-    sender: Arc<RwLock<Sender<Compat<TcpStream>>>>,
+    sender: tokio::sync::mpsc::Sender<Bytes>,
     next_id: AtomicU64,
 }
 
@@ -55,6 +58,7 @@ impl RpcClient {
             Err(err) => return Err(WebSocketError::HandShakeError(err)),
         };
 
+        // Start message receiver task, for rpc responses
         let requests = Arc::new(RwLock::new(HashMap::new()));
         {
             let requests_clone = requests.clone();
@@ -65,9 +69,20 @@ impl RpcClient {
             });
         }
 
+        // Start message sender task, to send rpc requests. We are launching a dedicated task here
+        // to reduce lock contention on the sender socket itself.
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        {
+            tokio::spawn(async move {
+                if let Err(e) = Self::send_message_task(sender, rx).await {
+                    tracing::error!("FATAL: receive message task error: {e:?}");
+                }
+            });
+        }
+
         Ok(Self {
             requests,
-            sender: Arc::new(RwLock::new(sender)),
+            sender: tx,
             next_id: AtomicU64::new(1),
         })
     }
@@ -97,11 +112,13 @@ impl RpcClient {
         }
     }
 
-    pub async fn send_request(&self, id: u64, msg: &[u8]) -> Result<Vec<u8>, WebSocketError> {
-        {
-            let mut sender = self.sender.write().await;
+    async fn send_message_task(
+        mut sender: Sender<Compat<TcpStream>>,
+        mut input: tokio::sync::mpsc::Receiver<Bytes>,
+    ) -> Result<(), WebSocketError> {
+        while let Some(message) = input.recv().await {
             sender
-                .send_binary(msg)
+                .send_binary(message)
                 .await
                 .map_err(WebSocketError::ConnectionErr)?;
             sender
@@ -109,6 +126,14 @@ impl RpcClient {
                 .await
                 .map_err(WebSocketError::ConnectionErr)?;
         }
+        Ok(())
+    }
+
+    pub async fn send_request(&self, id: u64, msg: Bytes) -> Result<Vec<u8>, WebSocketError> {
+        self.sender
+            .send(msg)
+            .await
+            .map_err(|e| WebSocketError::InternalRequestError(e.to_string()))?;
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(id, tx);
         rx.await.map_err(WebSocketError::OneshotRecvError)

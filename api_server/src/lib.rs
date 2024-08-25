@@ -26,7 +26,7 @@ pub async fn nss_put_inode(
         .map_err(WebSocketError::EncodeError)?;
 
     let resp_bytes = rpc_client
-        .send_request(request.id, request_bytes.as_ref())
+        .send_request(request.id, request_bytes.freeze())
         .await?;
     let mut resp: PutInodeResponse =
         Message::decode(resp_bytes.as_slice()).map_err(WebSocketError::DecodeError)?;
@@ -48,7 +48,9 @@ pub async fn nss_get_inode(
         .encode(&mut request_bytes)
         .map_err(WebSocketError::EncodeError)?;
 
-    let resp_bytes = rpc_client.send_request(request.id, &request_bytes).await?;
+    let resp_bytes = rpc_client
+        .send_request(request.id, request_bytes.freeze())
+        .await?;
     let mut resp: GetInodeResponse =
         Message::decode(&mut resp_bytes.as_slice()).map_err(WebSocketError::DecodeError)?;
     resp.id = request.id; // id has already been decoded and verified in ws_client receiving task
