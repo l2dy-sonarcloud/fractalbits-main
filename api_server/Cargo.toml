@@ -18,11 +18,12 @@ tokio-util = { version = "0.7.11", features = ["compat"] }
 axum = "0.7.5"
 axum-extra = { version = "0.9.3", features = ["protobuf"] }
 tokio = { version = "1.39.2", features = ["full"] }
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 prost = "0.13"
 bytes = "1.7.1"
 thiserror = "1.0.63"
 tracing = "0.1.40"
+tower-http = { version = "0.5.2", features = ["trace"] }
 
 [build-dependencies]
 prost-build = "0.13"

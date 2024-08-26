@@ -98,6 +98,7 @@ impl RpcClient {
                 .await
                 .map_err(WebSocketError::ConnectionErr)?;
             let request_id = RpcClient::extract_request_id(&mut message.as_slice())?;
+            tracing::info!("response received from task: request_id={request_id}");
             let tx: oneshot::Sender<Vec<u8>> = match requests.write().await.remove(&request_id) {
                 Some(tx) => tx,
                 None => {
@@ -134,8 +135,11 @@ impl RpcClient {
             .send(msg)
             .await
             .map_err(|e| WebSocketError::InternalRequestError(e.to_string()))?;
+        tracing::info!("request sent from handler: request_id={id}");
+
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(id, tx);
+
         rx.await.map_err(WebSocketError::OneshotRecvError)
     }
 
