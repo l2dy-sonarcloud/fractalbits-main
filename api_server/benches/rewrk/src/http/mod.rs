@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
+use std::convert::TryFrom;
 
 use anyhow::anyhow;
 use futures_util::stream::FuturesUnordered;
@@ -17,6 +18,8 @@ use tokio::time::error::Elapsed;
 use tokio::time::{sleep, timeout_at, Instant};
 use tower::util::ServiceExt;
 use tower::Service;
+use fake::{Fake, StringFaker};
+use http::uri::Uri;
 
 use self::usage::Usage;
 use self::user_input::{Scheme, UserInput};
@@ -105,13 +108,22 @@ async fn benchmark(
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
 
+    // from https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+    const ASCII: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!-_.*'()";
+    let f = StringFaker::with(Vec::from(ASCII), 4..30);
+
     // Benchmark loop.
     // Futures must not be awaited without timeout.
     loop {
         // Create request from **parsed** data.
-        let mut request = Request::new(Body::from(user_input.body.clone()));
+        let key = f.fake::<String>();
+        let mut request = Request::new(Body::from(key.clone()));
         *request.method_mut() = user_input.method.clone();
-        *request.uri_mut() = user_input.uri.clone();
+
+        let uri_string = format!("http://localhost:3000/{key}");
+        *request.uri_mut() = Uri::try_from(&uri_string)?;
+        // *request.uri_mut() = user_input.uri.clone();
+
         *request.headers_mut() = request_headers.clone();
 
         let future = send_request
