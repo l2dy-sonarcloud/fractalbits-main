@@ -17,13 +17,8 @@ use crate::message::MessageHeader;
 
 #[derive(Error, Debug)]
 #[error(transparent)]
-pub enum WebSocketError {
-    #[error("server response with redirect")]
-    Redirect,
-    #[error("server rejected with status code: {0}")]
-    RejectedWithStatusCode(u16),
-    HandShakeError(soketto::handshake::Error),
-    ConnectionErr(soketto::connection::Error),
+pub enum RpcError {
+    IoError(io::Error),
     OneshotRecvError(oneshot::error::RecvError),
     EncodeError(prost::EncodeError),
     DecodeError(prost::DecodeError),
@@ -33,9 +28,9 @@ pub enum WebSocketError {
     InternalResponseError(String),
 }
 
-impl From<io::Error> for WebSocketError {
+impl From<io::Error> for RpcError {
     fn from(err: io::Error) -> Self {
-        WebSocketError::HandShakeError(soketto::handshake::Error::Io(err))
+        RpcError::IoError(err)
     }
 }
 
@@ -46,7 +41,7 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
-    pub async fn new(url: &str) -> Result<Self, WebSocketError> {
+    pub async fn new(url: &str) -> Result<Self, RpcError> {
         let stream = TcpStream::connect(url).await?;
         stream.set_nodelay(true)?;
         let (receiver, sender) = tokio::io::split(stream);
@@ -83,7 +78,7 @@ impl RpcClient {
     async fn receive_message_task(
         mut receiver: ReadHalf<TcpStream>,
         requests: Arc<RwLock<HashMap<u32, oneshot::Sender<Bytes>>>>,
-    ) -> Result<(), WebSocketError> {
+    ) -> Result<(), RpcError> {
         loop {
             let mut buffer = [0; 1024];
             let n = receiver.read(&mut buffer).await.unwrap();
@@ -105,24 +100,24 @@ impl RpcClient {
     async fn send_message_task(
         mut sender: WriteHalf<TcpStream>,
         mut input: tokio::sync::mpsc::Receiver<Bytes>,
-    ) -> Result<(), WebSocketError> {
+    ) -> Result<(), RpcError> {
         while let Some(message) = input.recv().await {
             sender.write(message.as_ref()).await.unwrap();
         }
         Ok(())
     }
 
-    pub async fn send_request(&self, id: u32, msg: Bytes) -> Result<Bytes, WebSocketError> {
+    pub async fn send_request(&self, id: u32, msg: Bytes) -> Result<Bytes, RpcError> {
         self.sender
             .send(msg)
             .await
-            .map_err(|e| WebSocketError::InternalRequestError(e.to_string()))?;
+            .map_err(|e| RpcError::InternalRequestError(e.to_string()))?;
         tracing::info!("request sent from handler: request_id={id}");
 
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(id, tx);
 
-        rx.await.map_err(WebSocketError::OneshotRecvError)
+        rx.await.map_err(RpcError::OneshotRecvError)
     }
 
     pub fn gen_request_id(&self) -> u32 {

@@ -1,7 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
-use api_server::RpcClient;
+use api_server::rpc_client::RpcClient;
 use axum::{
     extract::{MatchedPath, Path, Request, State},
     http::StatusCode,

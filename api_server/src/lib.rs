@@ -1,22 +1,20 @@
-mod message;
-mod ws_client;
+pub mod message;
+pub mod rpc_client;
+pub mod nss_ops {
+    include!(concat!(env!("OUT_DIR"), "/nss_ops.rs"));
+}
 
 use bytes::BytesMut;
 use message::MessageHeader;
 use nss_ops::*;
 use prost::Message;
-pub use ws_client::RpcClient;
-use ws_client::WebSocketError;
-
-pub mod nss_ops {
-    include!(concat!(env!("OUT_DIR"), "/nss_ops.rs"));
-}
+use rpc_client::{RpcClient, RpcError};
 
 pub async fn nss_put_inode(
     rpc_client: &RpcClient,
     key: String,
     value: String,
-) -> Result<PutInodeResponse, WebSocketError> {
+) -> Result<PutInodeResponse, RpcError> {
     let request_body = PutInodeRequest { key, value };
 
     let mut request_header = MessageHeader::default();
@@ -28,20 +26,19 @@ pub async fn nss_put_inode(
     request_header.encode(&mut request_bytes);
     request_body
         .encode(&mut request_bytes)
-        .map_err(WebSocketError::EncodeError)?;
+        .map_err(RpcError::EncodeError)?;
 
     let resp_bytes = rpc_client
         .send_request(request_header.id, request_bytes.freeze())
         .await?;
-    let resp: PutInodeResponse =
-        Message::decode(resp_bytes).map_err(WebSocketError::DecodeError)?;
+    let resp: PutInodeResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
     Ok(resp)
 }
 
 pub async fn nss_get_inode(
     rpc_client: &RpcClient,
     key: String,
-) -> Result<GetInodeResponse, WebSocketError> {
+) -> Result<GetInodeResponse, RpcError> {
     let request_body = GetInodeRequest { key };
 
     let mut request_header = MessageHeader::default();
@@ -53,12 +50,11 @@ pub async fn nss_get_inode(
     request_header.encode(&mut request_bytes);
     request_body
         .encode(&mut request_bytes)
-        .map_err(WebSocketError::EncodeError)?;
+        .map_err(RpcError::EncodeError)?;
 
     let resp_bytes = rpc_client
         .send_request(request_header.id, request_bytes.freeze())
         .await?;
-    let resp: GetInodeResponse =
-        Message::decode(resp_bytes).map_err(WebSocketError::DecodeError)?;
+    let resp: GetInodeResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
     Ok(resp)
 }
