@@ -25,9 +25,7 @@ pub async fn nss_put_inode(
     request_header.size = (MessageHeader::encode_len() + request_body.encoded_len()) as u32;
 
     let mut request_bytes = BytesMut::with_capacity(request_header.size as usize);
-    request_header
-        .encode(&mut request_bytes)
-        .map_err(WebSocketError::EncodeError)?;
+    request_header.encode(&mut request_bytes);
     request_body
         .encode(&mut request_bytes)
         .map_err(WebSocketError::EncodeError)?;
@@ -52,9 +50,7 @@ pub async fn nss_get_inode(
     request_header.size = (MessageHeader::encode_len() + request_body.encoded_len()) as u32;
 
     let mut request_bytes = BytesMut::with_capacity(request_header.size as usize);
-    request_header
-        .encode(&mut request_bytes)
-        .map_err(WebSocketError::EncodeError)?;
+    request_header.encode(&mut request_bytes);
     request_body
         .encode(&mut request_bytes)
         .map_err(WebSocketError::EncodeError)?;

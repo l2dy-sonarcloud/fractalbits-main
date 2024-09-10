@@ -1,8 +1,6 @@
-use bytes::Buf;
 use bytes::Bytes;
 use std::collections::HashMap;
 use std::io;
-use std::mem::size_of;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use thiserror::Error;
@@ -93,9 +91,10 @@ impl RpcClient {
                 // socket is closed
                 break Ok(());
             }
+            assert!(n > MessageHeader::encode_len()); // TODO: stream framing
             let mut bytes = Bytes::copy_from_slice(&buffer[0..n]);
-            let request_id = RpcClient::extract_request_id_from_header(&mut bytes)?;
-            let tx: oneshot::Sender<Bytes> = match requests.write().await.remove(&request_id) {
+            let header = MessageHeader::decode(&mut bytes);
+            let tx: oneshot::Sender<Bytes> = match requests.write().await.remove(&header.id) {
                 Some(tx) => tx,
                 None => continue, // we may have received the response already
             };
@@ -131,25 +130,5 @@ impl RpcClient {
         self.next_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         request_id
-    }
-
-    #[allow(unused)]
-    fn extract_request_id_from_header(buf: &mut impl Buf) -> Result<u32, WebSocketError> {
-        let offset = std::mem::offset_of!(MessageHeader, id);
-        buf.advance(offset);
-        let id = buf.get_u32_le();
-        buf.advance(size_of::<MessageHeader>() - offset - size_of::<u32>());
-        Ok(id)
-    }
-
-    #[allow(unused)]
-    fn extract_request_id_from_body(buf: &mut impl Buf) -> Result<u32, WebSocketError> {
-        let (tag, wire_type) =
-            prost::encoding::decode_key(buf).map_err(WebSocketError::DecodeError)?;
-        assert_eq!(1, tag);
-        assert_eq!(prost::encoding::WireType::Varint, wire_type);
-        prost::encoding::decode_varint(buf)
-            .map(|i| i as u32)
-            .map_err(WebSocketError::DecodeError)
     }
 }
