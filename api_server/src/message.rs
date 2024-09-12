@@ -1,9 +1,10 @@
 use crate::nss_ops::Command;
 use bytemuck::{Pod, Zeroable};
-use bytes::{BufMut, Bytes};
+use bytes::{Buf, BufMut};
+use std::io::Cursor;
 
 #[repr(C)]
-#[derive(Pod, Default, Clone, Copy, Zeroable)]
+#[derive(Pod, Debug, Default, Clone, Copy, Zeroable)]
 pub struct MessageHeader {
     /// A checksum covering only the remainder of this header.
     /// This allows the header to be trusted without having to recv() or read() the associated body.
@@ -61,8 +62,19 @@ impl MessageHeader {
         buf.put(bytes);
     }
 
-    pub fn decode(buf: &mut Bytes) -> Self {
-        let bytes = buf.split_to(Self::encode_len());
-        bytemuck::from_bytes::<Self>(bytes.as_ref()).to_owned()
+    pub fn decode(buf: &mut Cursor<&[u8]>) -> Self {
+        let header_bytes = &buf.chunk()[0..Self::encode_len()];
+        bytemuck::pod_read_unaligned::<Self>(header_bytes).to_owned()
+    }
+
+    pub fn get_size(src: &mut Cursor<&[u8]>) -> usize {
+        let old_pos = src.position();
+        let offset = std::mem::offset_of!(MessageHeader, size);
+
+        src.set_position(offset as u64);
+        let size = src.get_u32_le() as usize;
+        src.set_position(old_pos); // restore old pos
+
+        size
     }
 }
