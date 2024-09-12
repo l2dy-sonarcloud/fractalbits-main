@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - uses: actions/checkout@v4
     - uses: mlugg/setup-zig@v1
       with:
