@@ -80,7 +80,7 @@ fn run_cmd_bench(with_flame_graph: bool) -> CmdResult {
     run_cmd! {
         info "starting benchmark ...";
         cd ./api_server/benches/rewrk;
-        cargo run --release -- -t 24 -c 500 -d 30s -h $uri -m post --pct;
+        cargo run --release -- -t 24 -c 2 -d 30s -h $uri -m post --pct;
     }?;
 
     if let Some(mut handle) = perf_handle {
