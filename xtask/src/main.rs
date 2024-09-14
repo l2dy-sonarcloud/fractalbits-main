@@ -13,6 +13,8 @@ enum Cmd {
             long_help = "Run with perf tool and generate flamegraph"
         )]
         with_flame_graph: bool,
+        #[structopt(long)]
+        sample_web_server: bool,
     },
     #[structopt(about = "Service stop/start/restart")]
     Service {
@@ -24,7 +26,10 @@ enum Cmd {
 #[cmd_lib::main]
 fn main() -> CmdResult {
     match Cmd::from_args() {
-        Cmd::Bench { with_flame_graph } => run_cmd_bench(with_flame_graph)?,
+        Cmd::Bench {
+            with_flame_graph,
+            sample_web_server,
+        } => run_cmd_bench(with_flame_graph, sample_web_server)?,
         Cmd::Service { action } => match action.as_str() {
             "stop" | "start" | "restart" => run_cmd_service(&action)?,
             _ => {
@@ -36,7 +41,7 @@ fn main() -> CmdResult {
     Ok(())
 }
 
-fn run_cmd_bench(with_flame_graph: bool) -> CmdResult {
+fn run_cmd_bench(with_flame_graph: bool, sample_web_server: bool) -> CmdResult {
     if !Path::new("./api_server").exists() {
         error!("Could not find `api_server` in current directory.");
         error!("You need to run the command (cargo xtask ...) in the root source direcotry.");
@@ -51,22 +56,42 @@ fn run_cmd_bench(with_flame_graph: bool) -> CmdResult {
         }?;
     }
 
-    run_cmd! {
-        info "building nss server ...";
-        zig build --release=safe;
-    }?;
-    run_cmd! {
-        info "building api_server ...";
-        cd api_server;
-        cargo build --release;
-    }?;
+    if sample_web_server {
+        run_cmd! {
+            info "building sample_web_server ...";
+            cd play/io_uring/iofthetiger;
+            zig build --release=safe;
+        }?;
+    } else {
+        run_cmd! {
+            info "building nss server ...";
+            zig build --release=safe;
+        }?;
+        run_cmd! {
+            info "building api_server ...";
+            cd api_server;
+            cargo build --release;
+        }?;
+    }
+
     run_cmd! {
         info "building benchmark tool `rewrk` ...";
         cd ./api_server/benches/rewrk;
         cargo build --release;
     }?;
 
-    run_cmd_service("restart")?;
+    let rewrk_opts = if sample_web_server {
+        run_cmd! {
+            info "starting sample web server ...";
+            bash -c "nohup play/io_uring/iofthetiger/zig-out/bin/sample_web_server &> sample_web_server.log &";
+            info "sleep 5s for web server";
+            sleep 5;
+        }?;
+        ["-t", "24", "-c", "500"]
+    } else {
+        run_cmd_service("restart")?;
+        ["-t", "1", "-c", "8"]
+    };
 
     let perf_handle = if with_flame_graph {
         run_cmd! {
@@ -84,7 +109,7 @@ fn run_cmd_bench(with_flame_graph: bool) -> CmdResult {
     run_cmd! {
         info "starting benchmark ...";
         cd ./api_server/benches/rewrk;
-        ./target/release/rewrk -t 1 -c 8 -d 30s -h $uri -m post --pct;
+        ./target/release/rewrk $[rewrk_opts] -d 30s -h $uri -m post --pct;
     }?;
 
     if let Some(mut handle) = perf_handle {
@@ -100,7 +125,11 @@ fn run_cmd_bench(with_flame_graph: bool) -> CmdResult {
     }
 
     // stop service after benchmark to save cpu power
-    run_cmd_service("stop")?;
+    if sample_web_server {
+        run_cmd!(ignore killall sample_web_server)?;
+    } else {
+        run_cmd_service("stop")?;
+    }
 
     Ok(())
 }
