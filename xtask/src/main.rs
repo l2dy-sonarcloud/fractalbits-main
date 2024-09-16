@@ -108,7 +108,6 @@ fn run_cmd_bench(with_flame_graph: bool, sample_web_server: bool) -> CmdResult {
     let uri = "http://127.0.0.1:3000";
     run_cmd! {
         info "starting benchmark ...";
-        cd ./api_server/benches/rewrk;
         ./target/release/rewrk $[rewrk_opts] -d 30s -h $uri -m post --pct;
     }?;
 

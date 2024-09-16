@@ -21,7 +21,7 @@ tokio-native-tls = "0.3"
 tower = { version = "0.4", features = ["util"] }
 fake = "2.9.2"
 
-[workspace]
-members = [
-    "rewrk-core"
-]
+# [workspace]
+# members = [
+#     "rewrk-core"
+# ]
