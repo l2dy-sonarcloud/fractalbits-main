@@ -21,11 +21,14 @@ enum Cmd {
         #[structopt(parse(from_str), long_help = "stop/start/restart")]
         action: String,
     },
+    #[structopt(about = "Run precheckin tests")]
+    Precheckin,
 }
 
 #[cmd_lib::main]
 fn main() -> CmdResult {
     match Cmd::from_args() {
+        Cmd::Precheckin => run_precheckin()?,
         Cmd::Bench {
             with_flame_graph,
             server,
@@ -58,6 +61,24 @@ fn prepare_bench() -> CmdResult {
             cargo install  addr2line --features="bin";
         }?;
     }
+    Ok(())
+}
+
+fn run_precheckin() -> CmdResult {
+    run_cmd! {
+        info "Building ...";
+        zig build;
+        info "Running zig unit tests ...";
+        zig build test --summary all;
+        info "Running art tests (random) with log test_art_random.log ...";
+        ./zig-out/bin/test_art --tests random --size 1000000 --ops 1000000 -d 20 &> test_art_random.log;
+        info "Running art tests (fat) with log test_art_fat.log ...";
+        ./zig-out/bin/test_art --tests fat --ops 1000000 &> test_art_fat.log;
+        info "Cleaning up test logs ...";
+        rm -f test_art_random.log;
+        rm -f test_art_fat.log;
+        info "Precheckin is OK";
+    }?;
     Ok(())
 }
 
