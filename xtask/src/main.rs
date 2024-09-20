@@ -75,7 +75,7 @@ fn run_precheckin() -> CmdResult {
         zig build test --summary all;
     }?;
 
-    let rand_log = "test_art_random_log";
+    let rand_log = "test_art_random.log";
     run_cmd! {
         info "Running art tests (random) with log $rand_log ...";
         ./zig-out/bin/test_art --tests random --size 1000000 --ops 1000000 -d 20 &> $rand_log;
@@ -217,17 +217,17 @@ fn build_api_server() -> CmdResult {
 
 fn run_cmd_service(action: &str) -> CmdResult {
     match action {
-        "stop" => stop_service(),
-        "start" => start_service(),
+        "stop" => stop_services(),
+        "start" => start_services(),
         "restart" => {
-            stop_service()?;
-            start_service()
+            stop_services()?;
+            start_services()
         }
         _ => unreachable!(),
     }
 }
 
-fn stop_service() -> CmdResult {
+fn stop_services() -> CmdResult {
     run_cmd! {
         info "Killing previous servers (if any) ...";
         ignore killall nss_server &>/dev/null;
@@ -237,21 +237,41 @@ fn stop_service() -> CmdResult {
 }
 
 fn start_sample_web_server() -> CmdResult {
+    let service_log = "sample_web_server.log";
     run_cmd! {
-        info "Starting sample web server ...";
-        bash -c "nohup play/io_uring/iofthetiger/zig-out/bin/sample_web_server &> sample_web_server.log &";
+        info "Starting sample web server with log $service_log ...";
+        bash -c "nohup play/io_uring/iofthetiger/zig-out/bin/sample_web_server &> $service_log &";
         info "Sleep 5s for web server";
         sleep 5;
     }
 }
 
-fn start_service() -> CmdResult {
+fn start_services() -> CmdResult {
     start_nss_service()?;
+    start_api_service()?;
+    Ok(())
+}
 
+fn start_nss_service() -> CmdResult {
+    let service_log = "nss_server.log";
+    let nss_wait_secs = 10;
+    run_cmd! {
+        info "Starting nss server with log $service_log ...";
+        bash -c "nohup ./zig-out/bin/nss_server &> $service_log &";
+        info "Waiting ${nss_wait_secs}s for server up";
+        sleep $nss_wait_secs;
+    }?;
+    let nss_server_pid = run_fun!(pidof nss_server)?;
+    info!("nss server(pid={nss_server_pid}) started");
+    Ok(())
+}
+
+fn start_api_service() -> CmdResult {
+    let service_log = "api_server.log";
     let api_server_wait_secs = 5;
     run_cmd! {
-        info "Starting api server ...";
-        bash -c "nohup ./target/release/api_server &> api_server.log &";
+        info "Starting api server with log $service_log ...";
+        bash -c "nohup ./target/release/api_server &> $service_log &";
         info "Waiting ${api_server_wait_secs}s for server up";
         sleep $api_server_wait_secs;
     }?;
@@ -260,25 +280,12 @@ fn start_service() -> CmdResult {
         Err(e) => {
             run_cmd! {
                 error "Could not find api_server service";
-                info "Tailing api_server.log:";
-                tail api_server.log;
+                info "Tailing $service_log:";
+                tail $service_log;
             }?;
             return Err(e);
         }
     };
     info!("api server(pid={api_server_pid}) started");
-    Ok(())
-}
-
-fn start_nss_service() -> CmdResult {
-    let nss_wait_secs = 10;
-    run_cmd! {
-        info "Starting nss server ...";
-        bash -c "nohup ./zig-out/bin/nss_server &> nss_server.log &";
-        info "Waiting ${nss_wait_secs}s for server up";
-        sleep $nss_wait_secs;
-    }?;
-    let nss_server_pid = run_fun!(pidof nss_server)?;
-    info!("nss server(pid={nss_server_pid}) started");
     Ok(())
 }
