@@ -58,7 +58,7 @@ fn prepare_bench() -> CmdResult {
         // From https://github.com/iced-rs/iced/issues/2394
         run_cmd! {
             info "Try to install addr2line to make perf script work with rust binary ...";
-            cargo install  addr2line --features="bin";
+            cargo install addr2line --features="bin";
         }?;
     }
     Ok(())
@@ -166,12 +166,12 @@ fn run_cmd_bench(with_flame_graph: bool, server: &str) -> CmdResult {
 
     if let Some(mut handle) = perf_handle {
         handle.wait()?;
-        let flamegraph_path = "/home/linuxbrew/.linuxbrew/Cellar/flamegraph/1.0_1/bin/";
+        let flamegraph_path = run_fun!(brew --prefix flamegraph)?;
         run_cmd! {
             info "Post-processing perf data ...";
             perf script > out.perf;
-            ${flamegraph_path}/stackcollapse-perf.pl out.perf > out.folded;
-            ${flamegraph_path}/flamegraph.pl out.folded > out_perf.svg;
+            ${flamegraph_path}/bin/stackcollapse-perf.pl out.perf > out.folded;
+            ${flamegraph_path}/bin/flamegraph.pl out.folded > out_perf.svg;
             info "Flamegraph \"out_perf.svg\" is generated";
         }?;
     }
