@@ -134,7 +134,7 @@ fn run_cmd_bench(with_flame_graph: bool, server: &str) -> CmdResult {
             run_cmd_service("restart")?;
             uri = "http://127.0.0.1:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts = ["-t", "1", "-c", "8", "-m", "post"];
+            bench_opts = ["-t", "24", "-c", "500", "-m", "post"];
         }
         "nss_rpc" => {
             build_nss_server()?;
