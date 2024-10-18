@@ -148,7 +148,7 @@ fn run_cmd_bench(with_flame_graph: bool, server: &str) -> CmdResult {
         _ => unreachable!(),
     }
 
-    let duration_secs = 10;
+    let duration_secs = 20;
     let perf_handle = if with_flame_graph {
         run_cmd! {
             info "Start perf in the background ...";
