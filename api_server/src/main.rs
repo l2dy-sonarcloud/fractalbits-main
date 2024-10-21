@@ -1,74 +1,18 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use api_server::ExtractBucketName;
+use api_server::{
+    router::{get_handler, put_handler, MAX_NSS_CONNECTION},
+    AppState,
+};
 use axum::{
-    extract::{ConnectInfo, MatchedPath, Path, Request, State},
-    http::StatusCode,
+    extract::{MatchedPath, Request},
     routing::get,
     Router,
 };
 use nss_rpc_client::rpc_client::RpcClient;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-const MAX_NSS_CONNECTION: usize = 8;
-
-struct AppState {
-    rpc_clients: Vec<RpcClient>,
-}
-
-fn calculate_hash<T: Hash>(t: &T) -> usize {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish() as usize
-}
-
-async fn get_obj(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    ExtractBucketName(_bucket): ExtractBucketName,
-    Path(key): Path<String>,
-) -> Result<String, (StatusCode, String)> {
-    let hash = calculate_hash(&addr) % MAX_NSS_CONNECTION;
-    let mut key = format!("/{key}");
-    key.push('\0');
-    let resp = nss_rpc_client::nss_get_inode(&state.rpc_clients[hash], key)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-        .unwrap();
-    match serde_json::to_string_pretty(&resp.result) {
-        Ok(resp) => Ok(resp),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("internal server error: {e}"),
-        )),
-    }
-}
-
-async fn put_obj(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    ExtractBucketName(_bucket): ExtractBucketName,
-    Path(key): Path<String>,
-    value: String,
-) -> Result<String, (StatusCode, String)> {
-    let hash = calculate_hash(&addr) % MAX_NSS_CONNECTION;
-    let mut key = format!("/{key}");
-    key.push('\0');
-    let resp = nss_rpc_client::nss_put_inode(&state.rpc_clients[hash], key, value)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-        .unwrap();
-    match serde_json::to_string_pretty(&resp.result) {
-        Ok(resp) => Ok(resp),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("internal server error: {e}"),
-        )),
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -95,7 +39,7 @@ async fn main() {
     let shared_state = Arc::new(AppState { rpc_clients });
 
     let app = Router::new()
-        .route("/*key", get(get_obj).post(put_obj))
+        .route("/*key", get(get_handler).put(put_handler))
         .layer(
             TraceLayer::new_for_http()
                 // Create our own span for the request and include the matched path. The matched
