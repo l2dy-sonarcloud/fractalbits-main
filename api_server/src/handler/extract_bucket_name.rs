@@ -22,12 +22,9 @@ where
         let bucket: String = authority
             .host()
             .chars()
-            .into_iter()
             .take_while(|x| {
                 let is_dot = x == &'.';
-                if is_dot {
-                    found_dot = true;
-                }
+                found_dot |= is_dot;
                 !is_dot
             })
             .collect();

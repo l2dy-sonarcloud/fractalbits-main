@@ -5,7 +5,7 @@ mod list;
 mod put;
 
 use nss_rpc_client::rpc_client::RpcClient;
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -62,9 +62,10 @@ pub async fn get_handler(
 ) -> Result<String, (StatusCode, String)> {
     let ConnectInfo(addr) = request.extract_parts().await.unwrap();
     let BucketName(_bucket) = request.extract_parts().await.unwrap();
-    let Query(query_map) = request.extract_parts().await.unwrap();
-    let api_command = get_api_command(&query_map);
     let key = key_for_nss(request.uri().path());
+    let Query(query_map): Query<Vec<(Cow<'_, str>, Cow<'_, str>)>> =
+        request.extract_parts().await.unwrap();
+    let api_command = get_api_command(&query_map);
     let rpc_client = get_rpc_client(&state, addr);
 
     match api_command {
@@ -82,9 +83,10 @@ pub async fn put_handler(
 ) -> Result<String, (StatusCode, String)> {
     let ConnectInfo(addr) = request.extract_parts().await.unwrap();
     let BucketName(_bucket) = request.extract_parts().await.unwrap();
-    let Query(query_map) = request.extract_parts().await.unwrap();
-    let api_command = get_api_command(&query_map);
     let key = key_for_nss(request.uri().path());
+    let Query(query_map): Query<Vec<(Cow<'_, str>, Cow<'_, str>)>> =
+        request.extract_parts().await.unwrap();
+    let api_command = get_api_command(&query_map);
     let rpc_client = get_rpc_client(&state, addr);
 
     match api_command {
@@ -106,11 +108,14 @@ fn get_rpc_client(app_state: &AppState, addr: SocketAddr) -> &RpcClient {
     &app_state.rpc_clients[hash]
 }
 
-fn get_api_command(query_params: &HashMap<String, String>) -> Option<ApiCommand> {
+fn get_api_command<T>(query_params: &[(T, T)]) -> Option<ApiCommand>
+where
+    T: AsRef<str>,
+{
     let api_commands: Vec<ApiCommand> = query_params
         .iter()
-        .filter_map(|(k, v)| v.is_empty().then_some(k))
-        .filter_map(|cmd| ApiCommand::from_str(cmd).ok())
+        .filter_map(|(k, v)| v.as_ref().is_empty().then_some(k))
+        .filter_map(|cmd| ApiCommand::from_str(cmd.as_ref()).ok())
         .collect();
     if api_commands.is_empty() {
         None
@@ -142,7 +147,7 @@ mod tests {
         Router::new().route("/*key", get(handler))
     }
 
-    async fn handler(Query(query_map): Query<HashMap<String, String>>) -> String {
+    async fn handler(Query(query_map): Query<Vec<(String, String)>>) -> String {
         get_api_command(&query_map)
             .map(|cmd| cmd.to_string())
             .unwrap_or_default()
