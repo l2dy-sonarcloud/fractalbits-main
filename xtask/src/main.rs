@@ -129,7 +129,7 @@ fn run_cmd_bench(with_flame_graph: bool, server: &str) -> CmdResult {
             start_sample_web_server()?;
             uri = "http://127.0.0.1:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts = ["-t", "24", "-c", "500", "-m", "post"];
+            bench_opts = ["-t", "24", "-c", "500", "-m", "put"];
         }
         "api_server" => {
             build_nss_server()?;
@@ -137,9 +137,9 @@ fn run_cmd_bench(with_flame_graph: bool, server: &str) -> CmdResult {
             build_rewrk()?;
 
             run_cmd_service("restart")?;
-            uri = "http://127.0.0.1:3000";
+            uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts = ["-t", "24", "-c", "500", "-m", "post"];
+            bench_opts = ["-t", "24", "-c", "500", "-m", "put"];
         }
         "nss_rpc" => {
             build_nss_server()?;

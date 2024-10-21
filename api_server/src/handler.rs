@@ -63,9 +63,8 @@ pub async fn get_handler(
     let ConnectInfo(addr) = request.extract_parts().await.unwrap();
     let BucketName(_bucket) = request.extract_parts().await.unwrap();
     let Query(query_map) = request.extract_parts().await.unwrap();
-    let key = request.uri().path();
     let api_command = get_api_command(&query_map);
-    let key = key_for_nss(key);
+    let key = key_for_nss(request.uri().path());
     let rpc_client = get_rpc_client(&state, addr);
 
     match api_command {
@@ -84,9 +83,8 @@ pub async fn put_handler(
     let ConnectInfo(addr) = request.extract_parts().await.unwrap();
     let BucketName(_bucket) = request.extract_parts().await.unwrap();
     let Query(query_map) = request.extract_parts().await.unwrap();
-    let key = request.uri().path();
     let api_command = get_api_command(&query_map);
-    let key = key_for_nss(key);
+    let key = key_for_nss(request.uri().path());
     let rpc_client = get_rpc_client(&state, addr);
 
     match api_command {
@@ -125,10 +123,10 @@ fn get_api_command(query_params: &HashMap<String, String>) -> Option<ApiCommand>
 }
 
 fn key_for_nss(key: &str) -> String {
-    if key.is_empty() {
+    if key == "/" {
         return key.into();
     }
-    let mut key = format!("/{key}");
+    let mut key = key.to_owned();
     key.push('\0');
     key
 }
