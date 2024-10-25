@@ -1,10 +1,10 @@
 use axum::{
     extract::{Query, Request},
     http::StatusCode,
-    response::{IntoResponse, Result},
+    response::{self, IntoResponse},
     RequestExt,
 };
-use nss_rpc_client::rpc_client::RpcClient;
+use nss_rpc_client::{nss_ops::get_inode_response, rpc_client::RpcClient};
 use serde::Deserialize;
 
 #[allow(dead_code)]
@@ -27,11 +27,15 @@ pub async fn get_object(
     mut request: Request,
     key: String,
     rpc_client: &RpcClient,
-) -> Result<String> {
+) -> response::Result<String> {
     let Query(_get_obj_opts): Query<GetObjectOptions> = request.extract_parts().await?;
     let resp = nss_rpc_client::nss_get_inode(rpc_client, key)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
-    serde_json::to_string_pretty(&resp.result)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into())
+    match resp.result.unwrap() {
+        get_inode_response::Result::Ok(res) => Ok(res),
+        get_inode_response::Result::Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)
+            .into_response()
+            .into()),
+    }
 }
