@@ -11,7 +11,7 @@ pub async fn put_object(request: Request, key: String, rpc_client: &RpcClient) -
 
     // Write data at first
 
-    let _resp = rpc_client::nss_put_inode(rpc_client, key, value)
+    let _resp = rpc_client::nss::nss_put_inode(rpc_client, key, value)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     // serde_json::to_string_pretty(&resp.result)

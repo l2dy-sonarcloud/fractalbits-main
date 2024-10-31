@@ -134,7 +134,7 @@ async fn benchmark_read(
             };
             key.push('\0');
 
-            let future = async { rpc_client::nss_get_inode(&rpc_client, key).await };
+            let future = async { rpc_client::nss::nss_get_inode(&rpc_client, key).await };
             futures.push(future);
         }
         if futures.is_empty() {
@@ -216,7 +216,7 @@ async fn benchmark_write(
             key.push('\0');
 
             let value = key.clone();
-            let future = async { rpc_client::nss_put_inode(&rpc_client, key, value).await };
+            let future = async { rpc_client::nss::nss_put_inode(&rpc_client, key, value).await };
             futures.push(future);
         }
         if futures.is_empty() {

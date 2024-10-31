@@ -1,21 +1,22 @@
-use bytes::BytesMut;
-use prost::Message;
-use rpc_client::{
+use crate::{
     message::MessageHeader,
-    nss_ops::*,
     rpc_client::{RpcClient, RpcError},
 };
+use bytes::BytesMut;
+use prost::Message;
 
-pub async fn nss_put_inode(
+include!(concat!(env!("OUT_DIR"), "/storage_server_ops.rs"));
+
+pub async fn nss_put_blob(
     rpc_client: &RpcClient,
     key: String,
-    value: String,
-) -> Result<PutInodeResponse, RpcError> {
-    let request_body = PutInodeRequest { key, value };
+    content: String,
+) -> Result<PutBlobResponse, RpcError> {
+    let request_body = PutBlobRequest { key, content };
 
     let mut request_header = MessageHeader::default();
     request_header.id = rpc_client.gen_request_id();
-    request_header.command = Command::PutInode;
+    request_header.command = Command::PutBlob;
     request_header.size = (MessageHeader::encode_len() + request_body.encoded_len()) as u32;
 
     let mut request_bytes = BytesMut::with_capacity(request_header.size as usize);
@@ -27,19 +28,19 @@ pub async fn nss_put_inode(
     let resp_bytes = rpc_client
         .send_request(request_header.id, request_bytes.freeze())
         .await?;
-    let resp: PutInodeResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+    let resp: PutBlobResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
     Ok(resp)
 }
 
-pub async fn nss_get_inode(
+pub async fn nss_get_blob(
     rpc_client: &RpcClient,
     key: String,
-) -> Result<GetInodeResponse, RpcError> {
-    let request_body = GetInodeRequest { key };
+) -> Result<GetBlobResponse, RpcError> {
+    let request_body = GetBlobRequest { key };
 
     let mut request_header = MessageHeader::default();
     request_header.id = rpc_client.gen_request_id();
-    request_header.command = Command::GetInode;
+    request_header.command = Command::GetBlob;
     request_header.size = (MessageHeader::encode_len() + request_body.encoded_len()) as u32;
 
     let mut request_bytes = BytesMut::with_capacity(request_header.size as usize);
@@ -51,6 +52,6 @@ pub async fn nss_get_inode(
     let resp_bytes = rpc_client
         .send_request(request_header.id, request_bytes.freeze())
         .await?;
-    let resp: GetInodeResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+    let resp: GetBlobResponse = Message::decode(resp_bytes).map_err(RpcError::DecodeError)?;
     Ok(resp)
 }

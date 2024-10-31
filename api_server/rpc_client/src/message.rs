@@ -1,4 +1,9 @@
-use crate::nss_ops::Command;
+#[cfg(feature = "nss")]
+use crate::nss::Command;
+
+#[cfg(feature = "storage_server")]
+use crate::storage_server::Command;
+
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut, BytesMut};
 
