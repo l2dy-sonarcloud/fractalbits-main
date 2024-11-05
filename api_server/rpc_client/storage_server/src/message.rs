@@ -1,6 +1,5 @@
-use crate::storage_server::Command;
 use bytemuck::{Pod, Zeroable};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[repr(C)]
 #[derive(Pod, Default, Debug, Clone, Copy, Zeroable)]
@@ -49,6 +48,20 @@ pub struct MessageHeader {
     reserved3: [u8; 22],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Command {
+    Invalid = 0,
+    PutBlob = 1,
+    GetBlob = 2,
+}
+
+impl Default for Command {
+    fn default() -> Self {
+        Command::Invalid
+    }
+}
+
 // Safety: Command is defined as protobuf enum type (i32), and 0 as Invalid. There is also no padding
 // as verified from the zig side. With header checksum validation, we can also be sure no invalid
 // enum value being interpreted.
@@ -66,7 +79,7 @@ impl MessageHeader {
         dst.put(bytes);
     }
 
-    pub fn decode(src: &mut BytesMut) -> Self {
+    pub fn decode(src: &Bytes) -> Self {
         let header_bytes = &src.chunk()[0..Self::encode_len()];
         // TODO: verify header checksum
         bytemuck::pod_read_unaligned::<Self>(header_bytes).to_owned()

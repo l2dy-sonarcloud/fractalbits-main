@@ -1781,13 +1781,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "bytes",
- "prost 0.13.3",
- "prost-build",
- "prost-wkt",
- "prost-wkt-build",
- "prost-wkt-types",
- "serde",
- "serde_json",
  "thiserror",
  "tokio",
  "tokio-stream",

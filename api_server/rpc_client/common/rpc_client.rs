@@ -22,7 +22,9 @@ use crate::codec::MesssageCodec;
 pub enum RpcError {
     IoError(io::Error),
     OneshotRecvError(oneshot::error::RecvError),
+    #[cfg(feature = "nss")]
     EncodeError(prost::EncodeError),
+    #[cfg(feature = "nss")]
     DecodeError(prost::DecodeError),
     #[error("internal request sending error: {0}")]
     InternalRequestError(String),

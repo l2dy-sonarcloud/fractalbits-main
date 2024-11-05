@@ -5,7 +5,7 @@ use crate::nss::Command;
 use crate::storage_server::Command;
 
 use bytemuck::{Pod, Zeroable};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[repr(C)]
 #[derive(Pod, Debug, Default, Clone, Copy, Zeroable)]
@@ -66,7 +66,7 @@ impl MessageHeader {
         dst.put(bytes);
     }
 
-    pub fn decode(src: &mut BytesMut) -> Self {
+    pub fn decode(src: &Bytes) -> Self {
         let header_bytes = &src.chunk()[0..Self::encode_len()];
         // TODO: verify header checksum
         bytemuck::pod_read_unaligned::<Self>(header_bytes).to_owned()

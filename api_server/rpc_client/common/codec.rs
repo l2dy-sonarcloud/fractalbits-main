@@ -40,9 +40,9 @@ impl Decoder for MesssageCodec {
             return Ok(None);
         }
 
-        let header = MessageHeader::decode(src);
-        let body = Bytes::copy_from_slice(&src.chunk()[header_size..header.size as usize]);
-        src.advance(size);
+        let header = MessageHeader::decode(&src.copy_to_bytes(header_size));
+        let body = Bytes::copy_from_slice(&src.chunk()[0..header.size as usize - header_size]);
+        src.advance(size - header_size);
         Ok(Some(MessageFrame { header, body }))
     }
 }
