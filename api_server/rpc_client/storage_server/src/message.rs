@@ -1,3 +1,5 @@
+//! Storage server message format.
+//! Note if this file is updated, the corresponding message.zig file also needs to be updated!
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -48,6 +50,10 @@ pub struct MessageHeader {
     /// Blob Id
     blob_id: [u8; 16],
 
+    /// Reserved parts for padding
+    // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
+    // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
+    // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
     reserved0: [u8; 18],
     reserved1: [u8; 32],
     reserved2: [u8; 32],
