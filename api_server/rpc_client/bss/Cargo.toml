@@ -1,5 +1,5 @@
 [package]
-name = "storage_server_rpc_client"
+name = "rpc_client_bss"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,8 +14,8 @@ tokio-stream = "0.1.16"
 uuid = { version = "1.11.0", features = ["v7"] }
 
 [features]
-default = ["storage_server"]
-storage_server = []
+default = ["bss"]
+bss = []
 nss = []
 
 [dev-dependencies]

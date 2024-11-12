@@ -1,4 +1,4 @@
-//! Storage server message format.
+//! Blob storage server message format.
 //! Note if this file is updated, the corresponding message.zig file also needs to be updated!
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};

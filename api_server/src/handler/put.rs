@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Result},
 };
 use http_body_util::BodyExt;
-use nss_rpc_client::rpc_client::RpcClient;
+use rpc_client_nss::RpcClient;
 
 pub async fn put_object(request: Request, key: String, rpc_client: &RpcClient) -> Result<()> {
     // Write data at first
@@ -12,7 +12,7 @@ pub async fn put_object(request: Request, key: String, rpc_client: &RpcClient) -
     let _content = request.into_body().collect().await.unwrap().to_bytes();
 
     let blob_id = "blob_id".into();
-    let _resp = nss_rpc_client::nss::nss_put_inode(rpc_client, key, blob_id)
+    let _resp = rpc_client_nss::rpc::nss_put_inode(rpc_client, key, blob_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     // serde_json::to_string_pretty(&resp.result)

@@ -1,15 +1,11 @@
-pub mod codec;
-pub mod message;
-pub mod rpc_client;
-
 use crate::{
     message::{Command, MessageHeader},
-    rpc_client::{RpcClient, RpcError},
+    RpcClient, RpcError,
 };
 use bytes::{Bytes, BytesMut};
 use uuid::Uuid;
 
-pub async fn nss_put_blob(
+pub async fn bss_put_blob(
     rpc_client: &RpcClient,
     blob_id: Uuid,
     content: Bytes,
@@ -28,7 +24,7 @@ pub async fn nss_put_blob(
     Ok(resp.header.result as usize)
 }
 
-pub async fn nss_get_blob(
+pub async fn bss_get_blob(
     rpc_client: &RpcClient,
     blob_id: Uuid,
     content: &mut Bytes,
