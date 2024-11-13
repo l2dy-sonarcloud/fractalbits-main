@@ -496,6 +496,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fake"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "661cb0601b5f4050d1e65452c5b0ea555c0b3e88fb5ed7855906adc6c42523ef"
+dependencies = [
+ "deunicode",
+ "rand",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1561,7 +1571,7 @@ dependencies = [
  "anyhow",
  "clap",
  "colored",
- "fake",
+ "fake 2.10.0",
  "futures-util",
  "http 0.2.12",
  "hyper 0.14.31",
@@ -1583,7 +1593,7 @@ dependencies = [
  "bytes",
  "clap",
  "colored",
- "fake",
+ "fake 2.10.0",
  "futures",
  "futures-util",
  "pin-project-lite",
@@ -1600,6 +1610,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "bytes",
+ "fake 3.0.1",
  "thiserror",
  "tokio",
  "tokio-stream",

@@ -1,6 +1,8 @@
 use cmd_lib::*;
 use structopt::StructOpt;
 
+const ZIG_BUILD_OPTS: &'static str = "--release=safe"; // or "" for debugging
+
 #[derive(StructOpt)]
 #[structopt(name = "xtask", about = "Misc project related tasks")]
 enum Cmd {
@@ -208,7 +210,7 @@ fn build_sample_web_server() -> CmdResult {
     run_cmd! {
         info "Building sample_web_server ...";
         cd play/io_uring/iofthetiger;
-        zig build --release=safe;
+        zig build $ZIG_BUILD_OPTS;
     }
 }
 
@@ -231,7 +233,7 @@ fn build_rewrk_rpc() -> CmdResult {
 fn build_bss_nss_server() -> CmdResult {
     run_cmd! {
         info "Building nss server ...";
-        zig build --release=safe;
+        zig build $ZIG_BUILD_OPTS;
     }
 }
 
@@ -265,11 +267,11 @@ fn stop_services() -> CmdResult {
         "api_server",
         "sample_web_server",
     ] {
-        for _ in 0..3 {
+        for _ in 0..5 {
             if run_fun!(pidof $service).is_ok() {
                 run_cmd! {
                     ignore killall $service &>/dev/null;
-                    sleep 1;
+                    sleep 3;
                 }?;
             }
         }

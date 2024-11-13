@@ -2,7 +2,7 @@ use crate::{
     message::{Command, MessageHeader},
     rpc_client::{RpcClient, RpcError},
 };
-use bytes::{Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use uuid::Uuid;
 
 impl RpcClient {
@@ -13,9 +13,11 @@ impl RpcClient {
         request_header.command = Command::PutBlob;
         request_header.size = (MessageHeader::encode_len() + content.len()) as u64;
 
-        let mut header_bytes = BytesMut::with_capacity(MessageHeader::encode_len());
+        let mut header_bytes = BytesMut::with_capacity(MessageHeader::encode_len() + content.len());
         request_header.encode(&mut header_bytes);
-        let msgs = vec![header_bytes.freeze(), content];
+        // TODO: reduce content copying
+        header_bytes.put_slice(&content);
+        let msgs = vec![header_bytes.freeze()];
 
         let resp = self.send_request(request_header.id, &msgs).await?;
         Ok(resp.header.result as usize)

@@ -26,7 +26,7 @@ impl AppState {
         }
 
         let mut rpc_clients_bss = Vec::with_capacity(Self::MAX_BSS_CONNECTION);
-        for _i in 0..AppState::MAX_NSS_CONNECTION {
+        for _i in 0..AppState::MAX_BSS_CONNECTION {
             let rpc_client_bss = RpcClientBss::new(bss_ip)
                 .await
                 .expect("rpc client bss failure");
