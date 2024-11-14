@@ -6,7 +6,7 @@ const ZIG_BUILD_OPTS: &'static str = "--release=safe"; // or "" for debugging
 #[derive(StructOpt)]
 #[structopt(name = "xtask", about = "Misc project related tasks")]
 enum Cmd {
-    #[structopt(about = "Run benchmark for sample_web_server/api_server/nss_rpc")]
+    #[structopt(about = "Run benchmark for sample_web_server/api_server/nss_rpc/bss_rpc")]
     Bench {
         #[structopt(
             short = "w",
@@ -23,7 +23,7 @@ enum Cmd {
         )]
         with_flame_graph: bool,
 
-        #[structopt(long_help = "sample_web_server/api_server/nss_rpc")]
+        #[structopt(long_help = "sample_web_server/api_server/nss_rpc/bss_rpc")]
         server: String,
     },
     #[structopt(about = "Service stop/start/restart")]
@@ -44,7 +44,7 @@ fn main() -> CmdResult {
             with_flame_graph,
             server,
         } => match server.as_str() {
-            "sample_web_server" | "api_server" | "nss_rpc" => {
+            "sample_web_server" | "api_server" | "nss_rpc" | "bss_rpc" => {
                 prepare_bench()?;
                 run_cmd_bench(workload, with_flame_graph, &server)?;
             }
@@ -135,7 +135,7 @@ fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> CmdR
     };
     let uri;
     let bench_exe;
-    let bench_opts;
+    let mut bench_opts = Vec::new();
     match server {
         "sample_web_server" => {
             build_sample_web_server()?;
@@ -144,7 +144,7 @@ fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> CmdR
             start_sample_web_server()?;
             uri = "http://127.0.0.1:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts = ["-t", "24", "-c", "500", "-m", http_method];
+            bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-m", http_method]);
         }
         "api_server" => {
             build_bss_nss_server()?;
@@ -154,7 +154,7 @@ fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> CmdR
             run_cmd_service("restart")?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts = ["-t", "24", "-c", "500", "-m", http_method];
+            bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-m", http_method]);
         }
         "nss_rpc" => {
             build_bss_nss_server()?;
@@ -163,7 +163,16 @@ fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> CmdR
             start_nss_service()?;
             uri = "127.0.0.1:9224";
             bench_exe = "./target/release/rewrk_rpc";
-            bench_opts = ["-t", "24", "-c", "500", "-w", &workload];
+            bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-w", &workload]);
+        }
+        "bss_rpc" => {
+            build_bss_nss_server()?;
+            build_rewrk_rpc()?;
+
+            start_bss_service()?;
+            uri = "127.0.0.1:9225";
+            bench_exe = "./target/release/rewrk_rpc";
+            bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-w", &workload, "-p", "bss"]);
         }
         _ => unreachable!(),
     }
@@ -324,6 +333,7 @@ fn start_bss_service() -> CmdResult {
         sleep $bss_wait_secs;
     }?;
     let bss_server_pid = run_fun!(pidof bss_server)?;
+    check_pids(&bss_server_pid)?;
     info!("bss server (pid={bss_server_pid}) started");
     Ok(())
 }
@@ -338,6 +348,7 @@ fn start_nss_service() -> CmdResult {
         sleep $nss_wait_secs;
     }?;
     let nss_server_pid = run_fun!(pidof nss_server)?;
+    check_pids(&nss_server_pid)?;
     info!("nss server (pid={nss_server_pid}) started");
     Ok(())
 }
@@ -362,6 +373,15 @@ fn start_api_service() -> CmdResult {
             return Err(e);
         }
     };
+    check_pids(&api_server_pid)?;
     info!("api server (pid={api_server_pid}) started");
+    Ok(())
+}
+
+fn check_pids(pids: &str) -> CmdResult {
+    if pids.split_whitespace().count() > 1 {
+        stop_services()?;
+        cmd_die!("multiple processes were found: {pids}");
+    }
     Ok(())
 }
