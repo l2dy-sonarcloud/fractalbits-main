@@ -5,11 +5,13 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use fake::{Fake, StringFaker};
 use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use tokio::task::JoinHandle;
 use tokio::time::{timeout_at, Instant};
@@ -40,7 +42,7 @@ fn read_keys(filename: &str, num_tasks: usize) -> Vec<VecDeque<String>> {
     res
 }
 
-pub async fn start_tasks(
+pub async fn start_tasks_for_nss(
     time_for: Duration,
     connections: usize,
     uri_string: String,
@@ -77,11 +79,38 @@ pub async fn start_tasks(
     for _i in 0..connections {
         let keys = gen_keys.pop().unwrap();
         let connector = RewrkConnector::new(deadline, uri_string.clone());
-        let rpc_client = connector.connect().await.unwrap();
+        let rpc_client = connector.connect_nss().await.unwrap();
         let workload = workload.clone();
         let handle = match workload.as_str() {
-            "read" => tokio::spawn(benchmark_read(deadline, rpc_client, keys, io_depth)),
-            "write" => tokio::spawn(benchmark_write(deadline, rpc_client, keys, io_depth)),
+            "read" => tokio::spawn(benchmark_nss_read(deadline, rpc_client, keys, io_depth)),
+            "write" => tokio::spawn(benchmark_nss_write(deadline, rpc_client, keys, io_depth)),
+            _ => unimplemented!(),
+        };
+
+        handles.push(handle);
+    }
+
+    Ok(handles)
+}
+
+pub async fn start_tasks_for_bss(
+    time_for: Duration,
+    connections: usize,
+    uri_string: String,
+    io_depth: usize,
+    workload: String,
+) -> anyhow::Result<FuturesUnordered<Handle>> {
+    let deadline = Instant::now() + time_for;
+
+    let handles = FuturesUnordered::new();
+
+    for _i in 0..connections {
+        let connector = RewrkConnector::new(deadline, uri_string.clone());
+        let rpc_client = connector.connect_bss().await.unwrap();
+        let workload = workload.clone();
+        let handle = match workload.as_str() {
+            "read" => todo!(),
+            "write" => tokio::spawn(benchmark_bss_write(deadline, rpc_client, io_depth)),
             _ => unimplemented!(),
         };
 
@@ -92,7 +121,7 @@ pub async fn start_tasks(
 }
 
 // Futures must not be awaited without timeout.
-async fn benchmark_read(
+async fn benchmark_nss_read(
     deadline: Instant,
     rpc_client: RpcClientNss,
     mut keys: GenKeys,
@@ -173,7 +202,67 @@ async fn benchmark_read(
 }
 
 // Futures must not be awaited without timeout.
-async fn benchmark_write(
+async fn benchmark_bss_write(
+    deadline: Instant,
+    rpc_client: RpcClientBss,
+    io_depth: usize,
+) -> anyhow::Result<WorkerResult> {
+    let benchmark_start = Instant::now();
+    let mut request_times = Vec::new();
+    let mut error_map = HashMap::new();
+
+    // Benchmark loop.
+    // Futures must not be awaited without timeout.
+    loop {
+        // ResponseFuture of send_request might return channel closed error instead of real error
+        // in the case of connection_task being finished. This future will check if connection_task
+        // is finished first.
+
+        let mut futures = Vec::new();
+        for _ in 0..io_depth {
+            let future = async {
+                let key = uuid::Uuid::now_v7();
+                let value = Bytes::from(vec![0; 4096 - 256]);
+                rpc_client.put_blob(key.clone(), value).await
+            };
+            futures.push(future);
+        }
+        if futures.is_empty() {
+            break;
+        }
+        let request_start = Instant::now();
+
+        // Try to resolve future before benchmark deadline is elapsed.
+        if let Ok(results) = timeout_at(deadline, join_all(futures)).await {
+            for result in results.iter() {
+                if let Err(e) = result {
+                    let error = e.to_string();
+
+                    // Insert/add error string to error log.
+                    match error_map.get_mut(&error) {
+                        Some(count) => *count += 1,
+                        None => {
+                            error_map.insert(error, 1);
+                        }
+                    }
+                } else {
+                    request_times.push(request_start.elapsed());
+                }
+            }
+        } else {
+            // Benchmark deadline is elapsed. Break the loop.
+            break;
+        }
+    }
+
+    Ok(WorkerResult {
+        total_times: vec![benchmark_start.elapsed()],
+        request_times,
+        error_map,
+    })
+}
+
+async fn benchmark_nss_write(
     deadline: Instant,
     rpc_client: RpcClientNss,
     mut keys: GenKeys,
@@ -200,7 +289,6 @@ async fn benchmark_write(
 
         let mut futures = Vec::new();
         for _ in 0..io_depth {
-            // Create request from **parsed** data.
             let mut key: String = match &mut keys {
                 GenKeys::Seed(_) => {
                     format!(
@@ -253,6 +341,7 @@ async fn benchmark_write(
         error_map,
     })
 }
+
 struct RewrkConnector {
     #[allow(unused)]
     deadline: Instant,
@@ -272,8 +361,12 @@ impl RewrkConnector {
         }
     }
 
-    async fn connect(&self) -> anyhow::Result<RpcClientNss> {
+    async fn connect_nss(&self) -> anyhow::Result<RpcClientNss> {
         Ok(RpcClientNss::new(&self.host).await.unwrap())
+    }
+
+    async fn connect_bss(&self) -> anyhow::Result<RpcClientBss> {
+        Ok(RpcClientBss::new(&self.host).await.unwrap())
     }
 
     #[allow(dead_code)]

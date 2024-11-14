@@ -1599,9 +1599,11 @@ dependencies = [
  "pin-project-lite",
  "rand",
  "regex",
+ "rpc_client_bss",
  "rpc_client_nss",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

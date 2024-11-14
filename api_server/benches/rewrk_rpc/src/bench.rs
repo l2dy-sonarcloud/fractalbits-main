@@ -42,6 +42,9 @@ pub struct BenchmarkSettings {
 
     /// Choose pre-defined workload
     pub workload: String,
+
+    /// Rpc type
+    pub rpc: String,
 }
 
 /// Builds the runtime with the given settings and blocks on the main future.
@@ -54,10 +57,18 @@ pub fn start_benchmark(settings: BenchmarkSettings) {
             println!("Beginning round {}...", i + 1);
         }
 
-        if let Err(e) = rt.block_on(run(settings.clone())) {
-            eprintln!();
-            eprintln!("{}", e);
-            return;
+        if settings.rpc == "nss" {
+            if let Err(e) = rt.block_on(run_for_nss(settings.clone())) {
+                eprintln!();
+                eprintln!("{}", e);
+                return;
+            }
+        } else {
+            if let Err(e) = rt.block_on(run_for_bss(settings.clone())) {
+                eprintln!();
+                eprintln!("{}", e);
+                return;
+            }
         }
 
         // Adds a line separator between rounds unless it's formatting
@@ -77,15 +88,80 @@ pub fn start_benchmark(settings: BenchmarkSettings) {
 /// extracted from the handle.
 ///
 /// The results are then merged into a single set of averages across workers.
-async fn run(settings: BenchmarkSettings) -> Result<()> {
+async fn run_for_nss(settings: BenchmarkSettings) -> Result<()> {
     // let predict_size = settings.duration.as_secs() * 10_000;
 
-    let handles = rpc::start_tasks(
+    let handles = rpc::start_tasks_for_nss(
         settings.duration,
         settings.connections,
         settings.host.trim().to_string(),
         settings.io_depth,
         settings.input.clone(),
+        settings.workload.clone(),
+    )
+    .await;
+
+    let mut handles = match handles {
+        Ok(v) => v,
+        Err(e) => return Err(anyhow!("error parsing uri: {}", e)),
+    };
+
+    if !settings.display_json {
+        println!(
+            "Benchmarking {} connections @ {} for maximum {} workload={} {}",
+            string(settings.connections).cyan(),
+            settings.host,
+            humanize(settings.duration),
+            settings.workload,
+            if !settings.input.is_empty() {
+                format!("with input file {}", settings.input)
+            } else {
+                "".into()
+            },
+        );
+    }
+
+    let mut combiner = WorkerResult::default();
+    while let Some(result) = handles.next().await {
+        match result.unwrap() {
+            Ok(stats) => combiner = combiner.combine(stats),
+            Err(e) => return Err(anyhow!("connection error: {}", e)),
+        }
+    }
+
+    if settings.display_json {
+        combiner.display_json();
+        return Ok(());
+    }
+
+    // prevent div-by-zero panics
+    if combiner.total_requests() == 0 {
+        println!("No requests completed successfully");
+        return Ok(());
+    }
+
+    combiner.display_latencies();
+    combiner.display_requests();
+    // TODO: combiner.display_transfer();
+
+    if settings.display_percentile {
+        combiner.display_percentile_table();
+    }
+
+    // Display errors last.
+    combiner.display_errors();
+
+    Ok(())
+}
+
+async fn run_for_bss(settings: BenchmarkSettings) -> Result<()> {
+    // let predict_size = settings.duration.as_secs() * 10_000;
+
+    let handles = rpc::start_tasks_for_bss(
+        settings.duration,
+        settings.connections,
+        settings.host.trim().to_string(),
+        settings.io_depth,
         settings.workload.clone(),
     )
     .await;

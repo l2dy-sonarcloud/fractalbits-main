@@ -73,6 +73,8 @@ fn main() {
 
     let workload = args.value_of("workload").unwrap_or("write").into();
 
+    let rpc = args.value_of("rpc").unwrap_or("nss").into();
+
     let settings = bench::BenchmarkSettings {
         threads,
         connections: conns,
@@ -84,6 +86,7 @@ fn main() {
         io_depth,
         input,
         workload,
+        rpc,
     };
 
     bench::start_benchmark(settings);
@@ -216,6 +219,14 @@ fn parse_args() -> ArgMatches<'static> {
                 .short("w")
                 .long("workload")
                 .help("Workload (read/write/mixed)")
+                .takes_value(true)
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("rpc")
+                .short("p")
+                .long("rpc")
+                .help("rpc (nss/bss)")
                 .takes_value(true)
                 .required(false),
         )
