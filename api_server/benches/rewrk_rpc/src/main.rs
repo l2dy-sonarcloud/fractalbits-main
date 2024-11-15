@@ -69,11 +69,18 @@ fn main() {
         .parse::<usize>()
         .unwrap_or(1);
 
-    let input = args.value_of("input").unwrap_or("test.data").into();
+    let rpc = args.value_of("rpc").unwrap_or("nss").into();
+
+    let input = args
+        .value_of("input")
+        .unwrap_or(if rpc == "nss" {
+            "test.data"
+        } else {
+            "uuids.data"
+        })
+        .into();
 
     let workload = args.value_of("workload").unwrap_or("write").into();
-
-    let rpc = args.value_of("rpc").unwrap_or("nss").into();
 
     let settings = bench::BenchmarkSettings {
         threads,

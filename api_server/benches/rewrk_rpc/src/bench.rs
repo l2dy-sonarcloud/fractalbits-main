@@ -162,6 +162,7 @@ async fn run_for_bss(settings: BenchmarkSettings) -> Result<()> {
         settings.connections,
         settings.host.trim().to_string(),
         settings.io_depth,
+        settings.input.clone(),
         settings.workload.clone(),
     )
     .await;

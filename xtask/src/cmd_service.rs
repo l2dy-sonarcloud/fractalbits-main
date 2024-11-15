@@ -112,6 +112,7 @@ pub fn start_api_service() -> CmdResult {
 
 fn check_pids(pids: &str) -> CmdResult {
     if pids.split_whitespace().count() > 1 {
+        error!("multiple processes were found: {pids}, stopping services ...");
         stop_services()?;
         cmd_die!("multiple processes were found: {pids}");
     }

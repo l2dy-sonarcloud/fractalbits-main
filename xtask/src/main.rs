@@ -58,7 +58,10 @@ fn main() -> CmdResult {
         } => match server.as_str() {
             "api_server" | "nss_rpc" | "bss_rpc" => {
                 cmd_bench::prepare_bench()?;
-                cmd_bench::run_cmd_bench(workload, with_flame_graph, &server)?;
+                cmd_bench::run_cmd_bench(workload, with_flame_graph, &server).map_err(|e| {
+                    cmd_service::run_cmd_service("stop").unwrap();
+                    e
+                })?;
             }
             _ => print_help_and_exit(),
         },
