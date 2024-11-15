@@ -2,15 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use fake::{Fake, StringFaker};
 use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use tokio::task::JoinHandle;
@@ -23,11 +19,6 @@ mod usage;
 mod user_input;
 
 pub type Handle = JoinHandle<anyhow::Result<WorkerResult>>;
-
-enum GenKeys {
-    Seed(u64),
-    FromInputFile(VecDeque<String>),
-}
 
 fn read_keys(filename: &str, num_tasks: usize) -> Vec<VecDeque<String>> {
     let file = File::open(filename).unwrap();
@@ -54,27 +45,10 @@ pub async fn start_tasks_for_nss(
 
     let handles = FuturesUnordered::new();
 
-    // Generate fake keys
-    let mut gen_keys = if !input.is_empty() {
-        println!("Fetching keys from {input} for {connections} connections, io_depth={io_depth}");
-        read_keys(&input, connections)
-            .into_iter()
-            .map(GenKeys::FromInputFile)
-            .collect::<Vec<_>>()
-    } else {
-        let seed_ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        println!(
-            "Generating keys for {connections} connections, io_depth={io_depth}, with seeds: [{}, {}]",
-            seed_ts,
-            seed_ts + connections as u64 - 1
-        );
-        (seed_ts..seed_ts + connections as u64)
-            .map(GenKeys::Seed)
-            .collect::<Vec<_>>()
-    };
+    println!("Fetching keys from {input} for {connections} connections, io_depth={io_depth}");
+    let mut gen_keys = read_keys(&input, connections)
+        .into_iter()
+        .collect::<Vec<_>>();
 
     for _i in 0..connections {
         let keys = gen_keys.pop().unwrap();
@@ -124,20 +98,12 @@ pub async fn start_tasks_for_bss(
 async fn benchmark_nss_read(
     deadline: Instant,
     rpc_client: RpcClientNss,
-    mut keys: GenKeys,
+    mut keys: VecDeque<String>,
     io_depth: usize,
 ) -> anyhow::Result<WorkerResult> {
     let benchmark_start = Instant::now();
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
-
-    let mut rng = None;
-    if let GenKeys::Seed(seed) = keys {
-        rng = Some(StdRng::seed_from_u64(seed));
-    }
-    // From https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-    const ASCII: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!-_.*'()";
-    let faker = StringFaker::with(Vec::from(ASCII), 4..30);
 
     // Benchmark loop.
     // Futures must not be awaited without timeout.
@@ -149,17 +115,9 @@ async fn benchmark_nss_read(
         let mut futures = Vec::new();
         for _ in 0..io_depth {
             // Create request from **parsed** data.
-            let mut key: String = match &mut keys {
-                GenKeys::Seed(_) => {
-                    format!(
-                        "/{}",
-                        faker.fake_with_rng::<String, _>(rng.as_mut().unwrap())
-                    )
-                }
-                GenKeys::FromInputFile(keys) => match keys.pop_front() {
-                    Some(key) => key,
-                    None => break,
-                },
+            let mut key: String = match keys.pop_front() {
+                Some(key) => key,
+                None => break,
             };
             key.push('\0');
 
@@ -265,20 +223,12 @@ async fn benchmark_bss_write(
 async fn benchmark_nss_write(
     deadline: Instant,
     rpc_client: RpcClientNss,
-    mut keys: GenKeys,
+    mut keys: VecDeque<String>,
     io_depth: usize,
 ) -> anyhow::Result<WorkerResult> {
     let benchmark_start = Instant::now();
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
-
-    let mut rng = None;
-    if let GenKeys::Seed(seed) = keys {
-        rng = Some(StdRng::seed_from_u64(seed));
-    }
-    // From https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-    const ASCII: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!-_.*'()";
-    let faker = StringFaker::with(Vec::from(ASCII), 4..30);
 
     // Benchmark loop.
     // Futures must not be awaited without timeout.
@@ -289,17 +239,9 @@ async fn benchmark_nss_write(
 
         let mut futures = Vec::new();
         for _ in 0..io_depth {
-            let mut key: String = match &mut keys {
-                GenKeys::Seed(_) => {
-                    format!(
-                        "/{}",
-                        faker.fake_with_rng::<String, _>(rng.as_mut().unwrap())
-                    )
-                }
-                GenKeys::FromInputFile(keys) => match keys.pop_front() {
-                    Some(key) => key,
-                    None => break,
-                },
+            let mut key: String = match keys.pop_front() {
+                Some(key) => key,
+                None => break,
             };
             key.push('\0');
 

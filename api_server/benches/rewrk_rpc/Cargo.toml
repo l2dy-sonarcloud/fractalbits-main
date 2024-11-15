@@ -13,8 +13,6 @@ rpc_client_nss = { path = "../../rpc_client/nss" }
 rpc_client_bss = { path = "../../rpc_client/bss" }
 regex = "1.10.6"
 tokio = { version = "1.40.0", features = ["full"] }
-fake = "2.9.2"
-rand = "0.8"
 serde_json = "1"
 pin-project-lite = "0.2"
 futures = "0.3"
