@@ -1,5 +1,6 @@
 mod delete;
 mod get;
+mod head;
 mod list;
 mod put;
 mod session;
@@ -33,6 +34,7 @@ pub async fn any_handler(
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     match request.method() {
+        &Method::HEAD => head_handler(request, key, rpc_client_nss).await,
         &Method::GET => {
             get_handler(
                 request,
@@ -56,6 +58,20 @@ pub async fn any_handler(
             .await
         }
         method => (StatusCode::BAD_REQUEST, format!("TODO: method {method}")).into_response(),
+    }
+}
+
+async fn head_handler(request: Request, key: String, rpc_client_nss: &RpcClientNss) -> Response {
+    if key == "/" {
+        (
+            StatusCode::BAD_REQUEST,
+            "Legacy listObjects api not supported!",
+        )
+            .into_response()
+    } else {
+        head::head_object(request, key, rpc_client_nss)
+            .await
+            .into_response()
     }
 }
 
