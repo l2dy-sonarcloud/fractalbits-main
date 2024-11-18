@@ -2,6 +2,7 @@ mod delete;
 mod get;
 mod head;
 mod list;
+mod mpu;
 mod put;
 mod session;
 
@@ -57,8 +58,20 @@ pub async fn any_handler(
             )
             .await
         }
-        &Method::DELETE => delete_handler(request, key, rpc_client_nss, rpc_client_bss).await,
-        &Method::POST => post_handler(request, api_cmd, key, rpc_client_nss, rpc_client_bss).await,
+        &Method::POST => {
+            post_handler(
+                request,
+                api_cmd,
+                api_sig,
+                key,
+                rpc_client_nss,
+                rpc_client_bss,
+            )
+            .await
+        }
+        &Method::DELETE => {
+            delete_handler(request, api_sig, key, rpc_client_nss, rpc_client_bss).await
+        }
         method => (StatusCode::BAD_REQUEST, format!("TODO: method {method}")).into_response(),
     }
 }
@@ -108,46 +121,78 @@ async fn get_handler(
 async fn put_handler(
     request: Request,
     api_cmd: Option<ApiCommand>,
-    _api_sig: ApiSignature,
+    api_sig: ApiSignature,
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    match api_cmd {
-        Some(api_cmd) => (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response(),
-        None => put::put_object(request, key, rpc_client_nss, rpc_client_bss)
-            .await
-            .into_response(),
-    }
-}
-
-async fn delete_handler(
-    request: Request,
-    key: String,
-    rpc_client_nss: &RpcClientNss,
-    rpc_client_bss: &RpcClientBss,
-) -> Response {
-    match key.as_str() {
-        "/" => StatusCode::BAD_REQUEST.into_response(),
-        _key => delete::delete_object(request, key, rpc_client_nss, rpc_client_bss)
-            .await
-            .into_response(),
+    match (api_cmd, api_sig.part_number, api_sig.upload_id) {
+        (Some(api_cmd), _, _) => {
+            (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response()
+        }
+        (None, Some(part_number), Some(upload_id)) if key != "/" => mpu::upload_part(
+            request,
+            key,
+            part_number,
+            upload_id,
+            rpc_client_nss,
+            rpc_client_bss,
+        )
+        .await
+        .into_response(),
+        (None, None, None) if key != "/" => {
+            put::put_object(request, key, rpc_client_nss, rpc_client_bss)
+                .await
+                .into_response()
+        }
+        _ => StatusCode::BAD_REQUEST.into_response(),
     }
 }
 
 async fn post_handler(
     request: Request,
     api_cmd: Option<ApiCommand>,
+    api_sig: ApiSignature,
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    match (api_cmd, key.as_str()) {
-        (Some(ApiCommand::Delete), "/") => {
+    match (api_cmd, api_sig.upload_id) {
+        (Some(ApiCommand::Delete), None) if key == "/" => {
             delete::delete_objects(request, rpc_client_nss, rpc_client_bss)
                 .await
                 .into_response()
         }
+        (Some(ApiCommand::Uploads), None) if key != "/" => {
+            mpu::create_multipart_upload(request, key, rpc_client_nss, rpc_client_bss)
+                .await
+                .into_response()
+        }
+        (None, Some(upload_id)) if key != "/" => {
+            mpu::complete_multipart_upload(request, key, upload_id, rpc_client_nss, rpc_client_bss)
+                .await
+                .into_response()
+        }
         (_, _) => StatusCode::BAD_REQUEST.into_response(),
+    }
+}
+
+async fn delete_handler(
+    request: Request,
+    api_sig: ApiSignature,
+    key: String,
+    rpc_client_nss: &RpcClientNss,
+    rpc_client_bss: &RpcClientBss,
+) -> Response {
+    match api_sig.upload_id {
+        Some(upload_id) if key != "/" => {
+            mpu::abort_multipart_upload(request, key, upload_id, rpc_client_nss, rpc_client_bss)
+                .await
+                .into_response()
+        }
+        None if key != "/" => delete::delete_object(request, key, rpc_client_nss, rpc_client_bss)
+            .await
+            .into_response(),
+        _ => StatusCode::BAD_REQUEST.into_response(),
     }
 }
