@@ -25,9 +25,9 @@ pub async fn any_handler(
     State(app): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     BucketName(bucket_name): BucketName,
-    ApiCommandFromQuery(api_command): ApiCommandFromQuery,
+    ApiCommandFromQuery(api_cmd): ApiCommandFromQuery,
     Key(key): Key,
-    api_signature: ApiSignature,
+    api_sig: ApiSignature,
     request: Request,
 ) -> Response {
     tracing::debug!(%bucket_name);
@@ -38,8 +38,8 @@ pub async fn any_handler(
         &Method::GET => {
             get_handler(
                 request,
-                api_command,
-                api_signature,
+                api_cmd,
+                api_sig,
                 key,
                 rpc_client_nss,
                 rpc_client_bss,
@@ -49,8 +49,8 @@ pub async fn any_handler(
         &Method::PUT => {
             put_handler(
                 request,
-                api_command,
-                api_signature,
+                api_cmd,
+                api_sig,
                 key,
                 rpc_client_nss,
                 rpc_client_bss,
@@ -58,78 +58,58 @@ pub async fn any_handler(
             .await
         }
         &Method::DELETE => delete_handler(request, key, rpc_client_nss, rpc_client_bss).await,
-        &Method::POST => {
-            post_handler(request, api_command, key, rpc_client_nss, rpc_client_bss).await
-        }
+        &Method::POST => post_handler(request, api_cmd, key, rpc_client_nss, rpc_client_bss).await,
         method => (StatusCode::BAD_REQUEST, format!("TODO: method {method}")).into_response(),
     }
 }
 
 async fn head_handler(request: Request, key: String, rpc_client_nss: &RpcClientNss) -> Response {
-    if key == "/" {
-        (
-            StatusCode::BAD_REQUEST,
-            "Legacy listObjects api not supported!",
-        )
-            .into_response()
-    } else {
-        head::head_object(request, key, rpc_client_nss)
+    match key.as_str() {
+        "/" => StatusCode::BAD_REQUEST.into_response(),
+        _key => head::head_object(request, key, rpc_client_nss)
             .await
-            .into_response()
+            .into_response(),
     }
 }
 
 async fn get_handler(
     request: Request,
-    api_command: Option<ApiCommand>,
-    api_signature: ApiSignature,
+    api_cmd: Option<ApiCommand>,
+    api_sig: ApiSignature,
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    match api_command {
-        Some(ApiCommand::Session) => session::create_session(request).await,
-        Some(api_command) => {
-            (StatusCode::BAD_REQUEST, format!("TODO: {api_command}")).into_response()
+    match (api_cmd, key.as_str()) {
+        (Some(ApiCommand::Session), _) => session::create_session(request).await,
+        (Some(api_cmd), _) => (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response(),
+        (None, "/") if api_sig.list_type.is_some() => {
+            list::list_objects_v2(request, rpc_client_nss)
+                .await
+                .into_response()
         }
-        None => {
-            if key == "/" {
-                match api_signature.list_type {
-                    Some(_) => list::list_objects_v2(request, rpc_client_nss)
-                        .await
-                        .into_response(),
-                    None => (
-                        StatusCode::BAD_REQUEST,
-                        "Legacy listObjects api not supported!",
-                    )
-                        .into_response(),
-                }
-            } else {
-                match api_signature.upload_id {
-                    Some(_) => list::list_parts(request, key, rpc_client_nss)
-                        .await
-                        .into_response(),
-                    None => get::get_object(request, key, rpc_client_nss, rpc_client_bss)
-                        .await
-                        .into_response(),
-                }
-            }
+        (None, "/") => (StatusCode::BAD_REQUEST, "Legacy listObjects api").into_response(),
+        (None, _key) if api_sig.upload_id.is_some() => {
+            list::list_parts(request, key, rpc_client_nss)
+                .await
+                .into_response()
         }
+        (None, _key) => get::get_object(request, key, rpc_client_nss, rpc_client_bss)
+            .await
+            .into_response(),
     }
 }
 
 async fn put_handler(
     request: Request,
-    api_command: Option<ApiCommand>,
-    _api_signature: ApiSignature,
+    api_cmd: Option<ApiCommand>,
+    _api_sig: ApiSignature,
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    match api_command {
-        Some(api_command) => {
-            (StatusCode::BAD_REQUEST, format!("TODO: {api_command}")).into_response()
-        }
+    match api_cmd {
+        Some(api_cmd) => (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response(),
         None => put::put_object(request, key, rpc_client_nss, rpc_client_bss)
             .await
             .into_response(),
@@ -142,23 +122,22 @@ async fn delete_handler(
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    if key == "/" {
-        StatusCode::BAD_REQUEST.into_response()
-    } else {
-        delete::delete_object(request, key, rpc_client_nss, rpc_client_bss)
+    match key.as_str() {
+        "/" => StatusCode::BAD_REQUEST.into_response(),
+        _key => delete::delete_object(request, key, rpc_client_nss, rpc_client_bss)
             .await
-            .into_response()
+            .into_response(),
     }
 }
 
 async fn post_handler(
     request: Request,
-    api_command: Option<ApiCommand>,
+    api_cmd: Option<ApiCommand>,
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Response {
-    match (api_command, key.as_str()) {
+    match (api_cmd, key.as_str()) {
         (Some(ApiCommand::Delete), "/") => {
             delete::delete_objects(request, rpc_client_nss, rpc_client_bss)
                 .await
