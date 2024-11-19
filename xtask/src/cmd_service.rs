@@ -18,11 +18,11 @@ pub fn stop_services() -> CmdResult {
     run_cmd!(sync)?;
 
     for service in ["bss_server", "nss_server", "api_server"] {
-        for _ in 0..5 {
+        for _ in 0..3 {
             if run_fun!(pidof $service).is_ok() {
                 run_cmd! {
                     ignore killall $service &>/dev/null;
-                    sleep 3;
+                    sleep 5;
                 }?;
             }
         }
