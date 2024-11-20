@@ -64,7 +64,7 @@ impl MessageHeader {
     pub fn decode(src: &Bytes) -> Self {
         let header_bytes = &src.chunk()[0..Self::encode_len()];
         // TODO: verify header checksum
-        bytemuck::pod_read_unaligned::<Self>(header_bytes).to_owned()
+        bytemuck::pod_read_unaligned::<Self>(header_bytes)
     }
 
     pub fn get_size(src: &mut BytesMut) -> usize {

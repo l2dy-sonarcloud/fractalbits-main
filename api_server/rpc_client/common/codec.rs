@@ -1,5 +1,5 @@
 use crate::message::MessageHeader;
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use tokio_util::codec::Decoder;
 
 pub struct MessageFrame {
@@ -46,9 +46,8 @@ impl Decoder for MesssageCodec {
             return Ok(None);
         }
 
-        let header = MessageHeader::decode(&src.copy_to_bytes(header_size));
-        let body = Bytes::copy_from_slice(&src.chunk()[0..header.size as usize - header_size]);
-        src.advance(size - header_size);
+        let header = MessageHeader::decode(&src.split_to(header_size).freeze());
+        let body = src.split_to(size - header_size).freeze();
         Ok(Some(MessageFrame { header, body }))
     }
 }
