@@ -19,31 +19,30 @@ pub fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> 
         "read" => "get",
         _ => unimplemented!(),
     };
+    // format for write test
+    build_bss_nss_server()?;
+    if workload.as_str() == "write" {
+        run_cmd! {
+            info "Formatting ...";
+            ./zig-out/bin/mkfs;
+        }?;
+    }
+
     let uri;
     let bench_exe;
     let mut bench_opts = Vec::new();
     let keys_limit = 10_000_000.to_string();
     match server {
         "api_server" => {
-            build_bss_nss_server()?;
             build_api_server()?;
             build_rewrk()?;
-
             run_cmd_service("restart")?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
             bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-m", http_method]);
         }
         "nss_rpc" => {
-            build_bss_nss_server()?;
             build_rewrk_rpc()?;
-            // format for write test
-            if workload.as_str() == "write" {
-                run_cmd! {
-                    info "Formatting ...";
-                    ./zig-out/bin/mkfs;
-                }?;
-            }
             start_nss_service()?;
             uri = "127.0.0.1:9224";
             bench_exe = "./target/release/rewrk_rpc";
@@ -59,9 +58,7 @@ pub fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> 
             ]);
         }
         "bss_rpc" => {
-            build_bss_nss_server()?;
             build_rewrk_rpc()?;
-
             start_bss_service()?;
             uri = "127.0.0.1:9225";
             bench_exe = "./target/release/rewrk_rpc";

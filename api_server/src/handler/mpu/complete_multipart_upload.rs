@@ -7,12 +7,14 @@ use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Serialize;
 
+#[allow(dead_code)]
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct CompleteMultipartUpload {
     part: Vec<Part>,
 }
 
+#[allow(dead_code)]
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct Part {

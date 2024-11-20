@@ -22,6 +22,7 @@ struct ResponseHeaders {
     x_amz_request_charged: String,
 }
 
+#[allow(dead_code)]
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct InitiateMultipartUploadResult {

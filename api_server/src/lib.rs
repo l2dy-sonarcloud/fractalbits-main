@@ -1,5 +1,6 @@
 mod extract;
 pub mod handler;
+mod object_layout;
 mod response_xml;
 
 use rpc_client_bss::RpcClientBss;

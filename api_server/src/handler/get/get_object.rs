@@ -5,10 +5,12 @@ use axum::{
     RequestExt,
 };
 use bytes::Bytes;
+use rkyv::{self, rancor::Error, util::AlignedVec};
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::{rpc::get_inode_response, RpcClientNss};
 use serde::Deserialize;
-use uuid::Uuid;
+
+use crate::object_layout::ObjectLayout;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -38,8 +40,8 @@ pub async fn get_object(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
-    let blob_id = match resp.result.unwrap() {
-        get_inode_response::Result::Ok(res) => Uuid::try_from(res).unwrap(),
+    let object_bytes = match resp.result.unwrap() {
+        get_inode_response::Result::Ok(res) => res,
         get_inode_response::Result::Err(e) => {
             return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
                 .into_response()
@@ -47,9 +49,14 @@ pub async fn get_object(
         }
     };
 
+    let mut object_bytes_aligned = AlignedVec::<{ ObjectLayout::ALIGNMENT }>::new();
+    object_bytes_aligned.extend_from_slice(&object_bytes);
+    let object =
+        rkyv::access::<rkyv::Archived<ObjectLayout>, Error>(&object_bytes_aligned).unwrap();
+
     let mut content = Bytes::new();
     let _size = rpc_client_bss
-        .get_blob(blob_id, &mut content)
+        .get_blob(object.blob_id, &mut content)
         .await
         .unwrap();
     Ok(content)
