@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Result},
 };
 use http_body_util::BodyExt;
-use rkyv::{self, rancor::Error};
+use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use rpc_client_bss::{message::MessageHeader, RpcClientBss};
 use rpc_client_nss::RpcClientNss;
 use uuid::Uuid;
@@ -39,11 +39,9 @@ pub async fn put_object(
         timestamp,
         size: size as u64,
     };
+    let object_layout_bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new()).unwrap();
     let _resp = rpc_client_nss
-        .put_inode(
-            key,
-            rkyv::to_bytes::<Error>(&object_layout).unwrap().to_vec(),
-        )
+        .put_inode(key, object_layout_bytes)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok(())
