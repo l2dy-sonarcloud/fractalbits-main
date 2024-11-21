@@ -73,6 +73,13 @@ fn main() {
         },
     };
 
+    let keys_limit: usize = args
+        .value_of("keys_limit")
+        .unwrap_or("1600000")
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(1_600_000);
+
     let pct: bool = args.is_present("pct");
 
     let rounds: usize = args
@@ -115,6 +122,7 @@ fn main() {
         host: host.to_string(),
         bench_type,
         duration,
+        keys_limit,
         display_percentile: pct,
         display_json: json,
         rounds,
@@ -225,6 +233,14 @@ fn parse_args() -> ArgMatches<'static> {
                 .help("Set the duration of the benchmark.")
                 .takes_value(true)
                 .required(true),
+        )
+        .arg(
+            Arg::with_name("keys_limit")
+                .short("k")
+                .long("keys_limit")
+                .help("Number of keys limit.")
+                .takes_value(true)
+                .required(false),
         )
         .arg(
             Arg::with_name("pct")

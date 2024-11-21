@@ -30,6 +30,9 @@ pub struct BenchmarkSettings {
     /// The duration of the benchmark.
     pub duration: Duration,
 
+    /// The limit number of input keys
+    pub keys_limit: usize,
+
     /// Display the percentile table.
     pub display_percentile: bool,
 
@@ -87,6 +90,7 @@ async fn run(settings: BenchmarkSettings) -> Result<()> {
 
     let handles = http::start_tasks(
         settings.duration,
+        settings.keys_limit,
         settings.connections,
         settings.host.trim().to_string(),
         settings.bench_type,

@@ -51,14 +51,20 @@ impl BenchType {
     }
 }
 
-fn read_keys(filename: &str, num_tasks: usize) -> Vec<VecDeque<String>> {
+fn read_keys(filename: &str, num_tasks: usize, keys_limit: usize) -> Vec<VecDeque<String>> {
     let file = File::open(filename).unwrap();
     let mut res = vec![VecDeque::new(); num_tasks];
     let mut i = 0;
-    #[allow(clippy::lines_filter_map_ok)]
-    for line in BufReader::new(file).lines().flatten() {
-        res[i].push_back(line);
-        i = (i + 1) % num_tasks;
+    let mut total = 0;
+    for line in BufReader::new(file).lines() {
+        if let Ok(line) = line {
+            res[i].push_back(line);
+            i = (i + 1) % num_tasks;
+            total += 1;
+        }
+        if total >= keys_limit {
+            break;
+        }
     }
     res
 }
@@ -66,6 +72,7 @@ fn read_keys(filename: &str, num_tasks: usize) -> Vec<VecDeque<String>> {
 #[allow(clippy::too_many_arguments)]
 pub async fn start_tasks(
     time_for: Duration,
+    keys_limit: usize,
     connections: usize,
     uri_string: String,
     bench_type: BenchType,
@@ -82,7 +89,7 @@ pub async fn start_tasks(
 
     // Generate fake keys
     println!("Fetching keys from test.data for {connections} connections, io_depth=1, http_method={method}");
-    let mut gen_keys = read_keys("test.data", connections)
+    let mut gen_keys = read_keys("test.data", connections, keys_limit)
         .into_iter()
         .collect::<Vec<_>>();
 

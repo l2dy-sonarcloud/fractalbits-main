@@ -31,7 +31,7 @@ pub fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> 
     let uri;
     let bench_exe;
     let mut bench_opts = Vec::new();
-    let keys_limit = 10_000_000.to_string();
+    let mut keys_limit = 10_000_000.to_string();
     match server {
         "api_server" => {
             build_api_server()?;
@@ -39,7 +39,17 @@ pub fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> 
             run_cmd_service("restart")?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
-            bench_opts.extend_from_slice(&["-t", "24", "-c", "500", "-m", http_method]);
+            keys_limit = 1_600_000.to_string(); // api server is slower
+            bench_opts.extend_from_slice(&[
+                "-t",
+                "24",
+                "-c",
+                "500",
+                "-m",
+                http_method,
+                "-k",
+                &keys_limit,
+            ]);
         }
         "nss_rpc" => {
             build_rewrk_rpc()?;
