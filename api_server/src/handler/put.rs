@@ -28,7 +28,7 @@ pub async fn put_object(
         .put_blob(blob_id, content)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
-    assert_eq!(content_len + MessageHeader::encode_len(), size);
+    assert_eq!(content_len + MessageHeader::SIZE, size);
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

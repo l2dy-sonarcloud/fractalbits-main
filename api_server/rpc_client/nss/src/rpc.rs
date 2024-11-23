@@ -14,7 +14,7 @@ impl RpcClient {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.command = Command::PutInode;
-        header.size = (MessageHeader::encode_len() + body.encoded_len()) as u32;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let mut request_bytes = BytesMut::with_capacity(header.size as usize);
         header.encode(&mut request_bytes);
@@ -36,7 +36,7 @@ impl RpcClient {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.command = Command::GetInode;
-        header.size = (MessageHeader::encode_len() + body.encoded_len()) as u32;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let mut request_bytes = BytesMut::with_capacity(header.size as usize);
         header.encode(&mut request_bytes);
@@ -67,7 +67,7 @@ impl RpcClient {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.command = Command::ListInodes;
-        header.size = (MessageHeader::encode_len() + body.encoded_len()) as u32;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let mut request_bytes = BytesMut::with_capacity(header.size as usize);
         header.encode(&mut request_bytes);
@@ -89,7 +89,7 @@ impl RpcClient {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.command = Command::DeleteInode;
-        header.size = (MessageHeader::encode_len() + body.encoded_len()) as u32;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let mut request_bytes = BytesMut::with_capacity(header.size as usize);
         header.encode(&mut request_bytes);

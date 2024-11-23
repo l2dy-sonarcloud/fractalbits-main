@@ -27,7 +27,7 @@ impl Decoder for MesssageCodec {
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let header_size = MessageHeader::encode_len();
+        let header_size = MessageHeader::SIZE;
         if src.len() < header_size {
             return Ok(None);
         }

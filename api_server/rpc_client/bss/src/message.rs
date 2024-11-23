@@ -84,9 +84,7 @@ unsafe impl Zeroable for Command {}
 
 impl MessageHeader {
     const _SIZE_OK: () = assert!(size_of::<Self>() == 256);
-    pub fn encode_len() -> usize {
-        256
-    }
+    pub const SIZE: usize = size_of::<Self>();
 
     pub fn encode(&self, dst: &mut BytesMut) {
         let bytes: &[u8] = bytemuck::bytes_of(self);
@@ -94,7 +92,7 @@ impl MessageHeader {
     }
 
     pub fn decode(src: &Bytes) -> Self {
-        let header_bytes = &src.chunk()[0..Self::encode_len()];
+        let header_bytes = &src.chunk()[0..Self::SIZE];
         // TODO: verify header checksum
         bytemuck::pod_read_unaligned::<Self>(header_bytes).to_owned()
     }

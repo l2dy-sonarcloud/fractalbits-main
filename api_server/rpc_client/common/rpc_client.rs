@@ -116,7 +116,7 @@ impl RpcClient {
                 }
                 Message::Frame(mut frame) => {
                     let mut header_bytes =
-                        BytesMut::with_capacity(MessageHeader::encode_len() + frame.body.len());
+                        BytesMut::with_capacity(MessageHeader::SIZE + frame.body.len());
                     frame.header.encode(&mut header_bytes);
                     sender.write_buf(&mut header_bytes).await.unwrap();
                     if !frame.body.is_empty() {
