@@ -25,10 +25,11 @@ pub fn build_bss_nss_server() -> CmdResult {
     }
 }
 
-pub fn build_api_server() -> CmdResult {
+pub fn build_api_server(target: &str) -> CmdResult {
+    let mode = if target == "release" { "--release" } else { "" };
     run_cmd! {
         info "Building api_server ...";
         cd api_server;
-        cargo build --release;
+        cargo build $mode;
     }
 }

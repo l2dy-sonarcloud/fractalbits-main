@@ -1,6 +1,14 @@
 use super::build::*;
 use cmd_lib::*;
 
+// Debug mode
+const RUST_LOG: &str = "debug";
+const RUST_BUILD: &str = "debug";
+
+// Release mode
+// const RUST_LOG: &str = "";
+// const RUST_BUILD: &str = "release";
+
 pub fn run_cmd_service(action: &str) -> CmdResult {
     match action {
         "stop" => stop_services(),
@@ -48,7 +56,7 @@ pub fn stop_services() -> CmdResult {
 
 pub fn start_services() -> CmdResult {
     build_bss_nss_server()?;
-    build_api_server()?;
+    build_api_server(RUST_BUILD)?;
     start_bss_service()?;
     start_nss_service()?;
     start_api_service()?;
@@ -90,7 +98,7 @@ pub fn start_api_service() -> CmdResult {
     let api_server_wait_secs = 5;
     run_cmd! {
         info "Starting api server with log $service_log ...";
-        bash -c "nohup ./target/release/api_server &> $service_log &";
+        bash -c "RUST_LOG=${RUST_LOG} nohup ./target/${RUST_BUILD}/api_server &> $service_log &";
         info "Waiting ${api_server_wait_secs}s for server up";
         sleep $api_server_wait_secs;
     }?;

@@ -34,7 +34,7 @@ pub fn run_cmd_bench(workload: String, with_flame_graph: bool, server: &str) -> 
     let mut keys_limit = 10_000_000.to_string();
     match server {
         "api_server" => {
-            build_api_server()?;
+            build_api_server("release")?;
             build_rewrk()?;
             run_cmd_service("restart")?;
             uri = "http://mybucket.localhost:3000";

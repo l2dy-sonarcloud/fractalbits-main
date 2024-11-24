@@ -39,7 +39,7 @@ pub async fn any_handler(
         // Path-style request
         None => get_bucket_and_key_from_path(key_from_path),
     };
-    tracing::debug!(%bucket_name);
+    tracing::debug!(%bucket_name, %key);
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     match request.method() {
@@ -99,6 +99,10 @@ fn get_bucket_and_key_from_path(path: String) -> (String, String) {
             key.push(c);
         }
     });
+    // Not a real key, removing hacking for nss
+    if key == "/\0" {
+        key.pop();
+    }
     (bucket, key)
 }
 
