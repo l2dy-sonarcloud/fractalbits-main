@@ -101,7 +101,7 @@ fn main() -> CmdResult {
             workload,
             with_flame_graph,
         } => {
-            cmd_bench::prepare_bench()?;
+            cmd_bench::prepare_bench(with_flame_graph)?;
             cmd_bench::run_cmd_bench(service, workload, with_flame_graph).inspect_err(|_| {
                 cmd_service::run_cmd_service(
                     BuildMode::Release,

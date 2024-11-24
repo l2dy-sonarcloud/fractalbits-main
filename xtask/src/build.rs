@@ -1,5 +1,8 @@
 use cmd_lib::*;
+use strum::{AsRefStr, EnumString};
 
+#[derive(Copy, Clone, AsRefStr, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum BuildMode {
     Debug,
     Release,

@@ -3,8 +3,8 @@ use super::cmd_service::*;
 use super::{BenchService, BenchWorkload, ServiceAction, ServiceName};
 use cmd_lib::*;
 
-pub fn prepare_bench() -> CmdResult {
-    if run_cmd!(bash -c "type addr2line" | grep -q .cargo).is_err() {
+pub fn prepare_bench(with_flame_graph: bool) -> CmdResult {
+    if with_flame_graph && run_cmd!(bash -c "type addr2line" | grep -q .cargo).is_err() {
         // From https://github.com/iced-rs/iced/issues/2394
         run_cmd! {
             info "Try to install addr2line to make perf script work with rust binary ...";
@@ -23,8 +23,9 @@ pub fn run_cmd_bench(
         BenchWorkload::Write => "put",
         BenchWorkload::Read => "get",
     };
+    let build_mode = BuildMode::Release;
     // format for write test
-    build_bss_nss_server(BuildMode::Release)?;
+    build_bss_nss_server(build_mode)?;
     if let BenchWorkload::Write = workload {
         run_cmd! {
             info "Formatting ...";
@@ -39,9 +40,9 @@ pub fn run_cmd_bench(
     let mut keys_limit = 10_000_000.to_string();
     match service {
         BenchService::ApiServer => {
-            build_api_server(BuildMode::Release)?;
+            build_api_server(build_mode)?;
             build_rewrk()?;
-            run_cmd_service(BuildMode::Release, ServiceAction::Restart, ServiceName::All)?;
+            run_cmd_service(build_mode, ServiceAction::Restart, ServiceName::All)?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
             keys_limit = 1_500_000.to_string(); // api server is slower
@@ -58,7 +59,7 @@ pub fn run_cmd_bench(
         }
         BenchService::NssRpc => {
             build_rewrk_rpc()?;
-            start_nss_service()?;
+            start_nss_service(build_mode)?;
             uri = "127.0.0.1:9224";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[
@@ -74,7 +75,7 @@ pub fn run_cmd_bench(
         }
         BenchService::BssRpc => {
             build_rewrk_rpc()?;
-            start_bss_service()?;
+            start_bss_service(build_mode)?;
             uri = "127.0.0.1:9225";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[
