@@ -53,26 +53,23 @@ impl AppState {
     }
 
     pub fn get_rpc_client_nss(&self, addr: SocketAddr) -> &RpcClientNss {
-        fn calculate_hash<T: Hash>(t: &T) -> usize {
-            let mut s = DefaultHasher::new();
-            t.hash(&mut s);
-            s.finish() as usize
-        }
-        let hash = calculate_hash(&addr) % Self::MAX_NSS_CONNECTION;
+        let hash = Self::calculate_hash(&addr) % Self::MAX_NSS_CONNECTION;
         &self.rpc_clients_nss[hash]
     }
 
     pub fn get_rpc_client_bss(&self, addr: SocketAddr) -> &RpcClientBss {
-        fn calculate_hash<T: Hash>(t: &T) -> usize {
-            let mut s = DefaultHasher::new();
-            t.hash(&mut s);
-            s.finish() as usize
-        }
-        let hash = calculate_hash(&addr) % Self::MAX_BSS_CONNECTION;
+        let hash = Self::calculate_hash(&addr) % Self::MAX_BSS_CONNECTION;
         &self.rpc_clients_bss[hash]
     }
 
-    pub async fn blob_deletion_task(
+    #[inline]
+    fn calculate_hash<T: Hash>(t: &T) -> usize {
+        let mut s = DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish() as usize
+    }
+
+    async fn blob_deletion_task(
         bss_ip: &str,
         mut input: Receiver<BlobId>,
     ) -> Result<(), RpcErrorBss> {
