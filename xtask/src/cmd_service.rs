@@ -33,11 +33,13 @@ pub fn stop_services(service: ServiceName) -> CmdResult {
     };
 
     for service in services {
-        run_cmd! {
-            sudo systemctl stop $service.service;
-        }?;
+        if run_cmd!(systemctl is-active --quiet $service.service).is_err() {
+            continue;
+        }
 
-        // make sure the process is really being killed
+        run_cmd!(sudo systemctl stop $service.service)?;
+
+        // make sure the process is really killed
         if run_cmd!(systemctl is-active --quiet $service.service).is_ok() {
             cmd_die!("Failed to stop $service: service is still running");
         }

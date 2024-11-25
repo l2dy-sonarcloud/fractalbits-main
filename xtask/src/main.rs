@@ -101,15 +101,17 @@ fn main() -> CmdResult {
             workload,
             with_flame_graph,
         } => {
+            let mut service_name = ServiceName::All;
             cmd_bench::prepare_bench(with_flame_graph)?;
-            cmd_bench::run_cmd_bench(service, workload, with_flame_graph).inspect_err(|_| {
-                cmd_service::run_cmd_service(
-                    BuildMode::Release,
-                    ServiceAction::Stop,
-                    ServiceName::All,
-                )
-                .unwrap();
-            })?;
+            cmd_bench::run_cmd_bench(service, workload, with_flame_graph, &mut service_name)
+                .inspect_err(|_| {
+                    cmd_service::run_cmd_service(
+                        BuildMode::Release,
+                        ServiceAction::Stop,
+                        service_name,
+                    )
+                    .unwrap();
+                })?;
         }
         Cmd::Service { action, service } => {
             // In case they have never been built before
