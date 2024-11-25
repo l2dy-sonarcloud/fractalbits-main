@@ -27,15 +27,17 @@ pub fn run_cmd_bench(
     let uri;
     let bench_exe;
     let workload = workload.as_ref();
+    let service_name;
     let mut bench_opts = Vec::new();
     let mut keys_limit = 10_000_000.to_string();
 
     build_bss_nss_server(build_mode)?;
     match service {
         BenchService::ApiServer => {
+            service_name = ServiceName::All;
             build_api_server(build_mode)?;
             build_rewrk()?;
-            run_cmd_service(build_mode, ServiceAction::Restart, ServiceName::All)?;
+            run_cmd_service(build_mode, ServiceAction::Restart, service_name)?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
             keys_limit = 1_500_000.to_string(); // api server is slower
@@ -51,6 +53,7 @@ pub fn run_cmd_bench(
             ]);
         }
         BenchService::NssRpc => {
+            service_name = ServiceName::Nss;
             build_rewrk_rpc()?;
             start_nss_service(build_mode)?;
             uri = "127.0.0.1:9224";
@@ -67,6 +70,7 @@ pub fn run_cmd_bench(
             ]);
         }
         BenchService::BssRpc => {
+            service_name = ServiceName::Bss;
             build_rewrk_rpc()?;
             start_bss_service(build_mode)?;
             uri = "127.0.0.1:9225";
@@ -117,7 +121,7 @@ pub fn run_cmd_bench(
     }
 
     // stop service after benchmark to save cpu power
-    run_cmd_service(BuildMode::Release, ServiceAction::Stop, ServiceName::All)?;
+    run_cmd_service(BuildMode::Release, ServiceAction::Stop, service_name)?;
 
     Ok(())
 }

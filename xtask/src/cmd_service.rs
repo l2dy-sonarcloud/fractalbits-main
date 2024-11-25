@@ -148,8 +148,8 @@ WantedBy=multi-user.target
     run_cmd! {
         mkdir -p etc;
         echo $systemd_unit_content > etc/$service_name.service;
-        sudo systemctl link ./etc/$service_name.service --force;
-        info "";
+        info "Linking ./etc/$service_name.service into /etc/systemd/system";
+        sudo systemctl link ./etc/$service_name.service --force --quiet;
     }?;
     Ok(())
 }
