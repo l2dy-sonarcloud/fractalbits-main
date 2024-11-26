@@ -117,6 +117,10 @@ pub fn start_api_server(build_mode: BuildMode) -> CmdResult {
 }
 
 fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdResult {
+    #[rustfmt::skip]
+    let user = run_fun!(id -u --name)?;
+    #[rustfmt::skip]
+    let group = run_fun!(id -g --name)?;
     let pwd = run_fun!(pwd)?;
     let build = build_mode.as_ref();
     let service_name = service.as_ref();
@@ -140,6 +144,8 @@ Description={service_name} Service
 [Service]
 LimitNOFILE=65536
 WorkingDirectory={pwd}{env_settings}
+User={user}
+Group={group}
 ExecStart={exec_start}
 
 [Install]
