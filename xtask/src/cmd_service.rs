@@ -143,6 +143,7 @@ Description={service_name} Service
 
 [Service]
 LimitNOFILE=65536
+LimitCORE=infinity
 WorkingDirectory={pwd}{env_settings}
 User={user}
 Group={group}
