@@ -21,7 +21,7 @@ jobs:
     - name: Build
       run: zig build
     - name: Run tests
-      run: zig build test --summary all
+      run: mkdir -p data/{current,pending} && zig build test --summary all
     - name: Run random tests
       run: ./zig-out/bin/test_art -d 4
     - name: Run fat directory tests
