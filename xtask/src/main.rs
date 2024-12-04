@@ -97,6 +97,7 @@ fn main() -> CmdResult {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_target(false)
         .init();
+    rlimit::increase_nofile_limit(1000000).unwrap();
 
     match Cmd::from_args() {
         Cmd::Precheckin => cmd_precheckin::run_cmd_precheckin()?,

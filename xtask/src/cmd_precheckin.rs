@@ -8,6 +8,7 @@ pub fn run_cmd_precheckin() -> CmdResult {
 
     run_cmd! {
         info "Running zig unit tests ...";
+        bash -c "mkdir -p data/{current,pending}";
         zig build test --summary all 2>&1;
     }?;
 
