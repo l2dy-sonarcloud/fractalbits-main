@@ -14,6 +14,13 @@ impl ObjectLayout {
             ObjectState::Mpu(_) => todo!(),
         }
     }
+
+    pub fn size(&self) -> u64 {
+        match self.state {
+            ObjectState::Normal(ref data) => data.size,
+            ObjectState::Mpu(_) => todo!(),
+        }
+    }
 }
 
 #[derive(Archive, Deserialize, Serialize)]

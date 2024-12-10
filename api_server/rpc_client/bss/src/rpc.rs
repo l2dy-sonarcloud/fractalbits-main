@@ -4,6 +4,7 @@ use crate::{
     rpc_client::{Message, RpcClient, RpcError},
 };
 use bytes::Bytes;
+use std::ops::Range;
 use uuid::Uuid;
 
 impl RpcClient {
@@ -21,12 +22,19 @@ impl RpcClient {
         Ok(resp.header.result as usize)
     }
 
-    pub async fn get_blob(&self, blob_id: Uuid, body: &mut Bytes) -> Result<usize, RpcError> {
+    pub async fn get_blob(
+        &self,
+        blob_id: Uuid,
+        range: Range<u64>,
+        body: &mut Bytes,
+    ) -> Result<usize, RpcError> {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.blob_id = blob_id.into_bytes();
         header.command = Command::GetBlob;
         header.size = MessageHeader::SIZE as u64;
+        header.get_blob_range_start = range.start;
+        header.get_blob_range_end = range.end;
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp = self

@@ -24,7 +24,7 @@ async fn test_basic_blob_io() {
             assert_eq!(header_len + content_len, size);
 
             let size = rpc_client
-                .get_blob(blob_id, &mut readback_content)
+                .get_blob(blob_id, 0..content_len as u64, &mut readback_content)
                 .await
                 .unwrap();
             assert_eq!(header_len + content_len, size);

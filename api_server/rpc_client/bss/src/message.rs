@@ -41,20 +41,24 @@ pub struct MessageHeader {
     /// u32 size, defined as enum type
     pub command: Command,
 
-    /// The version of the protocol implementation that originated this message.
-    pub protocol: u16,
-
     /// Bucket Id
     pub bucket_id: [u8; 16],
 
     /// Blob Id
     pub blob_id: [u8; 16],
 
+    /// The version of the protocol implementation that originated this message.
+    pub protocol: u16,
+    reserved0: [u8; 2], // alignment padding
+
+    // Range parameters for GetBlob request
+    pub get_blob_range_start: u64,
+    pub get_blob_range_end: u64,
+
     /// Reserved parts for padding
     // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
     // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
     // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
-    reserved0: [u8; 18],
     reserved1: [u8; 32],
     reserved2: [u8; 32],
     reserved3: [u8; 32],
