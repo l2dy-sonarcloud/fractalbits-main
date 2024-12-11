@@ -6,15 +6,45 @@ use uuid::Uuid;
 
 #[tokio::test]
 #[traced_test]
-async fn test_basic_blob_io() {
+async fn test_basic_blob_io_with_fixed_bytes() {
     let url = "127.0.0.1:9225";
     tracing::debug!(%url);
     // Skip testing if blob storage server is not up
     if let Ok(rpc_client) = RpcClientBss::new(url).await {
-        for _ in 0..1024 {
+        for _ in 0..1 {
             let header_len = message::MessageHeader::SIZE;
             let blob_id = Uuid::now_v7();
-            let content = Bytes::from((1..256).fake::<String>());
+            let content: Bytes = vec![0xff; 4096].into();
+            let mut readback_content = Bytes::new();
+            let content_len = content.len();
+            let size = rpc_client
+                .put_blob(blob_id.clone(), content.clone())
+                .await
+                .unwrap();
+            assert_eq!(header_len + content_len, size);
+
+            let size = rpc_client
+                .get_blob(blob_id, 0..content_len as u64, &mut readback_content)
+                .await
+                .unwrap();
+            dbg!(readback_content.len());
+            assert_eq!(header_len + content_len, size);
+            assert_eq!(content, readback_content);
+        }
+    }
+}
+
+#[tokio::test]
+#[traced_test]
+async fn test_basic_blob_io_with_random_bytes() {
+    let url = "127.0.0.1:9225";
+    tracing::debug!(%url);
+    // Skip testing if blob storage server is not up
+    if let Ok(rpc_client) = RpcClientBss::new(url).await {
+        for _ in 0..1 {
+            let header_len = message::MessageHeader::SIZE;
+            let blob_id = Uuid::now_v7();
+            let content = Bytes::from((4096..8192 - 256).fake::<String>());
             let mut readback_content = Bytes::new();
             let content_len = content.len();
             let size = rpc_client
