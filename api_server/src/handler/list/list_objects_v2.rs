@@ -96,7 +96,7 @@ pub async fn list_objects_v2(
     let prefix = opts.prefix.unwrap_or("/".into());
     let start_after = opts.start_after.unwrap_or_default();
     let resp = rpc_client_nss
-        .list_inodes(max_keys, prefix, start_after)
+        .list_inodes(max_keys, prefix, start_after, true)
         .await
         .unwrap();
 

@@ -80,7 +80,7 @@ pub async fn list_parts(
 
     let prefix = mpu::get_upload_part_key(key, 0);
     let resp = rpc_client_nss
-        .list_inodes(max_parts, prefix, "".into())
+        .list_inodes(max_parts, prefix, "".into(), false)
         .await
         .unwrap();
 

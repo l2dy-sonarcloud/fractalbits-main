@@ -57,11 +57,13 @@ impl RpcClient {
         max_keys: u32,
         prefix: String,
         start_after: String,
+        skip_mpu_parts: bool,
     ) -> Result<ListInodesResponse, RpcError> {
         let body = ListInodesRequest {
             max_keys,
             prefix,
             start_after,
+            skip_mpu_parts,
         };
 
         let mut header = MessageHeader::default();
