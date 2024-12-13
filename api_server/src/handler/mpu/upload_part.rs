@@ -44,7 +44,7 @@ pub async fn upload_part(
     rpc_client_bss: &RpcClientBss,
     blob_deletion: Sender<BlobId>,
 ) -> response::Result<()> {
-    if part_number < 1 || part_number > 10_000 {
+    if !(1..=10_000).contains(&part_number) {
         return Err((StatusCode::BAD_REQUEST, "invalid part number").into());
     }
     // TODO: check upload_id

@@ -209,7 +209,7 @@ async fn post_handler(
                 .into_response()
         }
         (None, Some(upload_id)) if key != "/" => {
-            mpu::complete_multipart_upload(request, key, upload_id, rpc_client_nss, rpc_client_bss)
+            mpu::complete_multipart_upload(request, key, upload_id, rpc_client_nss)
                 .await
                 .into_response()
         }
