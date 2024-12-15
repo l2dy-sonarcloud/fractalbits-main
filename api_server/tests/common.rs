@@ -20,17 +20,23 @@ impl Drop for Service {
     }
 }
 
-#[macro_export]
-macro_rules! assert_bytes_eq {
-    ($stream:expr, $bytes:expr) => {
-        let data = $stream
-            .collect()
-            .await
-            .expect("Error reading data")
-            .into_bytes();
+#[allow(dead_code)]
+pub struct Context {
+    pub client: Client,
+}
 
-        assert_eq!(data.as_ref(), $bytes);
-    };
+impl Context {
+    #[allow(dead_code)]
+    pub fn create_bucket(&self, bucket_name: &str) -> String {
+        bucket_name.into()
+    }
+}
+
+#[allow(dead_code)]
+pub fn context() -> Context {
+    Context {
+        client: build_client(),
+    }
 }
 
 pub fn build_client() -> Client {
@@ -42,4 +48,17 @@ pub fn build_client() -> Client {
         .build();
 
     Client::from_conf(config)
+}
+
+#[macro_export]
+macro_rules! assert_bytes_eq {
+    ($stream:expr, $bytes:expr) => {
+        let data = $stream
+            .collect()
+            .await
+            .expect("Error reading data")
+            .into_bytes();
+
+        assert_eq!(data.as_ref(), $bytes);
+    };
 }

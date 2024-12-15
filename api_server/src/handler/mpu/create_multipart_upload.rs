@@ -39,7 +39,7 @@ struct InitiateMultipartUploadResult {
 pub async fn create_multipart_upload(
     _request: Request,
     bucket: String,
-    key: String,
+    mut key: String,
     rpc_client_nss: &RpcClientNss,
 ) -> response::Result<Response> {
     let timestamp = SystemTime::now()
@@ -57,6 +57,7 @@ pub async fn create_multipart_upload(
         .put_inode(key.clone(), object_layout_bytes.into())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    key.pop();
     let init_mpu_res = InitiateMultipartUploadResult {
         bucket,
         key,
