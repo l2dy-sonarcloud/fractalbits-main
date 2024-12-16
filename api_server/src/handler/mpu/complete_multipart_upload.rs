@@ -79,9 +79,9 @@ pub async fn complete_multipart_upload(
 
     // TODO: check upload_id and also do more clean ups and checks
     let mut object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes).unwrap();
-    let mpu_key = mpu::get_upload_part_key(key.clone(), 0);
+    let mpu_prefix = mpu::get_upload_part_prefix(key.clone(), 0);
     object.state = ObjectState::Mpu(MpuState::Completed {
-        size: get_mpu_inode_size(rpc_client_nss, 10000, mpu_key).await,
+        size: get_mpu_inode_size(rpc_client_nss, 10000, mpu_prefix).await,
         etag: upload_id.clone(),
     });
     let new_object_bytes = to_bytes_in::<_, Error>(&object, Vec::new()).unwrap();

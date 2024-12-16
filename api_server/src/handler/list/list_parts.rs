@@ -1,3 +1,4 @@
+use crate::handler::time;
 use crate::{object_layout::ObjectState, response_xml::Xml};
 use axum::{
     extract::{Query, Request},
@@ -72,14 +73,15 @@ pub async fn list_parts(
     let max_parts = opts.max_parts.unwrap_or(1000);
     // TODO: check upload_id
     let upload_id = opts.upload_id;
-    let mpu_key = mpu::get_upload_part_key(key, 0);
+    let mpu_prefix = mpu::get_upload_part_prefix(key, 0);
     let mpus =
-        super::list_raw_objects(rpc_client_nss, max_parts, mpu_key, "".into(), false).await?;
+        super::list_raw_objects(rpc_client_nss, max_parts, mpu_prefix, "".into(), false).await?;
     dbg!(mpus.len());
     let mut res = ListPartsResult::default();
     res.upload_id = upload_id;
     for mpu in mpus {
         let mut part = Part::default();
+        part.last_modified = time::format_timestamp(mpu.timestamp);
         if let ObjectState::Normal(obj) = mpu.state {
             part.etag = obj.etag;
             part.size = obj.size;

@@ -5,6 +5,7 @@ mod list;
 mod mpu;
 mod put;
 mod session;
+mod time;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
