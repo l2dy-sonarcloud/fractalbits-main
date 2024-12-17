@@ -13,7 +13,7 @@ impl RpcClient {
         header.id = self.gen_request_id();
         header.blob_id = blob_id.into_bytes();
         header.command = Command::PutBlob;
-        header.size = (MessageHeader::SIZE + body.len()) as u64;
+        header.size = (MessageHeader::SIZE + body.len()) as u32;
 
         let msg_frame = MessageFrame::new(header, body);
         let resp = self
@@ -32,7 +32,7 @@ impl RpcClient {
         header.id = self.gen_request_id();
         header.blob_id = blob_id.into_bytes();
         header.command = Command::GetBlob;
-        header.size = MessageHeader::SIZE as u64;
+        header.size = MessageHeader::SIZE as u32;
         header.get_blob_range_start = range.start;
         header.get_blob_range_end = range.end;
 
@@ -50,7 +50,7 @@ impl RpcClient {
         header.id = self.gen_request_id();
         header.blob_id = blob_id.into_bytes();
         header.command = Command::DeleteBlob;
-        header.size = MessageHeader::SIZE as u64;
+        header.size = MessageHeader::SIZE as u32;
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let _resp = self

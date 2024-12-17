@@ -26,7 +26,10 @@ pub struct MessageHeader {
     cluster: u128,
 
     /// The size of the Header structure (always), plus any associated body.
-    pub size: u64,
+    pub size: u32,
+
+    /// The bss block number
+    pub block_number: u32,
 
     /// Response result
     pub result: u64,
