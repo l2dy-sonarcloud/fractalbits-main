@@ -127,6 +127,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "httpdate",
+ "pin-project-lite",
  "prost 0.13.3",
  "quick-xml",
  "rand",

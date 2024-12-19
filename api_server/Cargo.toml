@@ -27,6 +27,7 @@ hex = "0.4.3"
 chrono = "0.4.39"
 httpdate = "1.0.3"
 futures = "0.3.31"
+pin-project-lite = "0.2.15"
 
 [dev-dependencies]
 aws-sdk-s3 = "1.65.0"

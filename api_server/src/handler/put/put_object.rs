@@ -1,11 +1,9 @@
-use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::block_data_stream::BlockDataStream;
 use crate::{object_layout::*, BlobId};
 use axum::{extract::Request, http::StatusCode, response, response::IntoResponse};
-use bytes::BytesMut;
 use futures::StreamExt;
-use http_body_util::BodyExt;
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use rpc_client_bss::{message::MessageHeader, RpcClientBss};
 use rpc_client_nss::{rpc::put_inode_response, RpcClientNss};
@@ -22,40 +20,20 @@ pub async fn put_object(
     blob_deletion: Sender<BlobId>,
 ) -> response::Result<()> {
     let blob_id = Uuid::now_v7();
-    let mut body_stream = request.into_data_stream();
-    let mut data_blocks = VecDeque::new();
-    data_blocks.push_back(BytesMut::with_capacity(BLOCK_CONTENT_SIZE));
-    while let Some(data) = body_stream.next().await {
-        let mut data = data.unwrap();
-        let len = std::cmp::min(
-            BLOCK_CONTENT_SIZE - data_blocks.back().unwrap().len(),
-            data.len(),
-        );
-        data_blocks.back_mut().unwrap().extend(data.split_to(len));
-
-        if data_blocks.back().unwrap().len() == BLOCK_CONTENT_SIZE {
-            data_blocks.push_back(BytesMut::with_capacity(BLOCK_CONTENT_SIZE));
-            if !data.is_empty() {
-                data_blocks.back_mut().unwrap().extend(data);
-            }
-        }
-    }
-
+    let body_data_stream = request.into_body().into_data_stream();
+    let mut block_data_stream = BlockDataStream::new(body_data_stream, BLOCK_CONTENT_SIZE);
     let mut size: u64 = 0;
     let mut i: u32 = 0;
-    while let Some(data_block) = data_blocks.pop_front() {
-        let data_block_len = dbg!(data_block.len());
+    while let Some(block_data) = block_data_stream.next().await {
+        let block_data_len = block_data.len();
         let raw_size = rpc_client_bss
-            .put_blob(blob_id, i, data_block.freeze())
+            .put_blob(blob_id, i, block_data)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
-        assert_eq!(data_block_len + MessageHeader::SIZE, raw_size);
-        size += data_block_len as u64;
+        assert_eq!(block_data_len + MessageHeader::SIZE, raw_size);
+        size += block_data_len as u64;
         i += 1;
     }
-
-    dbg!(i);
-    dbg!(size);
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
