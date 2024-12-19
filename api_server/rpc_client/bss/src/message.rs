@@ -102,8 +102,8 @@ impl MessageHeader {
 
     pub fn get_size(src: &mut BytesMut) -> usize {
         let offset = std::mem::offset_of!(MessageHeader, size);
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&src[offset..offset + 8]);
-        u64::from_le_bytes(bytes) as usize
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(&src[offset..offset + 4]);
+        u32::from_le_bytes(bytes) as usize
     }
 }
