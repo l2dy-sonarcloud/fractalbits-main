@@ -20,7 +20,7 @@ impl BlockDataStream {
 
         Self {
             stream,
-            block_data: BytesMut::new(),
+            block_data: BytesMut::with_capacity(block_size as usize),
             block_size,
         }
     }
