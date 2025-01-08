@@ -1,3 +1,4 @@
+mod bucket;
 mod delete;
 mod get;
 mod head;
@@ -43,6 +44,11 @@ pub async fn any_handler(
         None => get_bucket_and_key_from_path(key_from_path),
     };
     tracing::debug!(%bucket_name, %key);
+
+    if key == "/" && Method::PUT == request.method() {
+        return bucket::create_bucket(request).await.into_response();
+    }
+
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     match request.method() {
