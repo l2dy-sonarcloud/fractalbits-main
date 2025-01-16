@@ -1,6 +1,7 @@
 mod build;
 mod cmd_bench;
 mod cmd_precheckin;
+mod cmd_nightly;
 mod cmd_service;
 mod cmd_tool;
 
@@ -32,6 +33,9 @@ enum Cmd {
         #[structopt(long_help = "api_server/nss_rpc/bss_rpc")]
         service: BenchService,
     },
+
+    #[structopt(about = "Run precheckin tests")]
+    Nightly,
 
     #[structopt(about = "Run precheckin tests")]
     Precheckin,
@@ -101,6 +105,7 @@ fn main() -> CmdResult {
 
     match Cmd::from_args() {
         Cmd::Precheckin => cmd_precheckin::run_cmd_precheckin()?,
+        Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,
         Cmd::Bench {
             service,
             workload,
