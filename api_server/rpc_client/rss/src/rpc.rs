@@ -2,13 +2,13 @@ use crate::{
     message::MessageHeader,
     rpc_client::{Message, RpcClient, RpcError},
 };
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use prost::Message as PbMessage;
 
 include!(concat!(env!("OUT_DIR"), "/rss_ops.rs"));
 
 impl RpcClient {
-    pub async fn put(&self, key: String, value: String) -> Result<PutResponse, RpcError> {
+    pub async fn put(&self, key: Bytes, value: Bytes) -> Result<PutResponse, RpcError> {
         let body = PutRequest { key, value };
 
         let mut header = MessageHeader::default();
@@ -29,7 +29,7 @@ impl RpcClient {
         Ok(resp)
     }
 
-    pub async fn get(&self, key: String) -> Result<GetResponse, RpcError> {
+    pub async fn get(&self, key: Bytes) -> Result<GetResponse, RpcError> {
         let body = GetRequest { key };
 
         let mut header = MessageHeader::default();
@@ -50,7 +50,7 @@ impl RpcClient {
         Ok(resp)
     }
 
-    pub async fn delete(&self, key: String) -> Result<DeleteResponse, RpcError> {
+    pub async fn delete(&self, key: Bytes) -> Result<DeleteResponse, RpcError> {
         let body = DeleteRequest { key };
 
         let mut header = MessageHeader::default();
