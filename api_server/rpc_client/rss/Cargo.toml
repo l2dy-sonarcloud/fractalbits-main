@@ -17,6 +17,9 @@ tokio-stream = "0.1.16"
 [build-dependencies]
 prost-build = "0.13"
 
+[dev-dependencies]
+tracing-test = {version = "0.2.5", features = ["no-env-filter"]}
+
 [features]
 default = ["rss"]
 bss = []
