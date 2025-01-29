@@ -27,7 +27,7 @@ struct Bucket {
     bucket_type: String,
 }
 
-pub async fn create_bucket(request: Request) -> response::Result<()> {
+pub async fn create_bucket(_bucket_name: String, request: Request) -> response::Result<()> {
     let body = request.into_body().collect().await.unwrap().to_bytes();
     let _req_body: CreateBucketConfiguration = quick_xml::de::from_reader(body.reader()).unwrap();
     Ok(())
