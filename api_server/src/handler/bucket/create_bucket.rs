@@ -34,16 +34,16 @@ struct BucketConfig {
     bucket_type: String,
 }
 
-pub async fn create_bucket(bucket_name: String, _request: Request) -> response::Result<()> {
-    dbg!("create_bucket");
-    // let body = request.into_body().collect().await.unwrap().to_bytes();
-    // let _req_body_res: CreateBucketConfiguration = quick_xml::de::from_reader(body.reader());
+pub async fn create_bucket(bucket_name: String, request: Request) -> response::Result<()> {
+    let body = request.into_body().collect().await.unwrap().to_bytes();
+    if !body.is_empty() {
+        let _req_body_res: CreateBucketConfiguration =
+            quick_xml::de::from_reader(body.reader()).unwrap();
+    }
+
     let client_rpc_rss = RpcClientRss::new("127.0.0.1:8888").await.unwrap();
     let bucket_table: Table<BucketTable> = Table::new(Arc::new(client_rpc_rss));
     let bucket = Bucket::new(bucket_name.clone());
-    dbg!(&bucket);
     bucket_table.put(&bucket).await;
-    let res = bucket_table.get(bucket_name).await;
-    dbg!(res);
     Ok(())
 }

@@ -3,7 +3,7 @@ use super::table::{Entry, TableSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-type BucketKeyPerm = bool; // TODO: real bucket pey permissions
+type BucketKeyPerm = bool; // TODO: real bucket key permissions
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiKey {
