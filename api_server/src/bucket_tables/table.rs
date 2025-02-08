@@ -27,7 +27,7 @@ impl<F: TableSchema> Table<F> {
     }
 
     pub async fn put(&self, e: &F::E) {
-        let full_key = format!("{}/{}", F::TABLE_NAME, e.key());
+        let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
         self.rpc_client
             .put(full_key.into(), serde_json::to_string(e).unwrap().into())
             .await
@@ -38,13 +38,18 @@ impl<F: TableSchema> Table<F> {
     where
         <F as TableSchema>::E: for<'a> serde::Deserialize<'a>,
     {
-        let full_key = format!("{}/{}", F::TABLE_NAME, key);
+        let full_key = Self::get_full_key(F::TABLE_NAME, &key);
         let json = self.rpc_client.get(full_key.into()).await.unwrap();
         serde_json::from_slice(&json).unwrap()
     }
 
     pub async fn delete(&self, e: &F::E) {
-        let full_key = format!("{}/{}", F::TABLE_NAME, e.key());
+        let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
         self.rpc_client.delete(full_key.into()).await.unwrap();
+    }
+
+    #[inline]
+    fn get_full_key(table_name: &str, key: &str) -> String {
+        format!("/{table_name}/{key}")
     }
 }
