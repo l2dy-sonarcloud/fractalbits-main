@@ -11,7 +11,7 @@ members = [
 ]
 resolver = "2"
 
-default-members = ["api_server"]
+# default-members = ["api_server"]
 
 [workspace.dependencies]
 rpc_client_bss = { path = "api_server/rpc_client/bss" }

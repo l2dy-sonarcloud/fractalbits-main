@@ -21,6 +21,8 @@ mod user_input;
 
 pub type Handle = JoinHandle<anyhow::Result<WorkerResult>>;
 
+const TEST_BUCKET_NAME: &'static str = "bucket_for_rpc";
+
 fn read_keys(filename: &str, num_tasks: usize, keys_limit: usize) -> Vec<VecDeque<String>> {
     let file = File::open(filename).unwrap();
     let mut res = vec![VecDeque::new(); num_tasks];
@@ -135,7 +137,7 @@ async fn benchmark_nss_read(
             };
             key.push('\0');
 
-            let future = async { rpc_client.get_inode(key).await };
+            let future = async { rpc_client.get_inode(TEST_BUCKET_NAME.into(), key).await };
             futures.push(future);
         }
         if futures.is_empty() {
@@ -332,7 +334,11 @@ async fn benchmark_nss_write(
             key.push('\0');
 
             let value = Bytes::from(key.clone());
-            let future = async { rpc_client.put_inode(key, value).await };
+            let future = async {
+                rpc_client
+                    .put_inode(TEST_BUCKET_NAME.into(), key, value)
+                    .await
+            };
             futures.push(future);
         }
         if futures.is_empty() {
