@@ -1,3 +1,4 @@
+use crate::TEST_BUCKET_ROOT_BLOB_NAME;
 use cmd_lib::*;
 
 pub fn run_cmd_precheckin() -> CmdResult {
@@ -46,7 +47,7 @@ pub fn run_cmd_precheckin() -> CmdResult {
     run_cmd! {
         info "Running async art tests with log $async_art_log ...";
         ./zig-out/bin/mkfs;
-        ./zig-out/bin/fbs --new_tree "947ef2be-44b2-4ac2-969b-2574eb85662b";
+        ./zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
         ./zig-out/bin/test_async_art -p 20 &> $async_art_log;
         ./zig-out/bin/test_async_art -p 20 &>> $async_art_log;
         ./zig-out/bin/test_async_art -p 20 &>> $async_art_log;

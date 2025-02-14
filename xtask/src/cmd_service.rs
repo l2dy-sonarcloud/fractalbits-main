@@ -1,5 +1,6 @@
-use super::build::BuildMode;
-use super::{ServiceAction, ServiceName};
+use crate::build::BuildMode;
+use crate::TEST_BUCKET_ROOT_BLOB_NAME;
+use crate::{ServiceAction, ServiceName};
 use cmd_lib::*;
 
 pub fn run_cmd_service(
@@ -90,6 +91,7 @@ pub fn start_nss_service(build_mode: BuildMode) -> CmdResult {
             mkdir -p cache;
             mkdir -p ebs;
             ./zig-out/bin/mkfs;
+            ./zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
         }?;
     }
 
