@@ -141,7 +141,7 @@ impl RpcClient {
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
         header.command = Command::CreateRootInode;
-        header.size = MessageHeader::SIZE as u32;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let mut request_bytes = BytesMut::with_capacity(header.size as usize);
         header.encode(&mut request_bytes);

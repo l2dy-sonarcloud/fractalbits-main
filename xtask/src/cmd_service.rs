@@ -28,7 +28,7 @@ pub fn stop_services(service: ServiceName) -> CmdResult {
             ServiceName::Nss.as_ref().to_owned(),
             ServiceName::Bss.as_ref().to_owned(),
             ServiceName::Rss.as_ref().to_owned(),
-            "homebrew.etcd".to_owned(),
+            "etcd".to_owned(),
         ],
         single_service => vec![single_service.as_ref().to_owned()],
     };
@@ -109,7 +109,7 @@ pub fn start_nss_service(build_mode: BuildMode) -> CmdResult {
 
 pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
     // Start etcd service at first if needed, since root server stores infomation in etcd
-    if run_cmd!(systemctl --user is-active --quiet homebrew.etcd.service).is_err() {
+    if run_cmd!(systemctl --user is-active --quiet etcd.service).is_err() {
         start_etcd_service()?;
     }
 
