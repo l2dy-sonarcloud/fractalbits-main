@@ -10,11 +10,11 @@ pub fn run_cmd_nightly() -> CmdResult {
     let nightly_log = "test_art_nightly.log";
     let size = 1000000;
     let ops = 80000000;
-    let depth = 100;
+    let threads_num = 100;
     run_cmd! {
         info "Running art tests (random) with log $nightly_log ...";
         ./zig-out/bin/mkfs;
-        ./zig-out/bin/test_art --tests random --size $size --ops $ops -d $depth |& ts -m $TS_FMT >$nightly_log;
+        ./zig-out/bin/test_art --tests random --size $size --ops $ops --threads $threads_num |& ts -m $TS_FMT >$nightly_log;
     }
     .map_err(|e| {
         run_cmd!(tail $nightly_log).unwrap();
