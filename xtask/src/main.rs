@@ -132,7 +132,7 @@ fn main() -> CmdResult {
             if action != ServiceAction::Stop {
                 // In case they have never been built before
                 build::build_bss_nss_server(BuildMode::Debug)?;
-                build::build_api_server(BuildMode::Debug)?;
+                build::build_rss_api_server(BuildMode::Debug)?;
             }
             cmd_service::run_cmd_service(BuildMode::Debug, action, service)?
         }

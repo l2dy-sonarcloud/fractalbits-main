@@ -35,7 +35,7 @@ pub fn run_cmd_bench(
     match service {
         BenchService::ApiServer => {
             *service_name = ServiceName::All;
-            build_api_server(build_mode)?;
+            build_rss_api_server(build_mode)?;
             build_rewrk()?;
             run_cmd_service(build_mode, ServiceAction::Restart, *service_name)?;
             uri = "http://mybucket.localhost:3000";

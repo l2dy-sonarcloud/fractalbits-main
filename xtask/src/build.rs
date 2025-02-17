@@ -45,14 +45,13 @@ pub fn build_bss_nss_server(mode: BuildMode) -> CmdResult {
     }
 }
 
-pub fn build_api_server(mode: BuildMode) -> CmdResult {
+pub fn build_rss_api_server(mode: BuildMode) -> CmdResult {
     let opts = match mode {
         BuildMode::Debug => "",
         BuildMode::Release => "--release",
     };
     run_cmd! {
-        info "Building api_server ...";
-        cd api_server;
+        info "Building rss & api_server ...";
         cargo build $opts;
     }
 }
