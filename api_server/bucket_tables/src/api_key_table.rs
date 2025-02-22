@@ -27,6 +27,20 @@ impl ApiKey {
             is_deleted: false,
         }
     }
+
+    pub fn new_for_test() -> Self {
+        let name = "api_key_for_test".to_string();
+        let key_id = "test_api_key".to_string();
+        let secret_key = "test_api_secret".to_string();
+        Self {
+            key_id,
+            secret_key,
+            name,
+            allow_create_bucket: true,
+            authorized_buckets: HashMap::new(),
+            is_deleted: false,
+        }
+    }
 }
 
 impl Entry for ApiKey {

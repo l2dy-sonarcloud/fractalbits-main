@@ -1,9 +1,10 @@
-use aws_sdk_s3::config::BehaviorVersion;
-use aws_sdk_s3::config::Region;
+use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::{Client, Config};
 use cmd_lib::*;
 
 const DEFAULT_PORT: u16 = 3000;
+const TEST_KEY: &'static str = "test_api_key";
+const TEST_SECRET: &'static str = "test_api_secret";
 
 #[allow(dead_code)]
 struct Service;
@@ -44,10 +45,11 @@ pub fn context() -> Context {
 }
 
 pub fn build_client() -> Client {
+    let credentials = Credentials::new(TEST_KEY, TEST_SECRET, None, None, "fractalbits-integ-bits");
     let config = Config::builder()
         .endpoint_url(format!("http://127.0.0.1:{}", DEFAULT_PORT))
         .region(Region::from_static("fractalbits-integ-tests"))
-        // .credentials_provider(credentials)
+        .credentials_provider(credentials)
         .behavior_version(BehaviorVersion::v2024_03_28())
         .build();
 

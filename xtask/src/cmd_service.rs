@@ -110,6 +110,9 @@ pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
         start_etcd_service()?;
     }
 
+    // Initialize api key for testing
+    run_cmd!(./target/debug/rss_admin api-key init-test)?;
+
     create_systemd_unit_file(ServiceName::Rss, build_mode)?;
     let rss_wait_secs = 10;
     run_cmd! {

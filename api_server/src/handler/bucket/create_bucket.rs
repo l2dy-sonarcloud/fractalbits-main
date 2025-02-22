@@ -43,6 +43,7 @@ pub async fn create_bucket(
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
 ) -> response::Result<()> {
+    dbg!(&request);
     let body = request.into_body().collect().await.unwrap().to_bytes();
     if !body.is_empty() {
         let _req_body_res: CreateBucketConfiguration =
