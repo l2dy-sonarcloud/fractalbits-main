@@ -4,6 +4,7 @@ use axum::{
     response::{self, IntoResponse},
 };
 use bucket_tables::{
+    api_key_table::ApiKey,
     bucket_table::{Bucket, BucketTable},
     table::Table,
 };
@@ -38,11 +39,33 @@ struct BucketConfig {
 }
 
 pub async fn create_bucket(
+    api_key: Option<ApiKey>,
     bucket_name: String,
     request: Request,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
 ) -> response::Result<()> {
+    match api_key {
+        None => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                format!("Missing valid ApiKey to create bucket"),
+            )
+                .into_response()
+                .into());
+        }
+        Some(api_key) => {
+            if !api_key.allow_create_bucket {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    format!("ApiKey {} is not allow to create bucket", api_key.key_id),
+                )
+                    .into_response()
+                    .into());
+            }
+        }
+    }
+
     let body = request.into_body().collect().await.unwrap().to_bytes();
     if !body.is_empty() {
         let _req_body_res: CreateBucketConfiguration =

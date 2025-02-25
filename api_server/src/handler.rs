@@ -50,7 +50,7 @@ pub async fn any_handler(
 
     let rpc_client_rss = app.get_rpc_client_rss();
 
-    let (request, _api_key) = match auth {
+    let (request, api_key) = match auth {
         None => (request, None),
         Some(auth) => {
             verify_request(
@@ -66,9 +66,15 @@ pub async fn any_handler(
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     if key == "/" && Method::PUT == request.method() {
-        return bucket::create_bucket(bucket_name, request, rpc_client_nss, rpc_client_rss)
-            .await
-            .into_response();
+        return bucket::create_bucket(
+            api_key,
+            bucket_name,
+            request,
+            rpc_client_nss,
+            rpc_client_rss,
+        )
+        .await
+        .into_response();
     }
 
     let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss);
