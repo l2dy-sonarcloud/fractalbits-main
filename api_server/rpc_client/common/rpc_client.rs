@@ -21,24 +21,21 @@ use crate::codec::{MessageFrame, MesssageCodec};
 use crate::message::MessageHeader;
 
 #[derive(Error, Debug)]
-#[error(transparent)]
 pub enum RpcError {
-    IoError(io::Error),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
     OneshotRecvError(oneshot::error::RecvError),
     #[cfg(any(feature = "nss", feature = "rss"))]
+    #[error(transparent)]
     EncodeError(prost::EncodeError),
     #[cfg(any(feature = "nss", feature = "rss"))]
+    #[error(transparent)]
     DecodeError(prost::DecodeError),
     #[error("internal request sending error: {0}")]
     InternalRequestError(String),
     #[error("internal response sending error: {0}")]
     InternalResponseError(String),
-}
-
-impl From<io::Error> for RpcError {
-    fn from(err: io::Error) -> Self {
-        RpcError::IoError(err)
-    }
 }
 
 pub enum Message {
