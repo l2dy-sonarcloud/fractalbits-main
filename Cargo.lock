@@ -146,6 +146,7 @@ dependencies = [
  "sha1",
  "sha2",
  "strum",
+ "thiserror",
  "tokio",
  "toml",
  "tower 0.5.2",

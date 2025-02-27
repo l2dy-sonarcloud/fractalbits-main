@@ -38,6 +38,7 @@ clap.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 itertools.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 aws-sdk-s3.workspace = true
