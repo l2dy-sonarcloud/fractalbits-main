@@ -28,6 +28,7 @@ tokio = { version = "1.39.2", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "query", "tokio"] }
 axum-extra = { version = "0.10", features = ["protobuf"] }
+axum-macros = "0.5.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 prost = "0.13"
 bytes = "1.7.1"

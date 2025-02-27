@@ -1,7 +1,11 @@
 use std::sync::Arc;
 use std::{net::SocketAddr, path::PathBuf};
 
-use api_server::{config, handler::any_handler, AppState};
+use api_server::{
+    config::{self, ArcConfig},
+    handler::any_handler,
+    AppState,
+};
 use axum::{extract::Request, routing, serve::ListenerExt};
 use clap::Parser;
 use tower_http::trace::TraceLayer;
@@ -33,7 +37,7 @@ async fn main() {
     let opt = Opt::parse();
     let config = config::read_config(opt.config_file);
     let port = config.port;
-    let app_state = AppState::new(config).await;
+    let app_state = AppState::new(ArcConfig(Arc::new(config))).await;
 
     let app = routing::any(any_handler)
         .layer(

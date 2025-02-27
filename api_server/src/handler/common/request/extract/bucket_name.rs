@@ -1,29 +1,29 @@
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRef, FromRequestParts},
     http::{request::Parts, uri::Authority, StatusCode},
     RequestPartsExt,
 };
 use axum_extra::extract::Host;
 
-// FIXME: put it into configs as part of the state
-#[allow(non_upper_case_globals)]
-const root_domain: &str = ".localhost";
+use crate::config::ArcConfig;
 
 pub struct BucketNameFromHost(pub Option<String>);
 
 impl<S> FromRequestParts<S> for BucketNameFromHost
 where
+    ArcConfig: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = (StatusCode, &'static str);
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let config = ArcConfig::from_ref(state);
         let Host(host) = parts
             .extract::<Host>()
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "host information not found"))?;
         let authority: Authority = host.parse::<Authority>().unwrap();
-        let bucket_name = authority.host().strip_suffix(root_domain);
+        let bucket_name = authority.host().strip_suffix(&config.root_domain);
         Ok(Self(bucket_name.map(|s| s.to_owned())))
     }
 }
@@ -31,12 +31,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use axum::{body::Body, http::Request, routing::get, Router};
     use http_body_util::BodyExt;
+    use std::sync::Arc;
     use tower::ServiceExt;
 
     fn app() -> Router {
-        Router::new().route("/{*key}", get(handler))
+        let config = ArcConfig(Arc::new(Config::default()));
+        Router::new()
+            .route("/{*key}", get(handler))
+            .with_state(config)
     }
 
     async fn handler(BucketNameFromHost(bucket): BucketNameFromHost) -> String {

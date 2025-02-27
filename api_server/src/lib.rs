@@ -2,7 +2,8 @@ pub mod config;
 pub mod handler;
 mod object_layout;
 
-use config::Config;
+use axum::extract::FromRef;
+use config::ArcConfig;
 use futures::stream::{self, StreamExt};
 use rpc_client_bss::{RpcClientBss, RpcErrorBss};
 use rpc_client_nss::RpcClientNss;
@@ -15,7 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 pub type BlobId = uuid::Uuid;
 
 pub struct AppState {
-    pub config: Config,
+    pub config: ArcConfig,
 
     pub rpc_clients_nss: Vec<RpcClientNss>,
 
@@ -25,11 +26,17 @@ pub struct AppState {
     pub rpc_client_rss: ArcRpcClientRss,
 }
 
+impl FromRef<Arc<AppState>> for ArcConfig {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self(state.config.0.clone())
+    }
+}
+
 impl AppState {
     const MAX_NSS_CONNECTION: usize = 8;
     const MAX_BSS_CONNECTION: usize = 8;
 
-    pub async fn new(config: Config) -> Self {
+    pub async fn new(config: ArcConfig) -> Self {
         let mut rpc_clients_nss = Vec::with_capacity(Self::MAX_NSS_CONNECTION);
         for _i in 0..AppState::MAX_NSS_CONNECTION {
             let rpc_client_nss = RpcClientNss::new(&config.nss_addr)
