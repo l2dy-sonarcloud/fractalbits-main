@@ -6,6 +6,8 @@ use axum::{
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::common::s3_error::S3Error;
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct CreateSessionOutput {
@@ -21,7 +23,7 @@ struct Credentials {
     session_token: String,
 }
 
-pub async fn create_session(_request: Request) -> Response {
+pub async fn create_session(_request: Request) -> Result<Response, S3Error> {
     const TIMEOUT_SECS: u64 = 300;
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -36,5 +38,5 @@ pub async fn create_session(_request: Request) -> Response {
             session_token: "todo".into(),
         },
     };
-    Xml(output).into_response()
+    Ok(Xml(output).into_response())
 }

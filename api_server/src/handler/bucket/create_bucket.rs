@@ -1,4 +1,7 @@
-use axum::extract::Request;
+use axum::{
+    extract::Request,
+    response::{IntoResponse, Response},
+};
 use bucket_tables::{
     api_key_table::{ApiKey, ApiKeyTable},
     bucket_table::{Bucket, BucketTable},
@@ -43,7 +46,7 @@ pub async fn create_bucket(
     request: Request,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
-) -> Result<(), S3Error> {
+) -> Result<Response, S3Error> {
     match api_key {
         None => return Err(S3Error::InvalidAccessKeyId),
         Some(ref api_key) => {
@@ -85,5 +88,5 @@ pub async fn create_bucket(
         .insert(bucket_name, bucket_key_perm);
     api_key_table.put(&api_key).await;
 
-    Ok(())
+    Ok(().into_response())
 }

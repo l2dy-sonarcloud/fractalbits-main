@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use crate::handler::common::response::xml::Xml;
+use crate::handler::common::{response::xml::Xml, s3_error::S3Error};
 use axum::{
     extract::{Query, Request},
-    http::StatusCode,
-    response::{self, IntoResponse, Response},
+    response::{IntoResponse, Response},
     RequestExt,
 };
 use bucket_tables::bucket_table::Bucket;
@@ -82,17 +81,25 @@ pub async fn list_objects_v2(
     mut request: Request,
     bucket: Arc<Bucket>,
     rpc_client_nss: &RpcClientNss,
-) -> response::Result<Response> {
+) -> Result<Response, S3Error> {
     let Query(opts): Query<ListObjectsV2Options> = request.extract_parts().await?;
     tracing::debug!("list_objects_v2 {opts:?}");
 
     // Sanity checks
     if opts.list_type != Some("2".into()) {
-        return Err((StatusCode::BAD_REQUEST, "list-type wrong").into());
+        tracing::warn!(
+            "expecting list_type as \"2\" only, got {:?}",
+            opts.list_type
+        );
+        return Err(S3Error::InvalidArgument1);
     }
     if let Some(encoding_type) = opts.encoding_type {
         if encoding_type != "url" {
-            return Err((StatusCode::BAD_REQUEST, "invalid encoding-type").into());
+            tracing::warn!(
+                "expecting content_type as \"url\" only, got {}",
+                encoding_type
+            );
+            return Err(S3Error::InvalidArgument1);
         }
     }
 
@@ -107,21 +114,19 @@ pub async fn list_objects_v2(
             start_after,
             true,
         )
-        .await
-        .unwrap();
+        .await?;
 
     // Process results
     let inodes = match resp.result.unwrap() {
         list_inodes_response::Result::Ok(res) => res.inodes,
         list_inodes_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
 
     for inode in inodes {
-        let _object = rkyv::from_bytes::<ObjectLayout, Error>(&inode.inode).unwrap();
+        let _object = rkyv::from_bytes::<ObjectLayout, Error>(&inode.inode)?;
         // dbg!(&inode.key);
         // dbg!(object.timestamp);
         // dbg!(object.size);

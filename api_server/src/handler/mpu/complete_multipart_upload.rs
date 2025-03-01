@@ -1,15 +1,18 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{
-    handler::common::response::xml::Xml,
-    handler::{delete::delete_object, get::get_raw_object, list, mpu},
+    handler::{
+        common::{response::xml::Xml, s3_error::S3Error},
+        delete::delete_object,
+        get::get_raw_object,
+        list, mpu,
+    },
     object_layout::{MpuState, ObjectState},
     BlobId,
 };
 use axum::{
     extract::Request,
-    http::StatusCode,
-    response::{self, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
 use bucket_tables::bucket_table::Bucket;
 use bytes::Buf;
@@ -62,19 +65,19 @@ pub async fn complete_multipart_upload(
     upload_id: String,
     rpc_client_nss: &RpcClientNss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> response::Result<Response> {
+) -> Result<Response, S3Error> {
     let body = request.into_body().collect().await.unwrap().to_bytes();
-    let req_body: CompleteMultipartUpload = quick_xml::de::from_reader(body.reader()).unwrap();
+    let req_body: CompleteMultipartUpload = quick_xml::de::from_reader(body.reader())?;
     let mut valid_part_numbers: HashSet<u32> =
         req_body.part.iter().map(|part| part.part_number).collect();
 
     let mut object =
         get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
     if object.version_id.simple().to_string() != upload_id {
-        return Err((StatusCode::BAD_REQUEST, "upload_id mismatch").into());
+        return Err(S3Error::NoSuchVersion);
     }
     if ObjectState::Mpu(MpuState::Uploading) != object.state {
-        return Err((StatusCode::BAD_REQUEST, "key is not in uploading state").into());
+        return Err(S3Error::InvalidObjectState);
     }
 
     let max_parts = 10000;
@@ -87,8 +90,7 @@ pub async fn complete_multipart_upload(
         "".into(),
         false,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let mut total_size = 0;
     let mut invalid_part_keys = HashSet::new();
@@ -101,7 +103,7 @@ pub async fn complete_multipart_upload(
         }
     }
     if !valid_part_numbers.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "invalid mpu parts").into());
+        return Err(S3Error::InvalidPart);
     }
     for mpu_key in invalid_part_keys.iter() {
         delete_object(
@@ -117,21 +119,19 @@ pub async fn complete_multipart_upload(
         size: total_size,
         etag: upload_id.clone(),
     });
-    let new_object_bytes = to_bytes_in::<_, Error>(&object, Vec::new()).unwrap();
+    let new_object_bytes = to_bytes_in::<_, Error>(&object, Vec::new())?;
     let resp = rpc_client_nss
         .put_inode(
             bucket.root_blob_name.clone(),
             key.clone(),
             new_object_bytes.into(),
         )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
     match resp.result.unwrap() {
         put_inode_response::Result::Ok(_) => {}
         put_inode_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
 

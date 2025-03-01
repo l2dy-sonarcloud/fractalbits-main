@@ -12,7 +12,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::{AppState, BlobId};
-use axum::http::status::StatusCode;
 use axum::http::Method;
 use axum::{
     extract::{ConnectInfo, Request, State},
@@ -110,21 +109,20 @@ async fn any_handler_inner(
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     if key == "/" && Method::PUT == request.method() {
-        return Ok(bucket::create_bucket(
+        return bucket::create_bucket(
             api_key,
             bucket_name,
             request,
             rpc_client_nss,
             rpc_client_rss,
         )
-        .await
-        .into_response());
+        .await;
     }
 
     let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
     let bucket = Arc::new(bucket_table.get(bucket_name).await);
 
-    let response = match request.method() {
+    match request.method() {
         &Method::HEAD => head_handler(request, bucket, key, rpc_client_nss).await,
         &Method::GET => {
             get_handler(
@@ -177,9 +175,8 @@ async fn any_handler_inner(
             )
             .await
         }
-        method => (StatusCode::BAD_REQUEST, format!("TODO: method {method}")).into_response(),
-    };
-    Ok(response)
+        _method => Err(S3Error::MethodNotAllowed),
+    }
 }
 
 async fn head_handler(
@@ -187,12 +184,10 @@ async fn head_handler(
     bucket: Arc<Bucket>,
     key: String,
     rpc_client_nss: &RpcClientNss,
-) -> Response {
+) -> Result<Response, S3Error> {
     match key.as_str() {
-        "/" => StatusCode::BAD_REQUEST.into_response(),
-        _key => head::head_object(request, bucket, key, rpc_client_nss)
-            .await
-            .into_response(),
+        "/" => Err(S3Error::InvalidArgument1),
+        _key => head::head_object(request, bucket, key, rpc_client_nss).await,
     }
 }
 
@@ -204,32 +199,28 @@ async fn get_handler(
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
-) -> Response {
+) -> Result<Response, S3Error> {
     match (api_cmd, key.as_str()) {
         (Some(ApiCommand::Attributes), _) => {
-            get::get_object_attributes(request, bucket, key, rpc_client_nss)
-                .await
-                .into_response()
+            get::get_object_attributes(request, bucket, key, rpc_client_nss).await
         }
-        (Some(ApiCommand::Uploads), "/") => list::list_multipart_uploads(request, rpc_client_nss)
-            .await
-            .into_response(),
+
+        (Some(ApiCommand::Uploads), "/") => {
+            list::list_multipart_uploads(request, rpc_client_nss).await
+        }
         (Some(ApiCommand::Session), _) => session::create_session(request).await,
-        (Some(api_cmd), _) => (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response(),
+        (Some(api_cmd), _) => {
+            tracing::warn!("{api_cmd} not implemented");
+            Err(S3Error::NotImplemented)
+        }
         (None, "/") if api_sig.list_type.is_some() => {
-            list::list_objects_v2(request, bucket, rpc_client_nss)
-                .await
-                .into_response()
+            list::list_objects_v2(request, bucket, rpc_client_nss).await
         }
-        (None, "/") => (StatusCode::BAD_REQUEST, "Legacy listObjects api").into_response(),
+        (None, "/") => Err(S3Error::NotImplemented),
         (None, _key) if api_sig.upload_id.is_some() => {
-            list::list_parts(request, bucket, key, rpc_client_nss)
-                .await
-                .into_response()
+            list::list_parts(request, bucket, key, rpc_client_nss).await
         }
-        (None, _key) => get::get_object(request, bucket, key, rpc_client_nss, rpc_client_bss)
-            .await
-            .into_response(),
+        (None, _key) => get::get_object(request, bucket, key, rpc_client_nss, rpc_client_bss).await,
     }
 }
 
@@ -242,34 +233,34 @@ async fn put_handler(
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> Response {
+) -> Result<Response, S3Error> {
     match (api_cmd, api_sig.part_number, api_sig.upload_id) {
-        (Some(api_cmd), _, _) => {
-            (StatusCode::BAD_REQUEST, format!("TODO: {api_cmd}")).into_response()
+        (Some(_api_cmd), _, _) => Err(S3Error::NotImplemented),
+        (None, Some(part_number), Some(upload_id)) if key != "/" => {
+            mpu::upload_part(
+                request,
+                bucket,
+                key,
+                part_number,
+                upload_id,
+                rpc_client_nss,
+                rpc_client_bss,
+                blob_deletion,
+            )
+            .await
         }
-        (None, Some(part_number), Some(upload_id)) if key != "/" => mpu::upload_part(
-            request,
-            bucket,
-            key,
-            part_number,
-            upload_id,
-            rpc_client_nss,
-            rpc_client_bss,
-            blob_deletion,
-        )
-        .await
-        .into_response(),
-        (None, None, None) if key != "/" => put::put_object(
-            request,
-            bucket,
-            key,
-            rpc_client_nss,
-            rpc_client_bss,
-            blob_deletion,
-        )
-        .await
-        .into_response(),
-        _ => StatusCode::BAD_REQUEST.into_response(),
+        (None, None, None) if key != "/" => {
+            put::put_object(
+                request,
+                bucket,
+                key,
+                rpc_client_nss,
+                rpc_client_bss,
+                blob_deletion,
+            )
+            .await
+        }
+        _ => Err(S3Error::NotImplemented),
     }
 }
 
@@ -281,29 +272,26 @@ async fn post_handler(
     key: String,
     rpc_client_nss: &RpcClientNss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> Response {
+) -> Result<Response, S3Error> {
     match (api_cmd, api_sig.upload_id) {
         (Some(ApiCommand::Delete), None) if key == "/" => {
-            delete::delete_objects(request, rpc_client_nss, blob_deletion)
-                .await
-                .into_response()
+            delete::delete_objects(request, rpc_client_nss, blob_deletion).await
         }
         (Some(ApiCommand::Uploads), None) if key != "/" => {
-            mpu::create_multipart_upload(request, bucket, key, rpc_client_nss)
-                .await
-                .into_response()
+            mpu::create_multipart_upload(request, bucket, key, rpc_client_nss).await
         }
-        (None, Some(upload_id)) if key != "/" => mpu::complete_multipart_upload(
-            request,
-            bucket,
-            key,
-            upload_id,
-            rpc_client_nss,
-            blob_deletion,
-        )
-        .await
-        .into_response(),
-        (_, _) => StatusCode::BAD_REQUEST.into_response(),
+        (None, Some(upload_id)) if key != "/" => {
+            mpu::complete_multipart_upload(
+                request,
+                bucket,
+                key,
+                upload_id,
+                rpc_client_nss,
+                blob_deletion,
+            )
+            .await
+        }
+        (_, _) => Err(S3Error::NotImplemented),
     }
 }
 
@@ -317,26 +305,25 @@ async fn delete_handler(
     rpc_client_bss: &RpcClientBss,
     rpc_client_rss: ArcRpcClientRss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> Response {
+) -> Result<Response, S3Error> {
     match api_sig.upload_id {
-        Some(upload_id) if key != "/" => mpu::abort_multipart_upload(
-            request,
-            bucket,
-            key,
-            upload_id,
-            rpc_client_nss,
-            rpc_client_bss,
-        )
-        .await
-        .into_response(),
-        None if key == "/" => {
-            bucket::delete_bucket(api_key, bucket, request, rpc_client_nss, rpc_client_rss)
-                .await
-                .into_response()
-        }
-        None if key != "/" => delete::delete_object(bucket, key, rpc_client_nss, blob_deletion)
+        Some(upload_id) if key != "/" => {
+            mpu::abort_multipart_upload(
+                request,
+                bucket,
+                key,
+                upload_id,
+                rpc_client_nss,
+                rpc_client_bss,
+            )
             .await
-            .into_response(),
-        _ => StatusCode::BAD_REQUEST.into_response(),
+        }
+        None if key == "/" => {
+            bucket::delete_bucket(api_key, bucket, request, rpc_client_nss, rpc_client_rss).await
+        }
+        None if key != "/" => {
+            delete::delete_object(bucket, key, rpc_client_nss, blob_deletion).await
+        }
+        _ => Err(S3Error::NotImplemented),
     }
 }

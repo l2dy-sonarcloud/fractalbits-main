@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::Request,
-    http::StatusCode,
-    response::{self, IntoResponse},
+    response::{IntoResponse, Response},
 };
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use rpc_client_bss::RpcClientBss;
@@ -12,7 +11,10 @@ use rpc_client_nss::{
     RpcClientNss,
 };
 
-use crate::object_layout::{MpuState, ObjectLayout, ObjectState};
+use crate::{
+    handler::common::s3_error::S3Error,
+    object_layout::{MpuState, ObjectLayout, ObjectState},
+};
 use bucket_tables::bucket_table::Bucket;
 
 pub async fn abort_multipart_upload(
@@ -22,38 +24,34 @@ pub async fn abort_multipart_upload(
     _upload_id: String,
     rpc_client_nss: &RpcClientNss,
     _rpc_client_bss: &RpcClientBss,
-) -> response::Result<()> {
+) -> Result<Response, S3Error> {
     let resp = rpc_client_nss
         .get_inode(bucket.root_blob_name.clone(), key.clone())
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
 
     let object_bytes = match resp.result.unwrap() {
         get_inode_response::Result::Ok(res) => res,
         get_inode_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
 
     // TODO: check upload_id and also do more clean ups and checks
-    let mut object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes).unwrap();
+    let mut object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes)?;
     object.state = ObjectState::Mpu(MpuState::Aborted);
-    let new_object_bytes = to_bytes_in::<_, Error>(&object, Vec::new()).unwrap();
+    let new_object_bytes = to_bytes_in::<_, Error>(&object, Vec::new())?;
 
     let resp = rpc_client_nss
         .put_inode(bucket.root_blob_name.clone(), key, new_object_bytes.into())
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
     match resp.result.unwrap() {
         put_inode_response::Result::Ok(_) => {}
         put_inode_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
 
-    Ok(())
+    Ok(().into_response())
 }

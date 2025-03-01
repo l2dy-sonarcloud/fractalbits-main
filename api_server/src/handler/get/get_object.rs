@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use axum::extract::Query;
-use axum::extract::Request;
-use axum::RequestExt;
+use axum::{
+    extract::{Query, Request},
+    response::{IntoResponse, Response},
+    RequestExt,
+};
 use bytes::{Bytes, BytesMut};
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
@@ -38,7 +40,7 @@ pub async fn get_object(
     key: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
-) -> Result<Bytes, S3Error> {
+) -> Result<Response, S3Error> {
     let Query(opts): Query<GetObjectOptions> = request.extract_parts().await?;
     let object = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
     match object.state {
@@ -51,7 +53,7 @@ pub async fn get_object(
                 object.num_blocks(),
             )
             .await?;
-            Ok(blob.freeze())
+            Ok(blob.freeze().into_response())
         }
         ObjectState::Mpu(mpu_state) => match mpu_state {
             MpuState::Uploading => {
@@ -88,7 +90,7 @@ pub async fn get_object(
                     )
                     .await?;
                 }
-                Ok(content.into())
+                Ok(content.into_response())
             }
         },
     }

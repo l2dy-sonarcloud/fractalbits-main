@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
-use axum::{
-    http::StatusCode,
-    response::{self, IntoResponse},
-};
+use axum::response::{IntoResponse, Response};
 use rkyv::{self, rancor::Error};
 use rpc_client_nss::{rpc::delete_inode_response, RpcClientNss};
 use tokio::sync::mpsc::Sender;
 
-use crate::{object_layout::ObjectLayout, BlobId};
+use crate::{handler::common::s3_error::S3Error, object_layout::ObjectLayout, BlobId};
 use bucket_tables::bucket_table::Bucket;
 
 pub async fn delete_object(
@@ -16,22 +13,20 @@ pub async fn delete_object(
     key: String,
     rpc_client_nss: &RpcClientNss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> response::Result<()> {
+) -> Result<Response, S3Error> {
     let resp = rpc_client_nss
         .delete_inode(bucket.root_blob_name.clone(), key)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
 
     let object_bytes = match resp.result.unwrap() {
         delete_inode_response::Result::Ok(res) => res,
         delete_inode_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
 
-    let object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes).unwrap();
+    let object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes)?;
     let blob_id = object.blob_id();
     let num_blocks = object.num_blocks();
     if let Err(e) = blob_deletion.send((blob_id, num_blocks)).await {
@@ -39,5 +34,5 @@ pub async fn delete_object(
             "Failed to send blob {blob_id} num_blocks={num_blocks} for background deletion: {e}"
         );
     }
-    Ok(())
+    Ok(().into_response())
 }

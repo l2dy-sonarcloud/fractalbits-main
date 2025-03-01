@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::Request, http::HeaderValue, http::StatusCode, response, response::IntoResponse,
-};
+use axum::response::Response;
+use axum::{extract::Request, http::HeaderValue, response};
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Serialize;
 use tokio::sync::mpsc::Sender;
 
+use crate::handler::common::s3_error::S3Error;
 use crate::handler::put::put_object;
 use crate::BlobId;
 use bucket_tables::bucket_table::Bucket;
@@ -40,9 +40,9 @@ pub async fn upload_part(
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> response::Response {
+) -> Result<Response, S3Error> {
     if !(1..=10_000).contains(&part_number) {
-        return (StatusCode::BAD_REQUEST, "invalid part number").into_response();
+        return Err(S3Error::InvalidPart);
     }
     // TODO: check upload_id
 
@@ -56,12 +56,11 @@ pub async fn upload_part(
         rpc_client_bss,
         blob_deletion,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let mut resp = response::Response::default();
     let etag = format!("{upload_id}{part_number}");
     resp.headers_mut()
         .insert("ETag", HeaderValue::from_str(&etag).unwrap());
-    resp
+    Ok(resp)
 }

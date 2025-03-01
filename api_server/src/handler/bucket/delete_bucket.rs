@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use axum::extract::Request;
+use axum::{
+    extract::Request,
+    response::{IntoResponse, Response},
+};
 use bucket_tables::{
     api_key_table::{ApiKey, ApiKeyTable},
     bucket_table::{Bucket, BucketTable},
@@ -17,7 +20,7 @@ pub async fn delete_bucket(
     _request: Request,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
-) -> Result<(), S3Error> {
+) -> Result<Response, S3Error> {
     let resp = rpc_client_nss
         .delete_root_inode(bucket.root_blob_name.clone())
         .await?;
@@ -39,5 +42,5 @@ pub async fn delete_bucket(
     let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
     api_key.authorized_buckets.remove(&bucket.bucket_name);
     api_key_table.put(&api_key).await;
-    Ok(())
+    Ok(().into_response())
 }

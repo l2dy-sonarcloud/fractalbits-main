@@ -4,8 +4,11 @@ use std::{
 };
 
 use super::block_data_stream::BlockDataStream;
-use crate::{object_layout::*, BlobId};
-use axum::{extract::Request, http::StatusCode, response, response::IntoResponse};
+use crate::{handler::common::s3_error::S3Error, object_layout::*, BlobId};
+use axum::{
+    extract::Request,
+    response::{IntoResponse, Response},
+};
 use bucket_tables::bucket_table::Bucket;
 use futures::{StreamExt, TryStreamExt};
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
@@ -21,7 +24,7 @@ pub async fn put_object(
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
     blob_deletion: Sender<(BlobId, usize)>,
-) -> response::Result<()> {
+) -> Result<Response, S3Error> {
     let blob_id = Uuid::now_v7();
     let body_data_stream = request.into_body().into_data_stream();
     let size = BlockDataStream::new(body_data_stream, ObjectLayout::DEFAULT_BLOCK_SIZE)
@@ -35,7 +38,7 @@ pub async fn put_object(
         .buffer_unordered(5)
         .try_fold(0, |acc, x| async move { Ok(acc + x) })
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(|_e| S3Error::InternalError)?;
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -53,27 +56,25 @@ pub async fn put_object(
             etag,
         }),
     };
-    let object_layout_bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new()).unwrap();
+    let object_layout_bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new())?;
     let resp = rpc_client_nss
         .put_inode(
             bucket.root_blob_name.clone(),
             key,
             object_layout_bytes.into(),
         )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
 
     // Delete old object if it is an overwrite request
     let old_object_bytes = match resp.result.unwrap() {
         put_inode_response::Result::Ok(res) => res,
         put_inode_response::Result::Err(e) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e)
-                .into_response()
-                .into())
+            tracing::error!(e);
+            return Err(S3Error::InternalError);
         }
     };
     if !old_object_bytes.is_empty() {
-        let old_object = rkyv::from_bytes::<ObjectLayout, Error>(&old_object_bytes).unwrap();
+        let old_object = rkyv::from_bytes::<ObjectLayout, Error>(&old_object_bytes)?;
         let blob_id = old_object.blob_id();
         let num_blocks = old_object.num_blocks();
         if let Err(e) = blob_deletion.send((blob_id, num_blocks)).await {
@@ -82,5 +83,5 @@ pub async fn put_object(
         }
     }
 
-    Ok(())
+    Ok(().into_response())
 }

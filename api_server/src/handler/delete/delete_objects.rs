@@ -1,8 +1,8 @@
-use crate::handler::common::response::xml::Xml;
+use crate::handler::common::{response::xml::Xml, s3_error::S3Error};
 use crate::BlobId;
 use axum::{
     extract::Request,
-    response::{self, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
 use rpc_client_nss::RpcClientNss;
 use serde::Serialize;
@@ -33,6 +33,6 @@ pub async fn delete_objects(
     _request: Request,
     _rpc_client_nss: &RpcClientNss,
     _blob_deletion: Sender<(BlobId, usize)>,
-) -> response::Result<Response> {
+) -> Result<Response, S3Error> {
     Ok(Xml(DeleteResult::default()).into_response())
 }

@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Query, Request},
-    http::{HeaderMap, HeaderValue, StatusCode},
-    response, RequestExt,
+    http::{HeaderMap, HeaderValue},
+    response::{IntoResponse, Response},
+    RequestExt,
 };
 use bucket_tables::bucket_table::Bucket;
 use rpc_client_nss::RpcClientNss;
@@ -12,6 +13,8 @@ use serde::Deserialize;
 use crate::handler::common::time;
 use crate::handler::get::get_raw_object;
 use crate::object_layout::{MpuState, ObjectState};
+
+use super::common::s3_error::S3Error;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -34,7 +37,7 @@ pub async fn head_object(
     bucket: Arc<Bucket>,
     key: String,
     rpc_client_nss: &RpcClientNss,
-) -> response::Result<HeaderMap> {
+) -> Result<Response, S3Error> {
     let Query(_opts): Query<HeadObjectOptions> = request.extract_parts().await?;
     let obj = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key).await?;
 
@@ -60,8 +63,8 @@ pub async fn head_object(
             );
         }
         _ => {
-            return Err((StatusCode::BAD_REQUEST, "invalid object state").into());
+            return Err(S3Error::InvalidObjectState);
         }
     }
-    Ok(headers)
+    Ok(headers.into_response())
 }

@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::handler::common::response::xml::Xml;
+use crate::handler::common::s3_error::S3Error;
 use crate::object_layout::*;
 use axum::{
     extract::Request,
-    http::StatusCode,
-    response::{self, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
 use bucket_tables::bucket_table::Bucket;
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
@@ -43,7 +43,7 @@ pub async fn create_multipart_upload(
     bucket: Arc<Bucket>,
     mut key: String,
     rpc_client_nss: &RpcClientNss,
-) -> response::Result<Response> {
+) -> Result<Response, S3Error> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -55,15 +55,14 @@ pub async fn create_multipart_upload(
         timestamp,
         state: ObjectState::Mpu(MpuState::Uploading),
     };
-    let object_layout_bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new()).unwrap();
+    let object_layout_bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new())?;
     let _resp = rpc_client_nss
         .put_inode(
             bucket.root_blob_name.clone(),
             key.clone(),
             object_layout_bytes.into(),
         )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .await?;
     key.pop();
     let init_mpu_res = InitiateMultipartUploadResult {
         bucket: bucket.bucket_name.clone(),

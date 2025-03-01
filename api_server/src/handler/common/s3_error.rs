@@ -793,3 +793,10 @@ impl From<rkyv::rancor::Error> for S3Error {
         Self::InternalError
     }
 }
+
+impl From<quick_xml::DeError> for S3Error {
+    fn from(value: quick_xml::DeError) -> Self {
+        tracing::error!("quick_xml::DeError: {value}");
+        Self::UnexpectedContent
+    }
+}

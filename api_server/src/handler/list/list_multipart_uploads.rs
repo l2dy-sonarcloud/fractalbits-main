@@ -1,7 +1,7 @@
-use crate::handler::common::response::xml::Xml;
+use crate::handler::common::{response::xml::Xml, s3_error::S3Error};
 use axum::{
     extract::{Query, Request},
-    response::{self, IntoResponse, Response},
+    response::{IntoResponse, Response},
     RequestExt,
 };
 use rpc_client_nss::RpcClientNss;
@@ -71,7 +71,7 @@ struct CommonPrefixes {
 pub async fn list_multipart_uploads(
     mut request: Request,
     _rpc_client_nss: &RpcClientNss,
-) -> response::Result<Response> {
+) -> Result<Response, S3Error> {
     let Query(_opts): Query<ListMultipartUploadsOptions> = request.extract_parts().await?;
     Ok(Xml(ListMultipartUploadsResult::default()).into_response())
 }
