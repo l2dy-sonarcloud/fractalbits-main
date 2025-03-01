@@ -21,6 +21,7 @@ use axum::{
 use bucket_tables::api_key_table::ApiKey;
 use bucket_tables::bucket_table::{Bucket, BucketTable};
 use bucket_tables::table::Table;
+use common::request::extract::authorization::Authorization;
 use common::request::extract::{
     api_command::ApiCommand, api_command::ApiCommandFromQuery, api_signature::ApiSignature,
     authorization::AuthorizationFromReq, bucket_name::BucketNameFromHost, key::KeyFromPath,
@@ -52,29 +53,64 @@ pub async fn any_handler(
     };
     tracing::debug!(%bucket_name, %key);
 
-    let rpc_client_rss = app.get_rpc_client_rss();
+    let resource = format!("{bucket_name}{key}");
+    match any_handler_inner(app, addr, bucket_name, key, api_cmd, api_sig, auth, request).await {
+        Err(e) => Xml(s3_error::Error::from(e).with_resource(&resource)).into_response(),
+        Ok(response) => response,
+    }
+}
 
+// Get bucket and key for path-style requests
+fn get_bucket_and_key_from_path(path: String) -> (String, String) {
+    let mut bucket = String::new();
+    let mut key = String::from("/");
+    let mut bucket_part = true;
+    path.chars().skip_while(|c| c == &'/').for_each(|c| {
+        if bucket_part && c == '/' {
+            bucket_part = false;
+            return;
+        }
+        if bucket_part && c != '\0' {
+            bucket.push(c);
+        } else {
+            key.push(c);
+        }
+    });
+    // Not a real key, removing hacking for nss
+    if key == "/\0" {
+        key.pop();
+    }
+    (bucket, key)
+}
+
+async fn any_handler_inner(
+    app: Arc<AppState>,
+    addr: SocketAddr,
+    bucket_name: String,
+    key: String,
+    api_cmd: Option<ApiCommand>,
+    api_sig: ApiSignature,
+    auth: Option<Authorization>,
+    request: Request,
+) -> Result<Response, S3Error> {
+    let rpc_client_rss = app.get_rpc_client_rss();
     let (request, api_key) = match auth {
         None => (request, None),
         Some(auth) => {
-            match verify_request(
+            verify_request(
                 request,
                 &auth,
                 rpc_client_rss.clone(),
                 &app.config.s3_region,
             )
-            .await
-            {
-                Err(e) => return e.into_response(),
-                Ok((request, auth)) => (request, auth),
-            }
+            .await?
         }
     };
 
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     if key == "/" && Method::PUT == request.method() {
-        return bucket::create_bucket(
+        return Ok(bucket::create_bucket(
             api_key,
             bucket_name,
             request,
@@ -82,13 +118,13 @@ pub async fn any_handler(
             rpc_client_rss,
         )
         .await
-        .into_response();
+        .into_response());
     }
 
     let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
     let bucket = Arc::new(bucket_table.get(bucket_name).await);
 
-    match request.method() {
+    let response = match request.method() {
         &Method::HEAD => head_handler(request, bucket, key, rpc_client_nss).await,
         &Method::GET => {
             get_handler(
@@ -142,30 +178,8 @@ pub async fn any_handler(
             .await
         }
         method => (StatusCode::BAD_REQUEST, format!("TODO: method {method}")).into_response(),
-    }
-}
-
-// Get bucket and key for path-style requests
-fn get_bucket_and_key_from_path(path: String) -> (String, String) {
-    let mut bucket = String::new();
-    let mut key = String::from("/");
-    let mut bucket_part = true;
-    path.chars().skip_while(|c| c == &'/').for_each(|c| {
-        if bucket_part && c == '/' {
-            bucket_part = false;
-            return;
-        }
-        if bucket_part && c != '\0' {
-            bucket.push(c);
-        } else {
-            key.push(c);
-        }
-    });
-    // Not a real key, removing hacking for nss
-    if key == "/\0" {
-        key.pop();
-    }
-    (bucket, key)
+    };
+    Ok(response)
 }
 
 async fn head_handler(

@@ -11,6 +11,8 @@ use serde::Serialize;
 use strum::AsRefStr;
 use thiserror::Error;
 
+use super::request::signature::SignatureError;
+
 // From https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html (2025/02/28)
 
 #[derive(Serialize)]
@@ -21,15 +23,17 @@ pub struct Error {
     resource: String,
 }
 
-impl Error {
-    pub fn from(e: S3Error) -> Self {
+impl From<S3Error> for Error {
+    fn from(e: S3Error) -> Self {
         Self {
             code: e.as_ref().to_string(),
             message: e.to_string(),
             resource: "".into(),
         }
     }
+}
 
+impl Error {
     pub fn with_resource(self, resource: &str) -> Self {
         Self {
             code: self.code,
@@ -731,13 +735,22 @@ impl IntoResponse for S3Error {
 }
 
 impl From<HostRejection> for S3Error {
-    fn from(_value: HostRejection) -> Self {
+    fn from(value: HostRejection) -> Self {
+        tracing::error!("HostRejection: {value}");
         Self::InvalidHostHeader
     }
 }
 
 impl From<InvalidUri> for S3Error {
-    fn from(_value: InvalidUri) -> Self {
+    fn from(value: InvalidUri) -> Self {
+        tracing::error!("InvalidUri: {value}");
         Self::InvalidURI
+    }
+}
+
+impl From<SignatureError> for S3Error {
+    fn from(value: SignatureError) -> Self {
+        tracing::error!("SignatureError: {value}");
+        Self::InvalidSignature
     }
 }
