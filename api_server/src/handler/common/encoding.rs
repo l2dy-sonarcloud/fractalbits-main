@@ -9,6 +9,7 @@ pub fn uri_encode(string: &str, encode_slash: bool) -> String {
             '/' if encode_slash => result.push_str("%2F"),
             '/' if !encode_slash => result.push('/'),
             _ => {
+                #[allow(clippy::format_collect)]
                 result.push_str(
                     &format!("{}", c)
                         .bytes()

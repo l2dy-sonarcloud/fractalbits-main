@@ -44,7 +44,7 @@ pub async fn check_standard_signature(
     tracing::trace!("canonical request:\n{}", canonical_request);
     tracing::trace!("string to sign:\n{}", string_to_sign);
 
-    let key = verify_v4(&auth, string_to_sign.as_bytes(), rpc_client_rss, region).await?;
+    let key = verify_v4(auth, string_to_sign.as_bytes(), rpc_client_rss, region).await?;
 
     Ok((request, key))
 }
@@ -73,7 +73,7 @@ pub fn canonical_request(
     let canonical_query_string = {
         let mut items = Vec::with_capacity(query_params.len());
         for (key, value) in query_params.iter() {
-            items.push(uri_encode(&key, true) + "=" + &uri_encode(&value, true));
+            items.push(uri_encode(key, true) + "=" + &uri_encode(value, true));
         }
         items.sort();
         items.join("&")

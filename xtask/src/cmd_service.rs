@@ -139,7 +139,7 @@ pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
 
 fn start_etcd_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
-    let service_file = format!("etc/etcd.service");
+    let service_file = "etc/etcd.service";
     let service_file_content = format!(
         r##"
 [Unit]

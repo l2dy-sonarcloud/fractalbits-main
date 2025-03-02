@@ -21,7 +21,7 @@ mod user_input;
 
 pub type Handle = JoinHandle<anyhow::Result<WorkerResult>>;
 
-const TEST_BUCKET_ROOT_BLOB_NAME: &'static str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
+const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 
 fn read_keys(filename: &str, num_tasks: usize, keys_limit: usize) -> Vec<VecDeque<String>> {
     let file = File::open(filename).unwrap();

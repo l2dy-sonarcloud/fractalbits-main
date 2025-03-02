@@ -16,7 +16,7 @@ pub struct ApiKey {
 
 impl ApiKey {
     pub fn new(name: &str) -> Self {
-        let key_id = format!("{}", hex::encode(&rand::random::<[u8; 12]>()[..]));
+        let key_id = hex::encode(&rand::random::<[u8; 12]>()[..]);
         let secret_key = hex::encode(&rand::random::<[u8; 32]>()[..]);
         Self {
             key_id,

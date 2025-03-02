@@ -32,6 +32,7 @@ use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::{ArcRpcClientRss, RpcErrorRss};
 use tokio::sync::mpsc::Sender;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn any_handler(
     State(app): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -53,7 +54,7 @@ pub async fn any_handler(
 
     let resource = format!("/{bucket_name}{key}");
     match any_handler_inner(app, addr, bucket_name, key, api_cmd, api_sig, auth, request).await {
-        Err(e) => return e.into_response_with_resource(&resource),
+        Err(e) => e.into_response_with_resource(&resource),
         Ok(response) => response,
     }
 }
@@ -81,6 +82,7 @@ fn get_bucket_and_key_from_path(path: String) -> (String, String) {
     (bucket, key)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn any_handler_inner(
     app: Arc<AppState>,
     addr: SocketAddr,
@@ -239,6 +241,7 @@ async fn get_handler(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn put_handler(
     request: Request,
     api_cmd: Option<ApiCommand>,
@@ -310,6 +313,7 @@ async fn post_handler(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn delete_handler(
     api_key: Option<ApiKey>,
     request: Request,

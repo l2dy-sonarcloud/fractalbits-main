@@ -58,11 +58,11 @@ pub async fn get_object(
         ObjectState::Mpu(mpu_state) => match mpu_state {
             MpuState::Uploading => {
                 tracing::warn!("invalid mpu state: Uploading");
-                return Err(S3Error::InvalidObjectState);
+                Err(S3Error::InvalidObjectState)
             }
             MpuState::Aborted => {
                 tracing::warn!("invalid mpu state: Aborted");
-                return Err(S3Error::InvalidObjectState);
+                Err(S3Error::InvalidObjectState)
             }
             MpuState::Completed { size: _, etag: _ } => {
                 let mut content = BytesMut::new();

@@ -10,8 +10,8 @@ use clap::Parser;
 use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 
-pub const TEST_BUCKET_ROOT_BLOB_NAME: &'static str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
-pub const TS_FMT: &'static str = "%b %d %H:%M:%.S";
+pub const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
+pub const TS_FMT: &str = "%b %d %H:%M:%.S";
 
 #[derive(Parser)]
 #[clap(name = "xtask", about = "Misc project related tasks")]

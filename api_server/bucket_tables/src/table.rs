@@ -37,7 +37,7 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
     pub async fn put(&mut self, e: &F::E) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
         self.kv_client
-            .put(full_key.into(), serde_json::to_string(e).unwrap().into())
+            .put(full_key, serde_json::to_string(e).unwrap().into())
             .await?;
         Ok(())
     }
@@ -47,13 +47,13 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
         <F as TableSchema>::E: for<'a> serde::Deserialize<'a>,
     {
         let full_key = Self::get_full_key(F::TABLE_NAME, &key);
-        let json = self.kv_client.get(full_key.into()).await?;
+        let json = self.kv_client.get(full_key).await?;
         Ok(serde_json::from_slice(&json).unwrap())
     }
 
     pub async fn delete(&mut self, e: &F::E) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
-        self.kv_client.delete(full_key.into()).await?;
+        self.kv_client.delete(full_key).await?;
         Ok(())
     }
 
