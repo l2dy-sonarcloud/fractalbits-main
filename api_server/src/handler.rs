@@ -112,9 +112,13 @@ async fn any_handler_inner(
         }
     };
 
+    if bucket_name.is_empty() && key == "/" && request.method() == Method::GET {
+        return bucket::list_buckets(request, rpc_client_rss).await;
+    }
+
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
-    if key == "/" && Method::PUT == request.method() {
+    if key == "/" && request.method() == Method::PUT {
         return bucket::create_bucket(
             api_key,
             bucket_name,
