@@ -1,4 +1,5 @@
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+use aws_sdk_s3::operation::list_buckets::ListBucketsOutput;
 use aws_sdk_s3::{Client, Config};
 use cmd_lib::*;
 
@@ -34,6 +35,19 @@ impl Context {
             .send()
             .await
             .unwrap();
+    }
+
+    pub async fn delete_bucket(&self, bucket_name: &str) {
+        self.client
+            .delete_bucket()
+            .bucket(bucket_name)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    pub async fn list_buckets(&self) -> ListBucketsOutput {
+        self.client.list_buckets().send().await.unwrap()
     }
 }
 

@@ -2,7 +2,7 @@ mod common;
 use aws_sdk_s3::primitives::ByteStream;
 
 #[tokio::test]
-async fn test_basic() {
+async fn test_basic_obj_apis() {
     let ctx = common::context();
     let bucket_name = "my_bucket";
     ctx.create_bucket(bucket_name).await;
@@ -30,4 +30,19 @@ async fn test_basic() {
         .unwrap();
 
     assert_bytes_eq!(res.body, value);
+
+    ctx.delete_bucket(bucket_name).await;
+}
+
+#[tokio::test]
+async fn test_basic_bucket_apis() {
+    let ctx = common::context();
+    let bucket_name = "my_bucket";
+
+    ctx.create_bucket(bucket_name).await;
+    let buckets = ctx.list_buckets().await.buckets.unwrap();
+    dbg!(&buckets);
+    assert_eq!(1, buckets.len());
+    assert_eq!(Some(bucket_name.into()), buckets[0].name);
+    ctx.delete_bucket(bucket_name).await;
 }

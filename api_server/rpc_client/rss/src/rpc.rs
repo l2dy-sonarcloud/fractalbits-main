@@ -80,4 +80,28 @@ impl RpcClient {
             delete_response::Result::Err(resp) => Err(RpcError::InternalResponseError(resp)),
         }
     }
+
+    pub async fn list(&self, prefix: Bytes) -> Result<Vec<Bytes>, RpcError> {
+        let body = ListRequest { prefix };
+
+        let mut header = MessageHeader::default();
+        header.id = self.gen_request_id();
+        header.command = Command::List;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+
+        let mut request_bytes = BytesMut::with_capacity(header.size as usize);
+        header.encode(&mut request_bytes);
+        body.encode(&mut request_bytes)
+            .map_err(RpcError::EncodeError)?;
+
+        let resp_bytes = self
+            .send_request(header.id, Message::Bytes(request_bytes.freeze()))
+            .await?
+            .body;
+        let resp: ListResponse = PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+        match resp.result.unwrap() {
+            list_response::Result::Ok(resp) => Ok(resp.kvs),
+            list_response::Result::Err(resp) => Err(RpcError::InternalResponseError(resp)),
+        }
+    }
 }

@@ -3,6 +3,7 @@ use super::permission::BucketKeyPerm;
 use super::table::{Entry, TableSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bucket {
@@ -14,9 +15,14 @@ pub struct Bucket {
 
 impl Bucket {
     pub fn new(bucket_name: String, root_blob_name: String) -> Self {
+        let creation_date = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
         Self {
             bucket_name,
-            creation_date: 0,
+            creation_date,
             authorized_keys: HashMap::new(),
             root_blob_name,
         }

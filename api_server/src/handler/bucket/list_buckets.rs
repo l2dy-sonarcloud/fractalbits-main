@@ -3,11 +3,14 @@ use axum::{
     response::{IntoResponse, Response},
     RequestExt,
 };
-use bucket_tables::{bucket_table::BucketTable, table::Table};
+use bucket_tables::{
+    bucket_table::{self, BucketTable},
+    table::Table,
+};
 use rpc_client_rss::ArcRpcClientRss;
 use serde::{Deserialize, Serialize};
 
-use crate::handler::common::{response::xml::Xml, s3_error::S3Error};
+use crate::handler::common::{response::xml::Xml, s3_error::S3Error, time::format_timestamp};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -22,10 +25,26 @@ struct ListBucketsOptions {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListAllMyBucketsResult {
-    buckets: Vec<Bucket>,
+    buckets: Buckets,
     owner: Owner,
     continuation_token: String,
     prefix: String,
+}
+
+// Needs to create wrapper to create the correct lists, see
+// https://docs.rs/quick-xml/latest/quick_xml/de/index.html#element-lists
+#[derive(Default, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+struct Buckets {
+    bucket: Vec<Bucket>,
+}
+
+impl From<Vec<Bucket>> for ListAllMyBucketsResult {
+    fn from(buckets: Vec<Bucket>) -> Self {
+        let mut res = Self::default();
+        res.buckets = Buckets { bucket: buckets };
+        res
+    }
 }
 
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
@@ -36,10 +55,21 @@ struct Bucket {
     name: String,
 }
 
+impl From<&bucket_table::Bucket> for Bucket {
+    fn from(bucket: &bucket_table::Bucket) -> Self {
+        Self {
+            bucket_region: "fractalbits".into(),
+            creation_date: format_timestamp(bucket.creation_date),
+            name: bucket.bucket_name.clone(),
+        }
+    }
+}
+
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct Owner {
     display_name: String,
+    #[serde(rename = "ID")]
     id: String,
 }
 
@@ -48,6 +78,12 @@ pub async fn list_buckets(
     rpc_client_rss: ArcRpcClientRss,
 ) -> Result<Response, S3Error> {
     let Query(_opts): Query<ListBucketsOptions> = request.extract_parts().await?;
-    let _bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
-    Ok(Xml(ListAllMyBucketsResult::default()).into_response())
+    let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
+    let buckets: Vec<Bucket> = bucket_table
+        .list()
+        .await?
+        .iter()
+        .map(|b| b.into())
+        .collect();
+    Ok(Xml(ListAllMyBucketsResult::from(buckets)).into_response())
 }
