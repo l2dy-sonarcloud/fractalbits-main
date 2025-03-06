@@ -37,6 +37,49 @@ impl RpcClient {
         }
     }
 
+    pub async fn put_with_extra(
+        &self,
+        version: i64,
+        key: Bytes,
+        value: Bytes,
+        extra_version: i64,
+        extra_key: Bytes,
+        extra_value: Bytes,
+    ) -> Result<Bytes, RpcError> {
+        let body = PutWithExtraRequest {
+            version,
+            key,
+            value,
+            extra_version,
+            extra_key,
+            extra_value,
+        };
+
+        let mut header = MessageHeader::default();
+        header.id = self.gen_request_id();
+        header.command = Command::PutWithExtra;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+
+        let mut request_bytes = BytesMut::with_capacity(header.size as usize);
+        header.encode(&mut request_bytes);
+        body.encode(&mut request_bytes)
+            .map_err(RpcError::EncodeError)?;
+
+        let resp_bytes = self
+            .send_request(header.id, Message::Bytes(request_bytes.freeze()))
+            .await?
+            .body;
+        let resp: PutWithExtraResponse =
+            PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+        match resp.result.unwrap() {
+            put_with_extra_response::Result::Ok(resp) => Ok(resp),
+            put_with_extra_response::Result::ErrOthers(resp) => {
+                Err(RpcError::InternalResponseError(resp))
+            }
+            put_with_extra_response::Result::ErrRetry(()) => Err(RpcError::Retry),
+        }
+    }
+
     pub async fn get(&self, key: Bytes) -> Result<(i64, Bytes), RpcError> {
         let body = GetRequest { key };
 
@@ -83,6 +126,45 @@ impl RpcClient {
         match resp.result.unwrap() {
             delete_response::Result::Ok(resp) => Ok(resp),
             delete_response::Result::Err(resp) => Err(RpcError::InternalResponseError(resp)),
+        }
+    }
+
+    pub async fn delete_with_extra(
+        &self,
+        key: Bytes,
+        extra_version: i64,
+        extra_key: Bytes,
+        extra_value: Bytes,
+    ) -> Result<Bytes, RpcError> {
+        let body = DeleteWithExtraRequest {
+            key,
+            extra_version,
+            extra_key,
+            extra_value,
+        };
+
+        let mut header = MessageHeader::default();
+        header.id = self.gen_request_id();
+        header.command = Command::DeleteWithExtra;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+
+        let mut request_bytes = BytesMut::with_capacity(header.size as usize);
+        header.encode(&mut request_bytes);
+        body.encode(&mut request_bytes)
+            .map_err(RpcError::EncodeError)?;
+
+        let resp_bytes = self
+            .send_request(header.id, Message::Bytes(request_bytes.freeze()))
+            .await?
+            .body;
+        let resp: DeleteWithExtraResponse =
+            PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+        match resp.result.unwrap() {
+            delete_with_extra_response::Result::Ok(resp) => Ok(resp),
+            delete_with_extra_response::Result::ErrOthers(resp) => {
+                Err(RpcError::InternalResponseError(resp))
+            }
+            delete_with_extra_response::Result::ErrRetry(()) => Err(RpcError::Retry),
         }
     }
 

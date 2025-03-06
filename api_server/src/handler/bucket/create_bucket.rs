@@ -86,23 +86,22 @@ pub async fn create_bucket(
         }
     };
 
-    let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
-    if bucket_table.get(bucket_name.clone()).await.is_ok() {
-        return Err(S3Error::BucketAlreadyExists);
-    }
-
-    let mut bucket = Versioned::new(0, Bucket::new(bucket_name.clone(), root_blob_name));
-    let bucket_key_perm = BucketKeyPerm::ALL_PERMISSIONS;
-    bucket
-        .data
-        .authorized_keys
-        .insert(api_key_id.clone(), bucket_key_perm);
-    tracing::debug!("putting bucket_table with {bucket_name}");
-    bucket_table.put(&bucket).await?;
-    tracing::debug!("putting bucket_table with {bucket_name} done");
-
     let retry_times = 10;
     for i in 0..retry_times {
+        let mut bucket_table: Table<ArcRpcClientRss, BucketTable> =
+            Table::new(rpc_client_rss.clone());
+        if bucket_table.get(bucket_name.clone()).await.is_ok() {
+            return Err(S3Error::BucketAlreadyExists);
+        }
+
+        let mut bucket =
+            Versioned::new(0, Bucket::new(bucket_name.clone(), root_blob_name.clone()));
+        let bucket_key_perm = BucketKeyPerm::ALL_PERMISSIONS;
+        bucket
+            .data
+            .authorized_keys
+            .insert(api_key_id.clone(), bucket_key_perm);
+
         let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> =
             Table::new(rpc_client_rss.clone());
         let mut api_key = api_key_table.get(api_key_id.clone()).await?;
@@ -110,13 +109,17 @@ pub async fn create_bucket(
             .data
             .authorized_buckets
             .insert(bucket_name.clone(), bucket_key_perm);
+
         tracing::debug!(
             "Inserting {} into api_key {} (retry={})",
             bucket_name.clone(),
             api_key_id.clone(),
             i,
         );
-        match api_key_table.put(&api_key).await {
+        match bucket_table
+            .put_with_extra::<ApiKeyTable>(&bucket, &api_key)
+            .await
+        {
             Err(RpcErrorRss::Retry) => continue,
             Ok(_) => {
                 return Ok([(
@@ -130,7 +133,5 @@ pub async fn create_bucket(
     }
 
     tracing::error!("Inserting {bucket_name} into api_key {api_key_id} failed after retrying {retry_times} times");
-    // TODO: wrap multiple kv updates into etcd txn and send them through rpc call, since it may
-    // leave etcd datebase into an inconsistent state
     Err(S3Error::InternalError)
 }

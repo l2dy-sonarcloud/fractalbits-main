@@ -50,11 +50,11 @@ pub async fn delete_bucket(
         }
     };
 
-    let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
-    bucket_table.delete(&bucket.data).await?;
-
     let retry_times = 10;
     for i in 0..retry_times {
+        let mut bucket_table: Table<ArcRpcClientRss, BucketTable> =
+            Table::new(rpc_client_rss.clone());
+
         let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> =
             Table::new(rpc_client_rss.clone());
         let mut api_key = api_key_table.get(api_key_id.clone()).await?;
@@ -68,7 +68,11 @@ pub async fn delete_bucket(
             api_key_id.clone(),
             i,
         );
-        match api_key_table.put(&api_key).await {
+
+        match bucket_table
+            .delete_with_extra::<ApiKeyTable>(&bucket.data, &api_key)
+            .await
+        {
             Err(RpcErrorRss::Retry) => continue,
             Ok(_) => return Ok(().into_response()),
             Err(e) => return Err(e.into()),
@@ -79,7 +83,5 @@ pub async fn delete_bucket(
         "Deleting {} from api_key {api_key_id} failed after retrying {retry_times} times",
         bucket.data.bucket_name
     );
-    // TODO: wrap multiple kv updates into etcd txn and send them through rpc call, since it may
-    // leave etcd datebase into an inconsistent state
     Err(S3Error::InternalError)
 }

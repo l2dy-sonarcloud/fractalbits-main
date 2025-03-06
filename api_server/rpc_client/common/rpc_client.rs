@@ -172,4 +172,39 @@ impl KvClient for ArcRpcClient {
     async fn list(&mut self, prefix: String) -> Result<Vec<Bytes>, Self::Error> {
         self.0.list(prefix.into()).await
     }
+
+    async fn put_with_extra(
+        &mut self,
+        key: String,
+        value: Versioned<Bytes>,
+        extra_key: String,
+        extra_value: Versioned<Bytes>,
+    ) -> Result<Bytes, Self::Error> {
+        self.0
+            .put_with_extra(
+                value.version,
+                key.into(),
+                value.data,
+                extra_value.version,
+                extra_key.into(),
+                extra_value.data,
+            )
+            .await
+    }
+
+    async fn delete_with_extra(
+        &mut self,
+        key: String,
+        extra_key: String,
+        extra_value: Versioned<Bytes>,
+    ) -> Result<Bytes, Self::Error> {
+        self.0
+            .delete_with_extra(
+                key.into(),
+                extra_value.version,
+                extra_key.into(),
+                extra_value.data,
+            )
+            .await
+    }
 }

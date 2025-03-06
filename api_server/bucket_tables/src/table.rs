@@ -37,8 +37,21 @@ pub trait TableSchema {
 pub trait KvClient {
     type Error: std::error::Error;
     async fn put(&mut self, key: String, value: Versioned<Bytes>) -> Result<Bytes, Self::Error>;
+    async fn put_with_extra(
+        &mut self,
+        key: String,
+        value: Versioned<Bytes>,
+        extra_key: String,
+        extra_value: Versioned<Bytes>,
+    ) -> Result<Bytes, Self::Error>;
     async fn get(&mut self, key: String) -> Result<Versioned<Bytes>, Self::Error>;
     async fn delete(&mut self, key: String) -> Result<Bytes, Self::Error>;
+    async fn delete_with_extra(
+        &mut self,
+        key: String,
+        extra_key: String,
+        extra_value: Versioned<Bytes>,
+    ) -> Result<Bytes, Self::Error>;
     async fn list(&mut self, prefix: String) -> Result<Vec<Bytes>, Self::Error>;
 }
 
@@ -60,6 +73,29 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
         let data: Bytes = serde_json::to_string(&e.data).unwrap().into();
         self.kv_client
             .put(full_key, (e.version, data).into())
+            .await?;
+        Ok(())
+    }
+
+    pub async fn put_with_extra<F2>(
+        &mut self,
+        e: &Versioned<F::E>,
+        extra: &Versioned<F2::E>,
+    ) -> Result<(), C::Error>
+    where
+        F2: TableSchema,
+    {
+        let full_key = Self::get_full_key(F::TABLE_NAME, &e.data.key());
+        let data: Bytes = serde_json::to_string(&e.data).unwrap().into();
+        let extra_full_key = Self::get_full_key(F2::TABLE_NAME, &extra.data.key());
+        let extra_data: Bytes = serde_json::to_string(&extra.data).unwrap().into();
+        self.kv_client
+            .put_with_extra(
+                full_key,
+                (e.version, data).into(),
+                extra_full_key,
+                (extra.version, extra_data).into(),
+            )
             .await?;
         Ok(())
     }
@@ -88,6 +124,23 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
     pub async fn delete(&mut self, e: &F::E) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
         self.kv_client.delete(full_key).await?;
+        Ok(())
+    }
+
+    pub async fn delete_with_extra<F2>(
+        &mut self,
+        e: &F::E,
+        extra: &Versioned<F2::E>,
+    ) -> Result<(), C::Error>
+    where
+        F2: TableSchema,
+    {
+        let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
+        let extra_full_key = Self::get_full_key(F2::TABLE_NAME, &extra.data.key());
+        let extra_data: Bytes = serde_json::to_string(&extra.data).unwrap().into();
+        self.kv_client
+            .delete_with_extra(full_key, extra_full_key, (extra.version, extra_data).into())
+            .await?;
         Ok(())
     }
 
