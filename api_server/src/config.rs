@@ -42,7 +42,7 @@ fn default_port() -> u16 {
 }
 
 fn default_s3_region() -> String {
-    "fractalbits".into()
+    "us-east-1".into()
 }
 
 fn default_root_domain() -> String {
