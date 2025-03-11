@@ -188,6 +188,7 @@ WorkingDirectory={pwd}
     );
     let minio_wait_secs = 5;
     let minio_url = "http://localhost:9000";
+    let mybucket = "s3://mybucket";
     run_cmd! {
         mkdir -p etc;
         mkdir -p s3;
@@ -199,7 +200,7 @@ WorkingDirectory={pwd}
         sleep $minio_wait_secs;
         info "Creating s3 bucket (\"mybucket\") in minio ...";
         AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3api create-bucket --bucket mybucket;
+            aws s3 mb $mybucket;
     }?;
 
     Ok(())
