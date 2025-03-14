@@ -3,10 +3,8 @@ pub mod common;
 mod delete;
 mod get;
 mod head;
-mod list;
-mod mpu;
+mod post;
 mod put;
-mod session;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -242,22 +240,21 @@ async fn get_handler(
         }
 
         (Some(ApiCommand::Uploads), "/") => {
-            list::list_multipart_uploads(request, rpc_client_nss).await
+            get::list_multipart_uploads(request, rpc_client_nss).await
         }
-        (Some(ApiCommand::Session), _) => session::create_session(request).await,
         (Some(api_cmd), _) => {
             tracing::warn!("{api_cmd} not implemented");
             Err(S3Error::NotImplemented)
         }
         (None, "/") => {
             if api_sig.list_type.is_some() {
-                list::list_objects_v2(request, bucket, rpc_client_nss).await
+                get::list_objects_v2(request, bucket, rpc_client_nss).await
             } else {
-                list::list_objects(request, bucket, rpc_client_nss).await
+                get::list_objects(request, bucket, rpc_client_nss).await
             }
         }
         (None, _key) if api_sig.upload_id.is_some() => {
-            list::list_parts(request, bucket, key, rpc_client_nss).await
+            get::list_parts(request, bucket, key, rpc_client_nss).await
         }
         (None, _key) => get::get_object(request, bucket, key, rpc_client_nss, rpc_client_bss).await,
     }
@@ -277,7 +274,7 @@ async fn put_handler(
     match (api_cmd, api_sig.part_number, api_sig.upload_id) {
         (Some(_api_cmd), _, _) => Err(S3Error::NotImplemented),
         (None, Some(part_number), Some(upload_id)) if key != "/" => {
-            mpu::upload_part(
+            put::upload_part(
                 request,
                 bucket,
                 key,
@@ -315,13 +312,13 @@ async fn post_handler(
 ) -> Result<Response, S3Error> {
     match (api_cmd, api_sig.upload_id) {
         (Some(ApiCommand::Delete), None) if key == "/" => {
-            delete::delete_objects(request, rpc_client_nss, blob_deletion).await
+            post::delete_objects(request, rpc_client_nss, blob_deletion).await
         }
         (Some(ApiCommand::Uploads), None) if key != "/" => {
-            mpu::create_multipart_upload(request, bucket, key, rpc_client_nss).await
+            post::create_multipart_upload(request, bucket, key, rpc_client_nss).await
         }
         (None, Some(upload_id)) if key != "/" => {
-            mpu::complete_multipart_upload(
+            post::complete_multipart_upload(
                 request,
                 bucket,
                 key,
@@ -347,7 +344,7 @@ async fn delete_handler(
 ) -> Result<Response, S3Error> {
     match api_sig.upload_id {
         Some(upload_id) if key != "/" => {
-            mpu::abort_multipart_upload(
+            delete::abort_multipart_upload(
                 request,
                 bucket,
                 key,

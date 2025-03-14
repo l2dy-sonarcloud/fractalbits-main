@@ -8,12 +8,14 @@ use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Deserialize;
 
-use crate::handler::mpu;
-use crate::handler::{common::s3_error::S3Error, Request};
 use crate::handler::{
-    common::signature::checksum::add_checksum_response_headers, list::list_raw_objects,
+    common::{
+        get_raw_object, list_raw_objects, mpu_get_part_prefix,
+        s3_error::S3Error,
+        signature::checksum::{add_checksum_response_headers, X_AMZ_CHECKSUM_MODE},
+    },
+    Request,
 };
-use crate::handler::{common::signature::checksum::X_AMZ_CHECKSUM_MODE, get::get_raw_object};
 use crate::object_layout::{MpuState, ObjectState};
 use crate::BlobId;
 use bucket_tables::bucket_table::Bucket;
@@ -75,7 +77,7 @@ pub async fn get_object(
             }
             MpuState::Completed { size: _, etag: _ } => {
                 let mut content = BytesMut::new();
-                let mpu_prefix = mpu::get_part_prefix(key.clone(), 0);
+                let mpu_prefix = mpu_get_part_prefix(key.clone(), 0);
                 let mpus = list_raw_objects(
                     bucket.root_blob_name.clone(),
                     rpc_client_nss,

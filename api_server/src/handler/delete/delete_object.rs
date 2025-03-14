@@ -4,7 +4,7 @@ use rpc_client_nss::{rpc::delete_inode_response, RpcClientNss};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    handler::{common::s3_error::S3Error, list::list_raw_objects, mpu},
+    handler::common::{list_raw_objects, mpu_get_part_prefix, s3_error::S3Error},
     object_layout::{MpuState, ObjectLayout, ObjectState},
     BlobId,
 };
@@ -52,7 +52,7 @@ pub async fn delete_object(
                 return Err(S3Error::InvalidObjectState);
             }
             MpuState::Completed { .. } => {
-                let mpu_prefix = mpu::get_part_prefix(key, 0);
+                let mpu_prefix = mpu_get_part_prefix(key, 0);
                 let mpus = list_raw_objects(
                     bucket.root_blob_name.clone(),
                     rpc_client_nss,

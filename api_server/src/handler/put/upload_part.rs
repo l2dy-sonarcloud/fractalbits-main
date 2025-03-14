@@ -5,7 +5,7 @@ use rpc_client_nss::RpcClientNss;
 use serde::Serialize;
 use tokio::sync::mpsc::Sender;
 
-use crate::handler::common::s3_error::S3Error;
+use crate::handler::common::{mpu_get_part_prefix, s3_error::S3Error};
 use crate::handler::put::put_object;
 use crate::handler::Request;
 use crate::BlobId;
@@ -46,7 +46,7 @@ pub async fn upload_part(
     }
     // TODO: check upload_id
 
-    let mut key = super::get_part_prefix(key, part_number);
+    let mut key = mpu_get_part_prefix(key, part_number);
     key.push('\0');
     put_object(
         request,

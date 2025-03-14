@@ -2,10 +2,12 @@ use std::collections::HashSet;
 
 use crate::{
     handler::{
-        common::{response::xml::Xml, s3_error::S3Error},
+        common::{
+            get_raw_object, list_raw_objects, mpu_get_part_prefix, mpu_parse_part_number,
+            response::xml::Xml, s3_error::S3Error,
+        },
         delete::delete_object,
-        get::get_raw_object,
-        list, mpu, Request,
+        Request,
     },
     object_layout::{MpuState, ObjectState},
     BlobId,
@@ -77,8 +79,8 @@ pub async fn complete_multipart_upload(
     }
 
     let max_parts = 10000;
-    let mpu_prefix = mpu::get_part_prefix(key.clone(), 0);
-    let objs = list::list_raw_objects(
+    let mpu_prefix = mpu_get_part_prefix(key.clone(), 0);
+    let objs = list_raw_objects(
         bucket.root_blob_name.clone(),
         rpc_client_nss,
         max_parts,
@@ -91,7 +93,7 @@ pub async fn complete_multipart_upload(
     let mut total_size = 0;
     let mut invalid_part_keys = HashSet::new();
     for (mpu_key, mpu_obj) in objs.iter() {
-        let part_number = mpu::parse_part_number(mpu_key, &key);
+        let part_number = mpu_parse_part_number(mpu_key, &key);
         if !valid_part_numbers.remove(&part_number) {
             invalid_part_keys.insert(mpu_key.clone());
         } else {

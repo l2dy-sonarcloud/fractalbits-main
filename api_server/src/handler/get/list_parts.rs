@@ -1,7 +1,7 @@
-use crate::handler::common::response::xml::Xml;
-use crate::handler::common::s3_error::S3Error;
-use crate::handler::common::time;
-use crate::handler::get::get_raw_object;
+use crate::handler::common::{
+    get_raw_object, list_raw_objects, mpu_get_part_prefix, response::xml::Xml, s3_error::S3Error,
+    time,
+};
 use crate::object_layout::{MpuState, ObjectState};
 use axum::{
     extract::Query,
@@ -12,7 +12,7 @@ use bucket_tables::bucket_table::Bucket;
 use rpc_client_nss::RpcClientNss;
 use serde::{Deserialize, Serialize};
 
-use crate::handler::{mpu, Request};
+use crate::handler::Request;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -86,8 +86,8 @@ pub async fn list_parts(
         return Err(S3Error::InvalidObjectState);
     }
 
-    let mpu_prefix = mpu::get_part_prefix(key, 0);
-    let mpus = super::list_raw_objects(
+    let mpu_prefix = mpu_get_part_prefix(key, 0);
+    let mpus = list_raw_objects(
         bucket.root_blob_name.clone(),
         rpc_client_nss,
         max_parts,
