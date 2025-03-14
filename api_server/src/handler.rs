@@ -18,10 +18,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bucket_tables::bucket_table::Bucket;
-use common::request::extract::authorization::Authorization;
+use common::request::extract::authorization::Authentication;
 use common::request::extract::{
     api_command::ApiCommand, api_command::ApiCommandFromQuery, api_signature::ApiSignature,
-    authorization::AuthorizationFromReq, bucket_name::BucketNameFromHost, key::KeyFromPath,
+    authorization::AuthenticationFromReq, bucket_name::BucketNameFromHost, key::KeyFromPath,
 };
 use common::s3_error::S3Error;
 use common::signature::{self, body::ReqBody, verify_request, VerifiedRequest};
@@ -40,7 +40,7 @@ pub async fn any_handler(
     ApiCommandFromQuery(api_cmd): ApiCommandFromQuery,
     KeyFromPath(key_from_path): KeyFromPath,
     api_sig: ApiSignature,
-    AuthorizationFromReq(auth): AuthorizationFromReq,
+    AuthenticationFromReq(auth): AuthenticationFromReq,
     request: http::Request<Body>,
 ) -> Response {
     let (bucket_name, key) = match bucket_name_from_host {
@@ -90,7 +90,7 @@ async fn any_handler_inner(
     key: String,
     api_cmd: Option<ApiCommand>,
     api_sig: ApiSignature,
-    auth: Option<Authorization>,
+    auth: Option<Authentication>,
     request: http::Request<Body>,
 ) -> Result<Response, S3Error> {
     let rpc_client_rss = app.get_rpc_client_rss();

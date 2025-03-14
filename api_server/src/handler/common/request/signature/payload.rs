@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bucket_tables::api_key_table::{ApiKey, ApiKeyTable};
 
 use crate::handler::common::encoding::uri_encode;
-use crate::handler::common::request::extract::authorization::Authorization;
+use crate::handler::common::request::extract::authorization::Authentication;
 use crate::handler::common::time::LONG_DATETIME;
 
 use super::{signing_hmac, SignatureError};
@@ -22,7 +22,7 @@ use super::{signing_hmac, SignatureError};
 const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
 
 pub async fn check_standard_signature(
-    auth: &Authorization,
+    auth: &Authentication,
     request: Request,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
@@ -107,7 +107,7 @@ pub fn canonical_request(
 }
 
 pub async fn verify_v4(
-    auth: &Authorization,
+    auth: &Authentication,
     payload: &[u8],
     rpc_client_rss: ArcRpcClientRss,
     region: &str,

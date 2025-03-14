@@ -45,10 +45,10 @@ impl IntoResponse for AuthError {
     }
 }
 
-pub struct AuthorizationFromReq(pub Option<Authorization>);
+pub struct AuthenticationFromReq(pub Option<Authentication>);
 
 #[derive(Debug)]
-pub struct Authorization {
+pub struct Authentication {
     pub key_id: String,
     pub scope: Scope,
     pub signed_headers: BTreeSet<String>,
@@ -73,7 +73,7 @@ impl Scope {
     }
 }
 
-impl<S> FromRequestParts<S> for AuthorizationFromReq
+impl<S> FromRequestParts<S> for AuthenticationFromReq
 where
     S: Send + Sync,
 {
@@ -146,7 +146,7 @@ where
             return Err(AuthError::Invalid("Date mismatch".into()));
         }
 
-        let auth = Authorization {
+        let auth = Authentication {
             key_id,
             scope,
             signed_headers,

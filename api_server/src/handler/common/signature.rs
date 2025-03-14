@@ -14,7 +14,7 @@ use axum::http::{request::Request, HeaderName};
 // use garage_model::key_table::Key;
 // use garage_util::data::{sha256sum, Hash};
 use super::data::{sha256sum, Hash};
-use super::request::extract::authorization::Authorization;
+use super::request::extract::authorization::Authentication;
 
 use error::*;
 
@@ -73,7 +73,7 @@ pub struct VerifiedRequest {
 
 pub async fn verify_request(
     mut req: Request<Body>,
-    auth: &Authorization,
+    auth: &Authentication,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
 ) -> Result<VerifiedRequest, Error> {

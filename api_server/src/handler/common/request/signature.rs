@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 
 use crate::handler::common::time::SHORT_DATE;
 
-use super::extract::authorization::Authorization;
+use super::extract::authorization::Authentication;
 use axum::extract::{rejection::QueryRejection, Request};
 use bucket_tables::{api_key_table::ApiKey, table::Versioned};
 use chrono::{DateTime, Utc};
@@ -39,7 +39,7 @@ pub enum SignatureError {
 
 pub async fn verify_request(
     request: Request,
-    auth: &Authorization,
+    auth: &Authentication,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
 ) -> Result<(Request, Option<Versioned<ApiKey>>), SignatureError> {

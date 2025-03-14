@@ -14,7 +14,7 @@ use rpc_client_rss::ArcRpcClientRss;
 // use hyper::{body::Incoming as IncomingBody, Method, Request};
 use sha2::{Digest, Sha256};
 
-use crate::handler::common::request::extract::authorization::Authorization;
+use crate::handler::common::request::extract::authorization::Authentication;
 
 // use garage_table::*;
 use super::super::data::Hash;
@@ -33,7 +33,7 @@ pub struct CheckedSignature {
 }
 
 pub async fn check_payload_signature(
-    auth: &Authorization,
+    auth: &Authentication,
     request: &mut Request<Body>,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
@@ -97,7 +97,7 @@ fn parse_x_amz_content_sha256(header: Option<&str>) -> Result<ContentSha256Heade
 }
 
 pub async fn check_standard_signature(
-    auth: &Authorization,
+    auth: &Authentication,
     request: &mut Request<Body>,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
@@ -186,7 +186,7 @@ pub fn canonical_request(
 }
 
 pub async fn verify_v4(
-    auth: &Authorization,
+    auth: &Authentication,
     payload: &[u8],
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
