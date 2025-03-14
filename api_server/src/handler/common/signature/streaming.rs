@@ -64,7 +64,7 @@ pub fn parse_streaming_body(
                     request_trailer_checksum_algorithm(req.headers())?
                         .ok_or_else(|| Error::Other("Missing x-amz-trailer header".into()))?,
                 );
-                checksummer = checksummer.add(algo);
+                checksummer = checksummer.add_algo(algo);
                 algo
             } else {
                 None

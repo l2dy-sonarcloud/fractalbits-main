@@ -81,6 +81,7 @@ pub struct ExpectedChecksums {
     pub extra: Option<ChecksumValue>,
 }
 
+#[derive(Default)]
 pub struct Checksummer {
     pub crc32: Option<Crc32>,
     pub crc32c: Option<Crc32c>,
@@ -99,18 +100,8 @@ pub struct Checksums {
 }
 
 impl Checksummer {
-    pub fn new() -> Self {
-        Self {
-            crc32: None,
-            crc32c: None,
-            md5: None,
-            sha1: None,
-            sha256: None,
-        }
-    }
-
     pub fn init(expected: &ExpectedChecksums, add_md5: bool) -> Self {
-        let mut ret = Self::new();
+        let mut ret = Self::default();
         ret.add_expected(expected);
         if add_md5 {
             ret.add_md5();
@@ -140,7 +131,7 @@ impl Checksummer {
         }
     }
 
-    pub fn add(mut self, algo: Option<ChecksumAlgorithm>) -> Self {
+    pub fn add_algo(mut self, algo: Option<ChecksumAlgorithm>) -> Self {
         match algo {
             Some(ChecksumAlgorithm::Crc32) => {
                 self.crc32 = Some(Crc32::new());
@@ -194,7 +185,7 @@ impl Checksums {
     pub fn verify(&self, expected: &ExpectedChecksums) -> Result<(), Error> {
         if let Some(expected_md5) = &expected.md5 {
             match self.md5 {
-                Some(md5) if BASE64_STANDARD.encode(&md5) == expected_md5.trim_matches('"') => (),
+                Some(md5) if BASE64_STANDARD.encode(md5) == expected_md5.trim_matches('"') => (),
                 _ => {
                     return Err(Error::InvalidDigest(
                         "MD5 checksum verification failed (from content-md5)".into(),
@@ -307,7 +298,7 @@ pub fn extract_checksum_value(
         ChecksumAlgorithm::Crc32 => {
             let crc32 = headers
                 .get(X_AMZ_CHECKSUM_CRC32)
-                .and_then(|x| BASE64_STANDARD.decode(&x).ok())
+                .and_then(|x| BASE64_STANDARD.decode(x).ok())
                 .and_then(|x| x.try_into().ok())
                 .ok_or_else(|| Error::Other("invalid x-amz-checksum-crc32 header".into()))?;
             Ok(ChecksumValue::Crc32(crc32))
@@ -315,7 +306,7 @@ pub fn extract_checksum_value(
         ChecksumAlgorithm::Crc32c => {
             let crc32c = headers
                 .get(X_AMZ_CHECKSUM_CRC32C)
-                .and_then(|x| BASE64_STANDARD.decode(&x).ok())
+                .and_then(|x| BASE64_STANDARD.decode(x).ok())
                 .and_then(|x| x.try_into().ok())
                 .ok_or_else(|| Error::Other("invalid x-amz-checksum-crc32c header".into()))?;
             Ok(ChecksumValue::Crc32c(crc32c))
@@ -323,7 +314,7 @@ pub fn extract_checksum_value(
         ChecksumAlgorithm::Sha1 => {
             let sha1 = headers
                 .get(X_AMZ_CHECKSUM_SHA1)
-                .and_then(|x| BASE64_STANDARD.decode(&x).ok())
+                .and_then(|x| BASE64_STANDARD.decode(x).ok())
                 .and_then(|x| x.try_into().ok())
                 .ok_or_else(|| Error::Other("invalid x-amz-checksum-sha1 header".into()))?;
             Ok(ChecksumValue::Sha1(sha1))
@@ -331,7 +322,7 @@ pub fn extract_checksum_value(
         ChecksumAlgorithm::Sha256 => {
             let sha256 = headers
                 .get(X_AMZ_CHECKSUM_SHA256)
-                .and_then(|x| BASE64_STANDARD.decode(&x).ok())
+                .and_then(|x| BASE64_STANDARD.decode(x).ok())
                 .and_then(|x| x.try_into().ok())
                 .ok_or_else(|| Error::Other("invalid x-amz-checksum-sha256 header".into()))?;
             Ok(ChecksumValue::Sha256(sha256))
@@ -347,25 +338,25 @@ pub fn add_checksum_response_headers(
         Some(ChecksumValue::Crc32(crc32)) => {
             resp.headers_mut().insert(
                 X_AMZ_CHECKSUM_CRC32,
-                HeaderValue::from_str(&BASE64_STANDARD.encode(&crc32))?,
+                HeaderValue::from_str(&BASE64_STANDARD.encode(crc32))?,
             );
         }
         Some(ChecksumValue::Crc32c(crc32c)) => {
             resp.headers_mut().insert(
                 X_AMZ_CHECKSUM_CRC32C,
-                HeaderValue::from_str(&BASE64_STANDARD.encode(&crc32c)).unwrap(),
+                HeaderValue::from_str(&BASE64_STANDARD.encode(crc32c)).unwrap(),
             );
         }
         Some(ChecksumValue::Sha1(sha1)) => {
             resp.headers_mut().insert(
                 X_AMZ_CHECKSUM_SHA1,
-                HeaderValue::from_str(&BASE64_STANDARD.encode(&sha1)).unwrap(),
+                HeaderValue::from_str(&BASE64_STANDARD.encode(sha1)).unwrap(),
             );
         }
         Some(ChecksumValue::Sha256(sha256)) => {
             resp.headers_mut().insert(
                 X_AMZ_CHECKSUM_SHA256,
-                HeaderValue::from_str(&BASE64_STANDARD.encode(&sha256)).unwrap(),
+                HeaderValue::from_str(&BASE64_STANDARD.encode(sha256)).unwrap(),
             );
         }
         None => (),
