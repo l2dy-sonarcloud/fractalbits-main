@@ -2,11 +2,13 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use axum::{
-    extract::{rejection::QueryRejection, FromRequestParts, Query},
+    extract::{FromRequestParts, Query},
     http::request::Parts,
     RequestPartsExt,
 };
 use strum::EnumString;
+
+use crate::handler::common::s3_error::S3Error;
 
 #[derive(Debug, EnumString, Copy, Clone, strum::Display)]
 #[strum(serialize_all = "camelCase")]
@@ -51,7 +53,7 @@ impl<S> FromRequestParts<S> for ApiCommandFromQuery
 where
     S: Send + Sync,
 {
-    type Rejection = QueryRejection;
+    type Rejection = S3Error;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let query_params: Query<Vec<(Cow<'_, str>, Cow<'_, str>)>> = parts.extract().await?;

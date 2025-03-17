@@ -2,9 +2,8 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
+use crate::handler::common::s3_error::S3Error;
 use crate::handler::common::time::{LONG_DATETIME, SHORT_DATE};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::{
     extract::FromRequestParts,
     http::{
@@ -28,24 +27,12 @@ pub enum AuthError {
     Invalid(String),
 }
 
-impl IntoResponse for AuthError {
-    fn into_response(self) -> axum::response::Response {
-        match self {
-            AuthError::ToStrError(s) => (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid string in authorization header: {s}"),
-            )
-                .into_response(),
-            AuthError::Invalid(s) => (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid authorization header: {s}"),
-            )
-                .into_response(),
-        }
+impl From<AuthError> for S3Error {
+    fn from(value: AuthError) -> Self {
+        tracing::error!("AuthError: {value}");
+        S3Error::AuthorizationHeaderMalformed
     }
 }
-
-pub struct AuthenticationFromReq(pub Option<Authentication>);
 
 #[derive(Debug)]
 pub struct Authentication {
@@ -73,17 +60,16 @@ impl Scope {
     }
 }
 
-impl<S> FromRequestParts<S> for AuthenticationFromReq
+impl<S> FromRequestParts<S> for Authentication
 where
     S: Send + Sync,
 {
-    type Rejection = AuthError;
+    type Rejection = S3Error;
 
-    // TODO: better error handling
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let authorization = match parts.headers.get(AUTHORIZATION) {
             Some(auth) => auth.to_str()?,
-            None => return Ok(Self(None)),
+            None => return Err(S3Error::AccessDenied),
         };
 
         let (auth_kind, rest) = authorization
@@ -91,9 +77,7 @@ where
             .ok_or(AuthError::Invalid("Authorization field too short".into()))?;
 
         if auth_kind != AWS4_HMAC_SHA256 {
-            return Err(AuthError::Invalid(
-                "Unsupported authorization method".into(),
-            ));
+            return Err(AuthError::Invalid("Unsupported authorization method".into()).into());
         }
 
         let mut auth_params = HashMap::new();
@@ -139,22 +123,21 @@ where
         let date = parse_date(date)?;
 
         if Utc::now() - date > Duration::hours(24) {
-            return Err(AuthError::Invalid("Date is too old".into()));
+            return Err(AuthError::Invalid("Date is too old".into()).into());
         }
         let (key_id, scope) = parse_credential(cred)?;
         if scope.date != format!("{}", date.format(SHORT_DATE)) {
-            return Err(AuthError::Invalid("Date mismatch".into()));
+            return Err(AuthError::Invalid("Date mismatch".into()).into());
         }
 
-        let auth = Authentication {
+        Ok(Self {
             key_id,
             scope,
             signed_headers,
             signature,
             content_sha256: content_sha256.to_str()?.to_string(),
             date,
-        };
-        Ok(Self(Some(auth)))
+        })
     }
 }
 

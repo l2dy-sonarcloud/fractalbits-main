@@ -1,9 +1,11 @@
 use axum::{
-    extract::{rejection::QueryRejection, FromRequestParts, Query},
+    extract::{FromRequestParts, Query},
     http::request::Parts,
     RequestPartsExt,
 };
 use serde::Deserialize;
+
+use crate::handler::common::s3_error::S3Error;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -22,7 +24,7 @@ impl<S> FromRequestParts<S> for ApiSignature
 where
     S: Send + Sync,
 {
-    type Rejection = QueryRejection;
+    type Rejection = S3Error;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let Query(mut api_signature): Query<ApiSignature> = parts.extract().await?;

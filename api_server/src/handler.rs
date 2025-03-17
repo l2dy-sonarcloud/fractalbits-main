@@ -15,7 +15,7 @@ use axum::{
     body::Body,
     extract::{ConnectInfo, State},
     http,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use bucket::BucketEndpoint;
 use bucket_tables::api_key_table::ApiKey;
@@ -41,15 +41,11 @@ pub async fn any_handler(
     State(app): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ApiCommandFromQuery(api_cmd): ApiCommandFromQuery,
-    AuthenticationFromReq(auth): AuthenticationFromReq,
-    bucket_name_and_key: Result<BucketNameAndKey, S3Error>,
+    auth: Authentication,
+    BucketNameAndKey { bucket_name, key }: BucketNameAndKey,
     api_sig: ApiSignature,
     request: http::Request<Body>,
 ) -> Response {
-    let (bucket_name, key) = match bucket_name_and_key {
-        Err(e) => return e.into_response(),
-        Ok(BucketNameAndKey { bucket_name, key }) => (bucket_name, key),
-    };
     tracing::debug!(%bucket_name, %key);
 
     let resource = format!("/{bucket_name}{key}");
@@ -68,31 +64,26 @@ async fn any_handler_inner(
     addr: SocketAddr,
     bucket_name: String,
     key: String,
-    auth: Option<Authentication>,
+    auth: Authentication,
     request: http::Request<Body>,
     endpoint: Endpoint,
 ) -> Result<Response, S3Error> {
     let rpc_client_rss = app.get_rpc_client_rss();
     let VerifiedRequest {
         request, api_key, ..
-    } = match auth {
-        None => unreachable!(),
-        Some(auth) => {
-            match verify_request(
-                request,
-                &auth,
-                rpc_client_rss.clone(),
-                &app.config.s3_region,
-            )
-            .await
-            {
-                Ok(res) => res,
-                Err(signature::error::Error::RpcErrorRss(RpcErrorRss::NotFound)) => {
-                    return Err(S3Error::InvalidAccessKeyId)
-                }
-                Err(_e) => return Err(S3Error::InvalidSignature),
-            }
+    } = match verify_request(
+        request,
+        &auth,
+        rpc_client_rss.clone(),
+        &app.config.s3_region,
+    )
+    .await
+    {
+        Ok(res) => res,
+        Err(signature::error::Error::RpcErrorRss(RpcErrorRss::NotFound)) => {
+            return Err(S3Error::InvalidAccessKeyId)
         }
+        Err(_e) => return Err(S3Error::InvalidSignature),
     };
 
     let rpc_client_nss = app.get_rpc_client_nss(addr);
