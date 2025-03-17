@@ -19,8 +19,6 @@ use super::super::data::*;
 use super::body::ChecksumAlgorithm;
 use super::*;
 
-// pub use garage_model::s3::object_table::{ChecksumAlgorithm, ChecksumValue};
-
 pub const CONTENT_MD5: HeaderName = HeaderName::from_static("content-md5");
 
 pub const X_AMZ_CHECKSUM_ALGORITHM: HeaderName =

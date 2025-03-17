@@ -6,8 +6,20 @@ pub use complete_multipart_upload::complete_multipart_upload;
 pub use create_multipart_upload::create_multipart_upload;
 pub use delete_objects::delete_objects;
 
+use super::common::authorization::Authorization;
+
 pub enum PostEndpoint {
     CompleteMultipartUpload(String),
     CreateMultipartUpload,
     DeleteObjects,
+}
+
+impl PostEndpoint {
+    pub fn authorization_type(&self) -> Authorization {
+        match self {
+            PostEndpoint::CompleteMultipartUpload(_) => Authorization::Write,
+            PostEndpoint::CreateMultipartUpload => Authorization::Write,
+            PostEndpoint::DeleteObjects => Authorization::Write,
+        }
+    }
 }

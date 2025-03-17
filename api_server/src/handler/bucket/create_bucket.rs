@@ -43,24 +43,21 @@ struct BucketConfig {
 }
 
 pub async fn create_bucket(
-    api_key: Option<Versioned<ApiKey>>,
+    api_key: Versioned<ApiKey>,
     bucket_name: String,
     request: Request,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
     region: &str,
 ) -> Result<Response, S3Error> {
-    let api_key_id = match api_key {
-        None => return Err(S3Error::InvalidAccessKeyId),
-        Some(api_key) => {
-            if api_key.data.authorized_buckets.contains_key(&bucket_name) {
-                return Err(S3Error::BucketAlreadyExists);
-            }
-            if !api_key.data.allow_create_bucket {
-                return Err(S3Error::AccessDenied);
-            }
-            api_key.data.key_id.clone()
+    let api_key_id = {
+        if api_key.data.authorized_buckets.contains_key(&bucket_name) {
+            return Err(S3Error::BucketAlreadyExists);
         }
+        if !api_key.data.allow_create_bucket {
+            return Err(S3Error::AccessDenied);
+        }
+        api_key.data.key_id.clone()
     };
 
     let body = request.into_body().collect().await.unwrap();

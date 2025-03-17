@@ -11,24 +11,21 @@ use rpc_client_rss::{ArcRpcClientRss, RpcErrorRss};
 use crate::handler::{common::s3_error::S3Error, Request};
 
 pub async fn delete_bucket(
-    api_key: Option<Versioned<ApiKey>>,
+    api_key: Versioned<ApiKey>,
     bucket: &Bucket,
     _request: Request,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,
 ) -> Result<Response, S3Error> {
-    let api_key_id = match api_key {
-        None => return Err(S3Error::InvalidAccessKeyId),
-        Some(api_key) => {
-            if !api_key
-                .data
-                .authorized_buckets
-                .contains_key(&bucket.bucket_name)
-            {
-                return Err(S3Error::AccessDenied);
-            }
-            api_key.data.key_id.clone()
+    let api_key_id = {
+        if !api_key
+            .data
+            .authorized_buckets
+            .contains_key(&bucket.bucket_name)
+        {
+            return Err(S3Error::AccessDenied);
         }
+        api_key.data.key_id.clone()
     };
 
     let resp = rpc_client_nss

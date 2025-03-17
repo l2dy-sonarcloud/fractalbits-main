@@ -21,9 +21,12 @@ use bucket::BucketEndpoint;
 use bucket_tables::api_key_table::ApiKey;
 use bucket_tables::bucket_table::Bucket;
 use bucket_tables::table::Versioned;
-use common::request::extract::*;
-use common::s3_error::S3Error;
-use common::signature::{self, body::ReqBody, verify_request, VerifiedRequest};
+use common::{
+    authorization::Authorization,
+    request::extract::*,
+    s3_error::S3Error,
+    signature::{self, body::ReqBody, verify_request, VerifiedRequest},
+};
 use delete::DeleteEndpoint;
 use endpoint::Endpoint;
 use get::GetEndpoint;
@@ -86,6 +89,16 @@ async fn any_handler_inner(
         Err(_e) => return Err(S3Error::InvalidSignature),
     };
 
+    let allowed = match endpoint.authorization_type() {
+        Authorization::Read => api_key.data.allow_read(&bucket_name),
+        Authorization::Write => api_key.data.allow_write(&bucket_name),
+        Authorization::Owner => api_key.data.allow_owner(&bucket_name),
+        Authorization::None => true,
+    };
+    if !allowed {
+        return Err(S3Error::AccessDenied);
+    }
+
     let rpc_client_nss = app.get_rpc_client_nss(addr);
     let rpc_client_bss = app.get_rpc_client_bss(addr);
     let blob_deletion = app.blob_deletion.clone();
@@ -101,6 +114,10 @@ async fn any_handler_inner(
                 bucket_endpoint,
             )
             .await
+        }
+        Endpoint::Head(head_endpoint) => {
+            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            head_handler(request, &bucket, key, rpc_client_nss, head_endpoint).await
         }
         Endpoint::Get(get_endpoint) => {
             let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
@@ -127,6 +144,18 @@ async fn any_handler_inner(
             )
             .await
         }
+        Endpoint::Post(post_endpoint) => {
+            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            post_handler(
+                request,
+                &bucket,
+                key,
+                rpc_client_nss,
+                blob_deletion,
+                post_endpoint,
+            )
+            .await
+        }
         Endpoint::Delete(delete_endpoint) => {
             let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
             delete_handler(
@@ -140,29 +169,13 @@ async fn any_handler_inner(
             )
             .await
         }
-        Endpoint::Post(post_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
-            post_handler(
-                request,
-                &bucket,
-                key,
-                rpc_client_nss,
-                blob_deletion,
-                post_endpoint,
-            )
-            .await
-        }
-        Endpoint::Head(head_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
-            head_handler(request, &bucket, key, rpc_client_nss, head_endpoint).await
-        }
     }
 }
 
 async fn bucket_handler(
     app: &Arc<AppState>,
     request: Request,
-    api_key: Option<Versioned<ApiKey>>,
+    api_key: Versioned<ApiKey>,
     bucket_name: String,
     rpc_client_nss: &RpcClientNss,
     rpc_client_rss: ArcRpcClientRss,

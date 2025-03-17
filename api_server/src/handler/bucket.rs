@@ -8,7 +8,7 @@ pub use delete_bucket::delete_bucket;
 pub use head_bucket::head_bucket;
 pub use list_buckets::list_buckets;
 
-use super::common::s3_error::S3Error;
+use super::common::{authorization::Authorization, s3_error::S3Error};
 use bucket_tables::{
     bucket_table::{Bucket, BucketTable},
     table::Table,
@@ -32,4 +32,15 @@ pub enum BucketEndpoint {
     DeleteBucket,
     HeadBucket,
     ListBuckets,
+}
+
+impl BucketEndpoint {
+    pub fn authorization_type(&self) -> Authorization {
+        match self {
+            BucketEndpoint::CreateBucket => Authorization::None,
+            BucketEndpoint::DeleteBucket => Authorization::Owner,
+            BucketEndpoint::HeadBucket => Authorization::Read,
+            BucketEndpoint::ListBuckets => Authorization::None,
+        }
+    }
 }

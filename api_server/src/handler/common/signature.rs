@@ -5,16 +5,10 @@ use hmac::{Hmac, Mac};
 use rpc_client_rss::ArcRpcClientRss;
 use sha2::Sha256;
 
-use axum::body::Body;
-use axum::http::{request::Request, HeaderName};
-// use hyper::header::HeaderName;
-// use hyper::{body::Incoming as IncomingBody, Request};
-
-// use garage_model::garage::Garage;
-// use garage_model::key_table::Key;
-// use garage_util::data::{sha256sum, Hash};
 use super::data::{sha256sum, Hash};
 use super::request::extract::Authentication;
+use axum::body::Body;
+use axum::http::{request::Request, HeaderName};
 
 use error::*;
 
@@ -67,7 +61,7 @@ pub enum ContentSha256Header {
 
 pub struct VerifiedRequest {
     pub request: Request<streaming::ReqBody>,
-    pub api_key: Option<Versioned<ApiKey>>,
+    pub api_key: Versioned<ApiKey>,
     pub content_sha256_header: ContentSha256Header,
 }
 
@@ -82,10 +76,9 @@ pub async fn verify_request(
 
     let request = streaming::parse_streaming_body(req, &checked_signature, region, "s3")?;
 
-    let api_key =
-        Some(checked_signature.key.ok_or_else(|| {
-            Error::Other("Fractalbits does not support anonymous access yet".into())
-        })?);
+    let api_key = checked_signature
+        .key
+        .ok_or_else(|| Error::Other("Fractalbits does not support anonymous access yet".into()))?;
 
     Ok(VerifiedRequest {
         request,

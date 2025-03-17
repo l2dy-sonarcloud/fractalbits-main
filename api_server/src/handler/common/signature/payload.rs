@@ -11,16 +11,11 @@ use chrono::{DateTime, Utc};
 use hmac::Mac;
 use itertools::Itertools;
 use rpc_client_rss::ArcRpcClientRss;
-// use hyper::{body::Incoming as IncomingBody, Method, Request};
 use sha2::{Digest, Sha256};
 
 use crate::handler::common::request::extract::Authentication;
 
-// use garage_table::*;
 use super::super::data::Hash;
-
-// use garage_model::garage::Garage;
-// use garage_model::key_table::*;
 
 use super::*;
 

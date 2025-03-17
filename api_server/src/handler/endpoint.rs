@@ -4,6 +4,7 @@ use axum::http::{self, Method};
 use super::{
     bucket::BucketEndpoint,
     common::{
+        authorization::Authorization,
         request::extract::{ApiCommand, ApiSignature},
         s3_error::S3Error,
     },
@@ -123,6 +124,18 @@ impl Endpoint {
                 upload_id,
             ))),
             None => Ok(Endpoint::Delete(DeleteEndpoint::DeleteObject)),
+        }
+    }
+
+    /// Get the kind of authorization which is required to perform the operation.
+    pub fn authorization_type(&self) -> Authorization {
+        match self {
+            Endpoint::Get(get_endpoint) => get_endpoint.authorization_type(),
+            Endpoint::Put(put_endpoint) => put_endpoint.authorization_type(),
+            Endpoint::Delete(delete_endpoint) => delete_endpoint.authorization_type(),
+            Endpoint::Bucket(bucket_endpoint) => bucket_endpoint.authorization_type(),
+            Endpoint::Post(post_endpoint) => post_endpoint.authorization_type(),
+            Endpoint::Head(head_endpoint) => head_endpoint.authorization_type(),
         }
     }
 }

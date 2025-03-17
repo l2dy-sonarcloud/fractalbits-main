@@ -41,6 +41,29 @@ impl ApiKey {
             is_deleted: false,
         }
     }
+
+    /// Get permissions for a bucket
+    pub fn bucket_permissions(&self, bucket: &str) -> BucketKeyPerm {
+        self.authorized_buckets
+            .get(bucket)
+            .cloned()
+            .unwrap_or(BucketKeyPerm::NO_PERMISSIONS)
+    }
+
+    /// Check if `Key` is allowed to read in bucket
+    pub fn allow_read(&self, bucket: &str) -> bool {
+        self.bucket_permissions(bucket).allow_read
+    }
+
+    /// Check if `Key` is allowed to write in bucket
+    pub fn allow_write(&self, bucket: &str) -> bool {
+        self.bucket_permissions(bucket).allow_write
+    }
+
+    /// Check if `Key` is owner of bucket
+    pub fn allow_owner(&self, bucket: &str) -> bool {
+        self.bucket_permissions(bucket).allow_owner
+    }
 }
 
 impl Entry for ApiKey {

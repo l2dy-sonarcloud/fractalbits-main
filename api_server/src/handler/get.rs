@@ -12,6 +12,8 @@ pub use list_objects::list_objects;
 pub use list_objects_v2::list_objects_v2;
 pub use list_parts::list_parts;
 
+use super::common::authorization::Authorization;
+
 pub enum GetEndpoint {
     GetObject,
     GetObjectAttributes,
@@ -19,4 +21,17 @@ pub enum GetEndpoint {
     ListObjects,
     ListObjectsV2,
     ListParts,
+}
+
+impl GetEndpoint {
+    pub fn authorization_type(&self) -> Authorization {
+        match self {
+            GetEndpoint::GetObject => Authorization::Read,
+            GetEndpoint::GetObjectAttributes => Authorization::Read,
+            GetEndpoint::ListMultipartUploads => Authorization::Read,
+            GetEndpoint::ListObjects => Authorization::Read,
+            GetEndpoint::ListObjectsV2 => Authorization::Read,
+            GetEndpoint::ListParts => Authorization::Read,
+        }
+    }
 }
