@@ -297,7 +297,9 @@ async fn put_handler(
                 bucket,
                 key,
                 rpc_client_nss,
+                rpc_client_bss,
                 rpc_client_rss,
+                blob_deletion,
             )
             .await
         }

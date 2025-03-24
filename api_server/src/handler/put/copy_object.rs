@@ -1,5 +1,8 @@
 #![allow(unused_imports, dead_code)]
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     handler::{
@@ -9,12 +12,17 @@ use crate::{
             request::extract::BucketNameAndKey,
             response::xml::Xml,
             s3_error::S3Error,
-            signature::checksum::{
-                request_checksum_value, request_trailer_checksum_algorithm, ChecksumValue,
-                ExpectedChecksums,
+            signature::{
+                self,
+                body::ReqBody,
+                checksum::{
+                    request_checksum_value, request_trailer_checksum_algorithm, ChecksumValue,
+                    Checksummer, ExpectedChecksums,
+                },
             },
             time,
         },
+        get::get_object_content,
         Request,
     },
     object_layout::*,
@@ -34,8 +42,9 @@ use rpc_client_bss::{message::MessageHeader, RpcClientBss};
 use rpc_client_nss::{rpc::put_inode_response, RpcClientNss};
 use rpc_client_rss::ArcRpcClientRss;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::Sender;
 
-use super::block_data_stream::BlockDataStream;
+use super::{block_data_stream::BlockDataStream, put_object_handler};
 
 #[derive(Debug, Default)]
 struct HeaderOpts {
@@ -331,22 +340,49 @@ impl CopyObjectResult {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn copy_object_handler(
     request: Request,
     api_key: Versioned<ApiKey>,
-    _bucket: &Bucket,
-    _key: String,
+    bucket: &Bucket,
+    key: String,
     rpc_client_nss: &RpcClientNss,
+    rpc_client_bss: &RpcClientBss,
     rpc_client_rss: ArcRpcClientRss,
+    blob_deletion: Sender<(BlobId, usize)>,
 ) -> Result<Response, S3Error> {
     let header_opts = HeaderOpts::from_headers(request.headers())?;
-    let source_obj = get_copy_source_object(
+    let (source_obj, body) = get_copy_source_object(
         api_key,
         &header_opts.x_amz_copy_source,
         rpc_client_nss,
+        rpc_client_bss,
         rpc_client_rss,
     )
     .await?;
+
+    let req_body = {
+        let expected_checksums = ExpectedChecksums::default();
+        let checksummer = Checksummer::init(&expected_checksums, false);
+
+        let stream = http_body_util::BodyStream::new(body).map_err(signature::Error::from);
+        ReqBody {
+            stream: Mutex::new(stream.boxed()),
+            checksummer,
+            expected_checksums,
+            trailer_algorithm: None,
+        }
+    };
+    put_object_handler(
+        Request::new(req_body),
+        bucket,
+        key,
+        rpc_client_nss,
+        rpc_client_bss,
+        blob_deletion,
+    )
+    .await?;
+
     Xml(CopyObjectResult::default()
         .etag(source_obj.etag()?)
         .last_modified(time::format_http_date(source_obj.timestamp))
@@ -358,8 +394,9 @@ async fn get_copy_source_object(
     api_key: Versioned<ApiKey>,
     copy_source: &str,
     rpc_client_nss: &RpcClientNss,
+    rpc_client_bss: &RpcClientBss,
     rpc_client_rss: ArcRpcClientRss,
-) -> Result<ObjectLayout, S3Error> {
+) -> Result<(ObjectLayout, Body), S3Error> {
     let copy_source = percent_encoding::percent_decode_str(copy_source).decode_utf8()?;
 
     let (source_bucket_name, source_key) =
@@ -370,5 +407,22 @@ async fn get_copy_source_object(
     }
 
     let source_bucket = bucket::resolve_bucket(source_bucket_name, rpc_client_rss).await?;
-    get_raw_object(rpc_client_nss, source_bucket.root_blob_name, source_key).await
+    let source_obj = get_raw_object(
+        rpc_client_nss,
+        source_bucket.root_blob_name.clone(),
+        source_key.clone(),
+    )
+    .await?;
+    let source_obj_content = get_object_content(
+        &source_bucket,
+        &source_obj,
+        source_key,
+        false,
+        None,
+        rpc_client_nss,
+        rpc_client_bss,
+    )
+    .await?
+    .into_body();
+    Ok((source_obj, source_obj_content))
 }

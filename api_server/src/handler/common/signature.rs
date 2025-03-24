@@ -10,7 +10,7 @@ use super::request::extract::Authentication;
 use axum::body::Body;
 use axum::http::{request::Request, HeaderName};
 
-use error::*;
+pub use error::*;
 
 pub mod body;
 pub mod checksum;

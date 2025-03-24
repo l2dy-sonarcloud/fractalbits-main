@@ -8,16 +8,19 @@ use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Deserialize;
 
-use crate::handler::{
-    common::{
-        get_raw_object, list_raw_objects, mpu_get_part_prefix,
-        s3_error::S3Error,
-        signature::checksum::{add_checksum_response_headers, X_AMZ_CHECKSUM_MODE},
-    },
-    Request,
-};
 use crate::object_layout::{MpuState, ObjectState};
 use crate::BlobId;
+use crate::{
+    handler::{
+        common::{
+            get_raw_object, list_raw_objects, mpu_get_part_prefix,
+            s3_error::S3Error,
+            signature::checksum::{add_checksum_response_headers, X_AMZ_CHECKSUM_MODE},
+        },
+        Request,
+    },
+    object_layout::ObjectLayout,
+};
 use bucket_tables::bucket_table::Bucket;
 
 #[allow(dead_code)]
@@ -43,9 +46,30 @@ pub async fn get_object_handler(
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: &RpcClientBss,
 ) -> Result<Response, S3Error> {
-    let checksum_mode = checksum_mode(&request);
+    let checksum_mode_enabled = checksum_mode_enabled(&request);
     let Query(opts): Query<GetObjectOptions> = request.into_parts().0.extract().await?;
     let object = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
+    get_object_content(
+        &bucket,
+        &object,
+        key,
+        checksum_mode_enabled,
+        opts.part_number,
+        rpc_client_nss,
+        rpc_client_bss,
+    )
+    .await
+}
+
+pub async fn get_object_content(
+    bucket: &Bucket,
+    object: &ObjectLayout,
+    key: String,
+    checksum_mode_enabled: bool,
+    part_number: Option<u32>,
+    rpc_client_nss: &RpcClientNss,
+    rpc_client_bss: &RpcClientBss,
+) -> Result<Response, S3Error> {
     match object.state {
         ObjectState::Normal(ref obj_data) => {
             let mut blob = BytesMut::new();
@@ -57,7 +81,7 @@ pub async fn get_object_handler(
             )
             .await?;
             let mut resp = blob.freeze().into_response();
-            if checksum_mode.enabled {
+            if checksum_mode_enabled {
                 tracing::debug!(
                     "checksum_mode enabled, adding checksum: {:?}",
                     obj_data.checksum
@@ -66,7 +90,7 @@ pub async fn get_object_handler(
             }
             Ok(resp)
         }
-        ObjectState::Mpu(mpu_state) => match mpu_state {
+        ObjectState::Mpu(ref mpu_state) => match mpu_state {
             MpuState::Uploading => {
                 tracing::warn!("invalid mpu state: Uploading");
                 Err(S3Error::InvalidObjectState)
@@ -88,7 +112,7 @@ pub async fn get_object_handler(
                 )
                 .await?;
                 // Do filtering if there is part_number option
-                let mpus = match opts.part_number {
+                let mpus = match part_number {
                     None => &mpus[0..],
                     Some(n) => &mpus[n as usize - 1..n as usize],
                 };
@@ -124,16 +148,11 @@ async fn get_full_blob(
     Ok(())
 }
 
-struct ChecksumMode {
-    enabled: bool,
-}
-
-fn checksum_mode(request: &Request) -> ChecksumMode {
-    ChecksumMode {
-        enabled: request
-            .headers()
-            .get(X_AMZ_CHECKSUM_MODE)
-            .map(|x| x == "ENABLED")
-            .unwrap_or(false),
-    }
+#[inline]
+fn checksum_mode_enabled(request: &Request) -> bool {
+    request
+        .headers()
+        .get(X_AMZ_CHECKSUM_MODE)
+        .map(|x| x == "ENABLED")
+        .unwrap_or(false)
 }
