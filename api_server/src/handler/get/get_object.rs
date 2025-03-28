@@ -13,8 +13,11 @@ use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Deserialize;
 
-use crate::object_layout::{MpuState, ObjectState};
 use crate::BlobId;
+use crate::{
+    handler::common::signature::checksum::ChecksumValue,
+    object_layout::{MpuState, ObjectState},
+};
 use crate::{
     handler::{
         common::{
@@ -94,46 +97,44 @@ pub async fn get_object_handler(
     let Query(opts): Query<QueryOpts> = parts.extract().await?;
     let header_opts = HeaderOpts::from_headers(&parts.headers)?;
     let object = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
-    get_object_content(
+    let checksum_mode_enabled = header_opts.x_amz_checksum_mode_enabled;
+    let (body, body_size, checksum) = get_object_content(
         bucket,
         &object,
         key,
-        header_opts.x_amz_checksum_mode_enabled,
         opts.part_number,
         rpc_client_nss,
         rpc_client_bss,
     )
-    .await
+    .await?;
+
+    let mut resp = body.into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&body_size.to_string())?,
+    );
+    if checksum_mode_enabled {
+        tracing::debug!("checksum_mode enabled, adding checksum: {:?}", checksum);
+        add_checksum_response_headers(&checksum, &mut resp)?;
+    }
+    Ok(resp)
 }
 
 pub async fn get_object_content(
     bucket: &Bucket,
     object: &ObjectLayout,
     key: String,
-    checksum_mode_enabled: bool,
     part_number: Option<u32>,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: Arc<RpcClientBss>,
-) -> Result<Response, S3Error> {
+) -> Result<(Body, u64, Option<ChecksumValue>), S3Error> {
     match object.state {
         ObjectState::Normal(ref obj_data) => {
             let blob_id = object.blob_id()?;
             let num_blocks = object.num_blocks()?;
             let size = object.size()?;
             let body_stream = get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await;
-            let mut resp = Body::from_stream(body_stream).into_response();
-            resp.headers_mut().insert(
-                header::CONTENT_LENGTH,
-                HeaderValue::from_str(&size.to_string())?,
-            );
-            if checksum_mode_enabled {
-                tracing::debug!(
-                    "checksum_mode enabled, adding checksum: {:?}",
-                    obj_data.checksum
-                );
-                add_checksum_response_headers(&obj_data.checksum, &mut resp)?;
-            }
-            Ok(resp)
+            Ok((Body::from_stream(body_stream), size, obj_data.checksum))
         }
         ObjectState::Mpu(ref mpu_state) => match mpu_state {
             MpuState::Uploading => {
@@ -180,12 +181,7 @@ pub async fn get_object_content(
                         }
                     })
                     .try_flatten();
-                let mut resp = Body::from_stream(body_stream).into_response();
-                resp.headers_mut().insert(
-                    header::CONTENT_LENGTH,
-                    HeaderValue::from_str(&body_size.to_string())?,
-                );
-                Ok(resp)
+                Ok((Body::from_stream(body_stream), body_size, None))
             }
         },
     }

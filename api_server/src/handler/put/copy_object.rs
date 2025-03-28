@@ -387,16 +387,14 @@ async fn get_copy_source_object(
         source_key.clone(),
     )
     .await?;
-    let source_obj_content = get_object_content(
+    let (source_obj_content, _, _) = get_object_content(
         &source_bucket,
         &source_obj,
         source_key,
-        false,
         None,
         rpc_client_nss,
         rpc_client_bss,
     )
-    .await?
-    .into_body();
+    .await?;
     Ok((source_obj, source_obj_content))
 }
