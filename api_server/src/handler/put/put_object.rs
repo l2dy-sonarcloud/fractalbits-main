@@ -58,7 +58,6 @@ pub async fn put_object_handler(
             let rpc_client_bss = rpc_client_bss.clone();
             async move {
                 rpc_client_bss
-                    .clone()
                     .put_blob(blob_id, i as u32, block_data)
                     .await
                     .map(|x| (x - MessageHeader::SIZE) as u64)

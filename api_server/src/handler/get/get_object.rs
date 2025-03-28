@@ -7,13 +7,11 @@ use axum::{
     response::{IntoResponse, Response},
     RequestPartsExt,
 };
-use bytes::{Bytes, BytesMut};
-use futures::StreamExt;
+use bytes::Bytes;
+use futures::{StreamExt, TryStreamExt};
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Deserialize;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 
 use crate::object_layout::{MpuState, ObjectState};
 use crate::BlobId;
@@ -121,8 +119,13 @@ pub async fn get_object_content(
         ObjectState::Normal(ref obj_data) => {
             let blob_id = object.blob_id()?;
             let num_blocks = object.num_blocks()?;
-            let body_stream = get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await?;
+            let size = object.size()?;
+            let body_stream = get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await;
             let mut resp = Body::from_stream(body_stream).into_response();
+            resp.headers_mut().insert(
+                header::CONTENT_LENGTH,
+                HeaderValue::from_str(&size.to_string())?,
+            );
             if checksum_mode_enabled {
                 tracing::debug!(
                     "checksum_mode enabled, adding checksum: {:?}",
@@ -141,10 +144,9 @@ pub async fn get_object_content(
                 tracing::warn!("invalid mpu state: Aborted");
                 Err(S3Error::InvalidObjectState)
             }
-            MpuState::Completed { size: _, etag: _ } => {
-                let mut content = BytesMut::new();
+            MpuState::Completed { size, etag: _ } => {
                 let mpu_prefix = mpu_get_part_prefix(key.clone(), 0);
-                let mpus = list_raw_objects(
+                let mut mpus = list_raw_objects(
                     bucket.root_blob_name.clone(),
                     rpc_client_nss,
                     10000,
@@ -154,59 +156,58 @@ pub async fn get_object_content(
                 )
                 .await?;
                 // Do filtering if there is part_number option
-                let mpus = match part_number {
-                    None => &mpus[0..],
-                    Some(n) => &mpus[n as usize - 1..n as usize],
+                let (mpus_iter, body_size) = match part_number {
+                    None => (mpus.into_iter(), *size),
+                    Some(n) => {
+                        let mpu_obj = mpus.swap_remove(n as usize - 1);
+                        let mpu_size = mpu_obj.1.size()?;
+                        (vec![mpu_obj].into_iter(), mpu_size)
+                    }
                 };
-                for (_, mpu_obj) in mpus.iter() {
-                    get_full_blob(
-                        &mut content,
-                        rpc_client_bss.clone(),
-                        mpu_obj.blob_id()?,
-                        mpu_obj.num_blocks()?,
-                    )
-                    .await?;
-                }
-                Ok(content.into_response())
+                let body_stream = futures::stream::iter(mpus_iter)
+                    .then(move |(_key, mpu_obj)| {
+                        let rpc_client_bss = rpc_client_bss.clone();
+                        async move {
+                            let blob_id = match mpu_obj.blob_id() {
+                                Ok(blob_id) => blob_id,
+                                Err(e) => return Err(axum::Error::new(e)),
+                            };
+                            let num_blocks = match mpu_obj.num_blocks() {
+                                Ok(num_blocks) => num_blocks,
+                                Err(e) => return Err(axum::Error::new(e)),
+                            };
+                            Ok(get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await)
+                        }
+                    })
+                    .try_flatten();
+                let mut resp = Body::from_stream(body_stream).into_response();
+                resp.headers_mut().insert(
+                    header::CONTENT_LENGTH,
+                    HeaderValue::from_str(&body_size.to_string())?,
+                );
+                Ok(resp)
             }
         },
     }
-}
-
-async fn get_full_blob(
-    blob: &mut BytesMut,
-    rpc_client_bss: Arc<RpcClientBss>,
-    blob_id: BlobId,
-    num_blocks: usize,
-) -> Result<(), S3Error> {
-    for i in 0..num_blocks {
-        let mut block = Bytes::new();
-        let _size = rpc_client_bss
-            .get_blob(blob_id, i as u32, &mut block)
-            .await?;
-        blob.extend(block);
-    }
-
-    Ok(())
 }
 
 async fn get_full_blob_stream(
     rpc_client_bss: Arc<RpcClientBss>,
     blob_id: BlobId,
     num_blocks: usize,
-) -> Result<BodyDataStream, S3Error> {
-    let (tx, rx) = mpsc::channel(num_blocks);
-    tokio::spawn(async move {
-        for i in 0..num_blocks {
-            let mut block = Bytes::new();
-            let _size = rpc_client_bss
-                .get_blob(blob_id, i as u32, &mut block)
-                .await
-                .unwrap();
-            let _ = tx.send(Body::from(block).into_data_stream()).await;
-        }
-    });
+) -> BodyDataStream {
+    let body_stream = futures::stream::iter(0..num_blocks)
+        .then(move |i| {
+            let rpc_client_bss = rpc_client_bss.clone();
+            async move {
+                let mut block = Bytes::new();
+                match rpc_client_bss.get_blob(blob_id, i as u32, &mut block).await {
+                    Err(e) => Err(axum::Error::new(e)),
+                    Ok(_) => Ok(Body::from(block).into_data_stream()),
+                }
+            }
+        })
+        .try_flatten();
 
-    let body = Body::from_stream(ReceiverStream::new(rx).flatten());
-    Ok(body.into_data_stream())
+    Body::from_stream(body_stream).into_data_stream()
 }
