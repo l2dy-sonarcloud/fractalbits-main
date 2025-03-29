@@ -9,7 +9,6 @@ use axum::{
 };
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
-use http_range::HttpRange;
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use serde::Deserialize;
@@ -126,27 +125,27 @@ pub async fn get_object_handler(
         }
 
         (None, Some(range)) => {
-            let body_bytes = get_object_range_content(
+            let body = get_object_range_content(
                 bucket,
                 &object,
                 key,
-                range,
+                &range,
                 rpc_client_nss,
                 rpc_client_bss,
             )
             .await?;
 
-            let mut resp = body_bytes.into_response();
+            let mut resp = body.into_response();
             resp.headers_mut().insert(
                 header::CONTENT_LENGTH,
-                HeaderValue::from_str(&format!("{}", range.length))?,
+                HeaderValue::from_str(&format!("{}", range.end - range.start))?,
             );
             resp.headers_mut().insert(
                 header::CONTENT_RANGE,
                 HeaderValue::from_str(&format!(
                     "bytes {}-{}/{}",
                     range.start,
-                    range.start + range.length - 1,
+                    range.end - 1,
                     total_size
                 ))?,
             );
@@ -229,22 +228,18 @@ async fn get_object_range_content(
     bucket: &Bucket,
     object: &ObjectLayout,
     key: String,
-    range: HttpRange,
+    range: &std::ops::Range<usize>,
     rpc_client_nss: &RpcClientNss,
     rpc_client_bss: Arc<RpcClientBss>,
-) -> Result<Bytes, S3Error> {
-    // convert to std::ops::Range
-    let range = range.start as usize..(range.start + range.length) as usize;
+) -> Result<Body, S3Error> {
+    let block_size = object.block_size as usize;
     match object.state {
-        ObjectState::Normal(ref obj_data) => {
+        ObjectState::Normal(ref _obj_data) => {
             let blob_id = object.blob_id()?;
-            let num_blocks = object.num_blocks()?;
-            let body_stream = get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await;
-            Ok(
-                axum::body::to_bytes(Body::from_stream(body_stream), obj_data.size as usize)
-                    .await?
-                    .slice(range),
-            )
+            let body_stream =
+                get_range_blob_stream(rpc_client_bss, blob_id, block_size, range.start, range.end)
+                    .await;
+            Ok(Body::from_stream(body_stream))
         }
         ObjectState::Mpu(ref mpu_state) => match mpu_state {
             MpuState::Uploading => {
@@ -255,7 +250,7 @@ async fn get_object_range_content(
                 tracing::warn!("invalid mpu state: Aborted");
                 Err(S3Error::InvalidObjectState)
             }
-            MpuState::Completed { size, .. } => {
+            MpuState::Completed { .. } => {
                 let mpu_prefix = mpu_get_part_prefix(key.clone(), 0);
                 let mpus = list_raw_objects(
                     bucket.root_blob_name.clone(),
@@ -266,27 +261,47 @@ async fn get_object_range_content(
                     false,
                 )
                 .await?;
-                let body_stream = futures::stream::iter(mpus.into_iter())
-                    .then(move |(_key, mpu_obj)| {
+
+                let mut mpu_blobs: Vec<(BlobId, usize, usize)> = Vec::new();
+                let mut obj_offset = 0;
+                for (_mpu_key, mpu_obj) in mpus {
+                    let mpu_size = mpu_obj.size()? as usize;
+                    if obj_offset >= range.end {
+                        break;
+                    }
+                    // with intersection
+                    if obj_offset < range.end && obj_offset + mpu_size > range.start {
+                        let blob_start = if range.start > obj_offset {
+                            range.start - obj_offset
+                        } else {
+                            0
+                        };
+                        let blob_end = if range.end > obj_offset + mpu_size {
+                            mpu_size - blob_start
+                        } else {
+                            range.end - obj_offset
+                        };
+                        mpu_blobs.push((mpu_obj.blob_id()?, blob_start, blob_end));
+                    }
+                    obj_offset += mpu_size;
+                }
+
+                let body_stream = futures::stream::iter(mpu_blobs.into_iter())
+                    .then(move |(blob_id, blob_start, blob_end)| {
                         let rpc_client_bss = rpc_client_bss.clone();
                         async move {
-                            let blob_id = match mpu_obj.blob_id() {
-                                Ok(blob_id) => blob_id,
-                                Err(e) => return Err(axum::Error::new(e)),
-                            };
-                            let num_blocks = match mpu_obj.num_blocks() {
-                                Ok(num_blocks) => num_blocks,
-                                Err(e) => return Err(axum::Error::new(e)),
-                            };
-                            Ok(get_full_blob_stream(rpc_client_bss, blob_id, num_blocks).await)
+                            Ok(get_range_blob_stream(
+                                rpc_client_bss,
+                                blob_id,
+                                block_size,
+                                blob_start,
+                                blob_end,
+                            )
+                            .await)
                         }
                     })
                     .try_flatten();
-                Ok(
-                    axum::body::to_bytes(Body::from_stream(body_stream), *size as usize)
-                        .await?
-                        .slice(range),
-                )
+                Ok(Body::from_stream(body_stream))
             }
         },
     }
@@ -313,10 +328,71 @@ async fn get_full_blob_stream(
     Body::from_stream(body_stream).into_data_stream()
 }
 
+async fn get_range_blob_stream(
+    rpc_client_bss: Arc<RpcClientBss>,
+    blob_id: BlobId,
+    block_size: usize,
+    start: usize,
+    end: usize,
+) -> BodyDataStream {
+    let start_block_i = start / block_size;
+    let blob_offset: usize = block_size * start_block_i;
+    let body_stream = futures::stream::iter(start_block_i..)
+        .then(move |i| {
+            let rpc_client_bss = rpc_client_bss.clone();
+            async move {
+                let mut block = Bytes::new();
+                match rpc_client_bss.get_blob(blob_id, i as u32, &mut block).await {
+                    Err(e) => Err(axum::Error::new(e)),
+                    Ok(_) => Ok(Body::from(block).into_data_stream()),
+                }
+            }
+        })
+        .try_flatten()
+        .scan(blob_offset, move |chunk_offset, chunk| {
+            let r = match chunk {
+                Ok(chunk_bytes) => {
+                    let chunk_len = chunk_bytes.len();
+                    let r = if *chunk_offset >= end {
+                        // The current chunk is after the part we want to read.
+                        // Returning None here will stop the scan, the rest of the
+                        // stream will be ignored
+                        None
+                    } else if *chunk_offset + chunk_len <= start {
+                        // The current chunk is before the part we want to read.
+                        // We return a None that will be removed by the filter_map
+                        // below.
+                        Some(None)
+                    } else {
+                        // The chunk has an intersection with the requested range
+                        let start_in_chunk = if *chunk_offset > start {
+                            0
+                        } else {
+                            start - *chunk_offset
+                        };
+                        let end_in_chunk = if *chunk_offset + chunk_len < end {
+                            chunk_len
+                        } else {
+                            end - *chunk_offset
+                        };
+                        Some(Some(Ok(chunk_bytes.slice(start_in_chunk..end_in_chunk))))
+                    };
+                    *chunk_offset += chunk_bytes.len();
+                    r
+                }
+                Err(e) => Some(Some(Err(e))),
+            };
+            futures::future::ready(r)
+        })
+        .filter_map(futures::future::ready);
+
+    Body::from_stream(body_stream).into_data_stream()
+}
+
 fn parse_range_header(
     range_header: Option<&HeaderValue>,
     total_size: u64,
-) -> Result<Option<http_range::HttpRange>, S3Error> {
+) -> Result<Option<std::ops::Range<usize>>, S3Error> {
     let range = match range_header {
         Some(range) => {
             let range_str = range.to_str()?;
@@ -326,7 +402,9 @@ fn parse_range_header(
                 tracing::debug!("Found more than one ranges: {range_str}");
                 return Err(S3Error::InvalidRange);
             } else {
-                ranges.pop()
+                ranges.pop().map(|http_range| {
+                    http_range.start as usize..(http_range.start + http_range.length) as usize
+                })
             }
         }
         None => None,
