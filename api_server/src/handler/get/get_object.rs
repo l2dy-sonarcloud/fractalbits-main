@@ -30,12 +30,12 @@ use crate::{
 };
 use bucket_tables::bucket_table::Bucket;
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct QueryOpts {
     #[serde(rename(deserialize = "partNumber"))]
     part_number: Option<u32>,
+    #[allow(dead_code)]
     #[serde(rename(deserialize = "versionId"))]
     version_id: Option<String>,
     response_cache_control: Option<String>,
@@ -94,7 +94,7 @@ pub async fn get_object_handler(
     rpc_client_bss: Arc<RpcClientBss>,
 ) -> Result<Response, S3Error> {
     let mut parts = request.into_parts().0;
-    let Query(opts): Query<QueryOpts> = parts.extract().await?;
+    let Query(query_opts): Query<QueryOpts> = parts.extract().await?;
     let header_opts = HeaderOpts::from_headers(&parts.headers)?;
     let object = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
     let total_size = object.size()?;
@@ -102,13 +102,13 @@ pub async fn get_object_handler(
     let last_modified = time::format_http_date(object.timestamp);
     let range = parse_range_header(header_opts.range, total_size)?;
     let checksum_mode_enabled = header_opts.x_amz_checksum_mode_enabled;
-    match (opts.part_number, range) {
+    match (query_opts.part_number, range) {
         (_, None) => {
             let (body, body_size, checksum) = get_object_content(
                 bucket,
                 &object,
                 key,
-                opts.part_number,
+                query_opts.part_number,
                 rpc_client_nss,
                 rpc_client_bss,
             )
@@ -129,6 +129,8 @@ pub async fn get_object_handler(
                 tracing::debug!("checksum_mode enabled, adding checksum: {:?}", checksum);
                 add_checksum_response_headers(&checksum, &mut resp)?;
             }
+
+            override_headers(&mut resp, &query_opts)?;
             Ok(resp)
         }
 
@@ -163,6 +165,36 @@ pub async fn get_object_handler(
 
         (Some(_), Some(_)) => Err(S3Error::InvalidArgument1),
     }
+}
+
+fn override_headers(resp: &mut Response, query_opts: &QueryOpts) -> Result<(), S3Error> {
+    // override headers, see https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+    let overrides = [
+        (header::CACHE_CONTROL, &query_opts.response_cache_control),
+        (
+            header::CONTENT_DISPOSITION,
+            &query_opts.response_content_disposition,
+        ),
+        (
+            header::CONTENT_ENCODING,
+            &query_opts.response_content_encoding,
+        ),
+        (
+            header::CONTENT_LANGUAGE,
+            &query_opts.response_content_language,
+        ),
+        (header::CONTENT_TYPE, &query_opts.response_content_type),
+        (header::EXPIRES, &query_opts.response_expires),
+    ];
+
+    for (hdr, val_opt) in overrides {
+        if let Some(val) = val_opt {
+            let val = val.try_into()?;
+            resp.headers_mut().insert(hdr, val);
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn get_object_content(
