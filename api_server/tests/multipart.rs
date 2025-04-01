@@ -453,8 +453,7 @@ async fn test_uploadlistpart() {
         assert_eq!(sp.size.unwrap(), SZ_5MB as i64);
     }
 
-    // FIXME: nss pagination rpc
-    if false {
+    {
         // Call pagination
         let r = ctx
             .client

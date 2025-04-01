@@ -15,9 +15,9 @@ use crate::handler::Request;
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct ListPartsOptions {
+struct QueryOpts {
     max_parts: Option<u32>,
-    part_number_marker: Option<usize>,
+    part_number_marker: Option<u32>,
     #[serde(rename = "uploadId")]
     upload_id: String,
 }
@@ -39,6 +39,7 @@ struct ListPartsResult {
     initiator: Option<Initiator>,
     #[serde(skip_serializing_if = "Option::is_none")]
     owner: Option<Owner>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     storage_class: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     checksum_algorithm: Option<String>,
@@ -83,20 +84,48 @@ struct Owner {
 pub async fn list_parts_handler(
     request: Request,
     bucket: &Bucket,
-    key: String,
+    mut key: String,
     rpc_client_nss: &RpcClientNss,
 ) -> Result<Response, S3Error> {
-    let Query(opts): Query<ListPartsOptions> = request.into_parts().0.extract().await?;
-    let max_parts = opts.max_parts.unwrap_or(1000);
-    let upload_id = opts.upload_id;
+    let Query(query_opts): Query<QueryOpts> = request.into_parts().0.extract().await?;
+    let max_parts = query_opts.max_parts.unwrap_or(1000);
     let object = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key.clone()).await?;
-    if object.version_id.simple().to_string() != upload_id {
+    if object.version_id.simple().to_string() != query_opts.upload_id {
         return Err(S3Error::NoSuchUpload);
     }
     if ObjectState::Mpu(MpuState::Uploading) != object.state {
         return Err(S3Error::InvalidObjectState);
     }
 
+    let (parts, next_part_number_marker) =
+        fetch_part_info(bucket, key.clone(), &query_opts, max_parts, rpc_client_nss).await?;
+
+    assert_eq!(Some('\0'), key.pop());
+    let resp = ListPartsResult {
+        bucket: bucket.bucket_name.to_string(),
+        key: key
+            .strip_prefix("/")
+            .ok_or(S3Error::InternalError)?
+            .to_owned(),
+        part_number_marker: query_opts.part_number_marker,
+        max_parts,
+        next_part_number_marker,
+        is_truncated: next_part_number_marker.is_some(),
+
+        upload_id: query_opts.upload_id,
+        part: parts,
+        ..Default::default()
+    };
+    Xml(resp).try_into()
+}
+
+async fn fetch_part_info(
+    bucket: &Bucket,
+    key: String,
+    query_opts: &QueryOpts,
+    max_parts: u32,
+    rpc_client_nss: &RpcClientNss,
+) -> Result<(Vec<Part>, Option<u32>), S3Error> {
     let mpu_prefix = mpu_get_part_prefix(key.clone(), 0);
     let mpus = list_raw_objects(
         bucket.root_blob_name.clone(),
@@ -107,31 +136,51 @@ pub async fn list_parts_handler(
         false,
     )
     .await?;
-    let mut res = ListPartsResult {
-        upload_id,
-        ..Default::default()
-    };
+    let mut parts = Vec::with_capacity(mpus.len());
     for (mpu_key, mpu) in mpus {
-        let last_modified = time::format_timestamp(mpu.timestamp);
-        let etag = mpu.etag()?;
-        let part_number = mpu_parse_part_number(&mpu_key, &key)?;
-        let size = mpu.size()?;
-        let mut part = Part {
-            last_modified,
-            etag,
-            size,
-            part_number,
-            ..Default::default()
-        };
-        if let Some(checksum) = mpu.checksum()? {
-            match checksum {
-                ChecksumValue::Crc32(x) => part.checksum_crc32 = Some(BASE64_STANDARD.encode(x)),
-                ChecksumValue::Crc32c(x) => part.checksum_crc32c = Some(BASE64_STANDARD.encode(x)),
-                ChecksumValue::Sha1(x) => part.checksum_sha1 = Some(BASE64_STANDARD.encode(x)),
-                ChecksumValue::Sha256(x) => part.checksum_sha256 = Some(BASE64_STANDARD.encode(x)),
+        if let (Ok(etag), Ok(size)) = (mpu.etag(), mpu.size()) {
+            let last_modified = time::format_timestamp(mpu.timestamp);
+            let part_number = mpu_parse_part_number(&mpu_key, &key)?;
+            let mut part = Part {
+                last_modified,
+                etag,
+                size,
+                part_number,
+                ..Default::default()
+            };
+            if let Some(checksum) = mpu.checksum()? {
+                match checksum {
+                    ChecksumValue::Crc32(x) => {
+                        part.checksum_crc32 = Some(BASE64_STANDARD.encode(x))
+                    }
+                    ChecksumValue::Crc32c(x) => {
+                        part.checksum_crc32c = Some(BASE64_STANDARD.encode(x))
+                    }
+                    ChecksumValue::Sha1(x) => part.checksum_sha1 = Some(BASE64_STANDARD.encode(x)),
+                    ChecksumValue::Sha256(x) => {
+                        part.checksum_sha256 = Some(BASE64_STANDARD.encode(x))
+                    }
+                }
             }
+            parts.push(part);
         }
-        res.part.push(part);
     }
-    Xml(res).try_into()
+
+    // Cut the beginning if we have a marker
+    if let Some(marker) = &query_opts.part_number_marker {
+        let next = marker + 1;
+        let part_idx = parts
+            .binary_search_by(|part| part.part_number.cmp(&next))
+            .unwrap_or_else(|x| x);
+        parts = parts.split_off(part_idx);
+    }
+
+    // Cut the end if we have too many parts
+    if parts.len() > max_parts as usize {
+        parts.truncate(max_parts as usize);
+        let pagination = Some(parts.last().unwrap().part_number);
+        return Ok((parts, pagination));
+    }
+
+    Ok((parts, None))
 }
