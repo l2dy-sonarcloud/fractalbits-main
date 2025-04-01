@@ -330,7 +330,7 @@ async fn post_handler(
             post::create_multipart_upload_handler(request, bucket, key, rpc_client_nss).await
         }
         PostEndpoint::DeleteObjects => {
-            post::delete_objects_handler(request, rpc_client_nss, blob_deletion).await
+            post::delete_objects_handler(request, bucket, rpc_client_nss, blob_deletion).await
         }
     }
 }

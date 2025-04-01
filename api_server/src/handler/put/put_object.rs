@@ -53,7 +53,9 @@ pub async fn put_object_handler(
     };
 
     let trailer_checksum_algorithm = request_trailer_checksum_algorithm(request.headers())?;
-    let (body_stream, checksummer) = request.into_body().streaming_with_checksums();
+    let mut req_body = request.into_body();
+    req_body.add_expected_checksums(expected_checksums.clone());
+    let (body_stream, checksummer) = req_body.streaming_with_checksums();
     let body_data_stream = Body::from_stream(body_stream).into_data_stream();
     let blob_id = Uuid::now_v7();
     let size = BlockDataStream::new(body_data_stream, ObjectLayout::DEFAULT_BLOCK_SIZE)

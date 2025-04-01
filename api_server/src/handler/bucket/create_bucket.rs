@@ -60,7 +60,7 @@ pub async fn create_bucket_handler(
         api_key.data.key_id.clone()
     };
 
-    let body = request.into_body().collect().await.unwrap();
+    let body = request.into_body().collect().await?;
     if !body.is_empty() {
         let create_bucket_conf: CreateBucketConfiguration =
             quick_xml::de::from_reader(body.reader())?;

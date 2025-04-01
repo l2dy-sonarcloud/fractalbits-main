@@ -39,10 +39,13 @@ impl Endpoint {
                 Method::PUT => return Ok(Endpoint::Bucket(BucketEndpoint::CreateBucket)),
                 Method::DELETE => return Ok(Endpoint::Bucket(BucketEndpoint::DeleteBucket)),
                 Method::GET => {
-                    // Or it will be list_objects* api, which will be handled in later code
+                    // Or it will be list_objects* api, which will be handled in later endpoints
                     if bucket_name.is_empty() {
                         return Ok(Endpoint::Bucket(BucketEndpoint::ListBuckets));
                     }
+                }
+                Method::POST if api_cmd == Some(ApiCommand::Delete) => {
+                    // Handled in later endpoint (PostEndpoint::DeleteObjects)
                 }
                 _ => return Err(S3Error::NotImplemented),
             }

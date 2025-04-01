@@ -10,7 +10,7 @@ use strum::EnumString;
 
 use crate::handler::common::s3_error::S3Error;
 
-#[derive(Debug, EnumString, Copy, Clone, strum::Display)]
+#[derive(Debug, EnumString, Copy, PartialEq, Clone, strum::Display)]
 #[strum(serialize_all = "camelCase")]
 pub enum ApiCommand {
     Accelerate,
