@@ -863,3 +863,10 @@ impl From<axum::Error> for S3Error {
         Self::InternalError
     }
 }
+
+impl From<axum::http::Error> for S3Error {
+    fn from(value: axum::http::Error) -> Self {
+        tracing::error!("axum::http::Error: {}", value);
+        Self::InternalError
+    }
+}

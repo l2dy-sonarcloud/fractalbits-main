@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::response::{IntoResponse, Response};
+use axum::{body::Body, response::Response};
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::{
@@ -53,5 +53,5 @@ pub async fn abort_multipart_upload_handler(
         }
     };
 
-    Ok(().into_response())
+    Ok(Response::new(Body::empty()))
 }

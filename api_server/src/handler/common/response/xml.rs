@@ -17,17 +17,10 @@ where
 
     fn try_into(self) -> Result<Response, Self::Error> {
         let mut xml_body = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
-        quick_xml::se::to_writer(&mut xml_body, &self.0).map_err(|e| {
-            tracing::error!("Xml encoding error {}", format!("{e}"));
-            S3Error::from(e)
-        })?;
-        Response::builder()
+        quick_xml::se::to_writer(&mut xml_body, &self.0)?;
+        Ok(Response::builder()
             .header("Content-Type", "application/xml")
-            .body(Body::from(xml_body))
-            .map_err(|e| {
-                tracing::error!("http response encoding error {}", format!("{e}"));
-                S3Error::InternalError
-            })
+            .body(Body::from(xml_body))?)
     }
 }
 

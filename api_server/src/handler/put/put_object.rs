@@ -21,7 +21,7 @@ use crate::{
 use axum::{
     body::Body,
     http::{header, HeaderValue},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use bucket_tables::bucket_table::Bucket;
 use futures::{StreamExt, TryStreamExt};
@@ -129,7 +129,7 @@ pub async fn put_object_handler(
         }
     }
 
-    let mut resp = ().into_response();
+    let mut resp = Response::new(Body::empty());
     resp.headers_mut()
         .insert(header::ETAG, HeaderValue::from_str(&etag)?);
     resp.headers_mut().insert(

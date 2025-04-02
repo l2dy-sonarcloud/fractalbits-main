@@ -1,4 +1,4 @@
-use axum::response::{IntoResponse, Response};
+use axum::{body::Body, response::Response};
 use bucket_tables::{api_key_table::ApiKey, table::Versioned};
 use rpc_client_rss::ArcRpcClientRss;
 
@@ -20,5 +20,5 @@ pub async fn head_bucket_handler(
     }
 
     resolve_bucket(bucket_name, rpc_client_rss).await?;
-    Ok(().into_response())
+    Ok(Response::new(Body::empty()))
 }

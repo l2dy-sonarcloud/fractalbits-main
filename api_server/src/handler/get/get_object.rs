@@ -4,7 +4,7 @@ use axum::{
     body::{Body, BodyDataStream},
     extract::Query,
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
     RequestPartsExt,
 };
 use bytes::Bytes;
@@ -109,7 +109,7 @@ pub async fn get_object_handler(
             )
             .await?;
 
-            let mut resp = body.into_response();
+            let mut resp = Response::new(body);
             object_headers(&mut resp, &object, checksum_mode_enabled)?;
             resp.headers_mut().insert(
                 header::CONTENT_LENGTH,
@@ -131,7 +131,7 @@ pub async fn get_object_handler(
             )
             .await?;
 
-            let mut resp = body.into_response();
+            let mut resp = Response::new(body);
             resp.headers_mut().insert(
                 header::CONTENT_LENGTH,
                 HeaderValue::from_str(&format!("{}", range.end - range.start))?,

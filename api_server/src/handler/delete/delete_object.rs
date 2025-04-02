@@ -1,4 +1,4 @@
-use axum::response::{IntoResponse, Response};
+use axum::{body::Body, response::Response};
 use rkyv::{self, rancor::Error};
 use rpc_client_nss::{rpc::delete_inode_response, RpcClientNss};
 use tokio::sync::mpsc::Sender;
@@ -24,11 +24,11 @@ pub async fn delete_object_handler(
         // S3 allow delete non-existing object
         delete_inode_response::Result::ErrNotFound(()) => {
             tracing::debug!("delete non-existing object {}/{key}", bucket.bucket_name);
-            return Ok(().into_response());
+            return Ok(Response::new(Body::empty()));
         }
         delete_inode_response::Result::ErrAlreadyDeleted(()) => {
             tracing::warn!("object {}/{key} is already deleted", bucket.bucket_name);
-            return Ok(().into_response());
+            return Ok(Response::new(Body::empty()));
         }
         delete_inode_response::Result::Ok(res) => res,
         delete_inode_response::Result::ErrOthers(e) => {
@@ -71,7 +71,7 @@ pub async fn delete_object_handler(
             }
         },
     }
-    Ok(().into_response())
+    Ok(Response::new(Body::empty()))
 }
 
 async fn delete_blob(

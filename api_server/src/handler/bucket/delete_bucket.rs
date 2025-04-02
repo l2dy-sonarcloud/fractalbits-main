@@ -1,4 +1,4 @@
-use axum::response::{IntoResponse, Response};
+use axum::{body::Body, response::Response};
 use bucket_tables::{
     api_key_table::{ApiKey, ApiKeyTable},
     bucket_table::{Bucket, BucketTable},
@@ -64,7 +64,7 @@ pub async fn delete_bucket_handler(
         {
             Err(RpcErrorRss::Retry) => continue,
             Err(e) => return Err(e.into()),
-            Ok(()) => return Ok(().into_response()),
+            Ok(()) => return Ok(Response::new(Body::empty())),
         }
     }
 

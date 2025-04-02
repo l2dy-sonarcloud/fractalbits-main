@@ -1,7 +1,8 @@
 use axum::{
+    body::Body,
     extract::Query,
     http::{header, HeaderValue},
-    response::{IntoResponse, Response},
+    response::Response,
     RequestPartsExt,
 };
 use bucket_tables::bucket_table::Bucket;
@@ -25,7 +26,7 @@ pub async fn head_object_handler(
     let checksum_mode_enabled = header_opts.x_amz_checksum_mode_enabled;
     let obj = get_raw_object(rpc_client_nss, bucket.root_blob_name.clone(), key).await?;
 
-    let mut resp = ().into_response();
+    let mut resp = Response::new(Body::empty());
     resp.headers_mut().insert(
         header::CONTENT_LENGTH,
         HeaderValue::from_str(&obj.size()?.to_string())?,

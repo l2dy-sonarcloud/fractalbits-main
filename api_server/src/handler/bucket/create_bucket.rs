@@ -1,7 +1,4 @@
-use axum::{
-    http::{header, HeaderValue},
-    response::{IntoResponse, Response},
-};
+use axum::{body::Body, http::header, response::Response};
 use bucket_tables::{
     api_key_table::{ApiKey, ApiKeyTable},
     bucket_table::{Bucket, BucketTable},
@@ -118,11 +115,9 @@ pub async fn create_bucket_handler(
             Err(RpcErrorRss::Retry) => continue,
             Err(e) => return Err(e.into()),
             Ok(()) => {
-                return Ok([(
-                    header::LOCATION,
-                    HeaderValue::from_str(&format!("/{bucket_name}")).unwrap(),
-                )]
-                .into_response())
+                return Ok(Response::builder()
+                    .header(header::LOCATION, format!("/{bucket_name}"))
+                    .body(Body::empty())?);
             }
         }
     }
