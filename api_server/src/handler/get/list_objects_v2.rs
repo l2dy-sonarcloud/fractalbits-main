@@ -82,6 +82,13 @@ impl ListBucketResult {
         Self { prefix, ..self }
     }
 
+    fn start_after(self, start_after: Option<String>) -> Self {
+        Self {
+            start_after,
+            ..self
+        }
+    }
+
     fn max_keys(self, max_keys: u32) -> Self {
         Self { max_keys, ..self }
     }
@@ -189,10 +196,12 @@ pub async fn list_objects_v2_handler(
 
     let max_keys = opts.max_keys.unwrap_or(1000);
     let prefix = opts.prefix.unwrap_or("/".into());
-    let start_after = match opts.start_after {
-        Some(key) => key,
+    let mut start_after = match opts.start_after {
+        Some(ref start_after_key) => start_after_key.clone(),
         None => opts.continuation_token.clone().unwrap_or_default(),
     };
+    start_after.push('\0');
+
     let (objs, next_continuation_token) = fetch_objects(
         bucket,
         rpc_client_nss,
@@ -201,11 +210,13 @@ pub async fn list_objects_v2_handler(
         start_after,
     )
     .await?;
+
     Xml(ListBucketResult::default()
         .key_count(objs.len())
         .contents(objs)
         .bucket_name(bucket.bucket_name.clone())
         .prefix(prefix)
+        .start_after(opts.start_after)
         .max_keys(max_keys)
         .continuation_token(opts.continuation_token)
         .truncated(next_continuation_token.is_some())
@@ -260,7 +271,7 @@ async fn fetch_objects(
     let next_continuation_token = if objs.len() < max_keys as usize {
         None
     } else {
-        objs.last().map(|obj| format!("{}\0", obj.key))
+        objs.last().map(|obj| obj.key.clone())
     };
 
     Ok((objs, next_continuation_token))
