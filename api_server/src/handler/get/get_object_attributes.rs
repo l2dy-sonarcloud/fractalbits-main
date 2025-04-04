@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use crate::handler::{
     common::{
-        get_raw_object, response::xml::Xml, s3_error::S3Error, signature::checksum::ChecksumValue,
+        get_raw_object,
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+        signature::checksum::ChecksumValue,
         time, xheader,
     },
     Request,
@@ -65,6 +68,8 @@ impl<'a> HeaderOpts<'a> {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct GetObjectAttributesOutput {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     #[serde(rename = "ETag", skip_serializing_if = "Option::is_none")]
     etag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

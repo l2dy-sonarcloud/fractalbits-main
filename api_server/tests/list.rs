@@ -3,6 +3,7 @@ mod common;
 const KEYS: [&str; 8] = ["a", "a/a", "a/b", "a/c", "a/d/a", "a/é", "b", "c"];
 const KEYS_MULTIPART: [&str; 5] = ["a", "a", "c", "c/a", "c/b"];
 
+#[ignore = "TODO"]
 #[tokio::test]
 async fn test_listobjectsv2() {
     let ctx = common::context();

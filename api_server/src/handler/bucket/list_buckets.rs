@@ -7,7 +7,11 @@ use rpc_client_rss::ArcRpcClientRss;
 use serde::{Deserialize, Serialize};
 
 use crate::handler::{
-    common::{response::xml::Xml, s3_error::S3Error, time::format_timestamp},
+    common::{
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+        time::format_timestamp,
+    },
     Request,
 };
 
@@ -24,6 +28,8 @@ struct ListBucketsOptions {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListAllMyBucketsResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     buckets: Buckets,
     owner: Owner,
     continuation_token: String,

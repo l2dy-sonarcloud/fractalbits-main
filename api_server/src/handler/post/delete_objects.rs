@@ -1,4 +1,7 @@
-use crate::handler::common::{response::xml::Xml, s3_error::S3Error};
+use crate::handler::common::{
+    response::xml::{Xml, XmlnsS3},
+    s3_error::S3Error,
+};
 use crate::handler::delete::delete_object_handler;
 use crate::handler::Request;
 use crate::BlobId;
@@ -37,6 +40,8 @@ struct Object {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct DeleteResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     deleted: Vec<Deleted>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<Error>,

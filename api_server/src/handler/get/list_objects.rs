@@ -1,5 +1,8 @@
 use crate::handler::{
-    common::{response::xml::Xml, s3_error::S3Error},
+    common::{
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+    },
     Request,
 };
 use axum::{extract::Query, response::Response, RequestPartsExt};
@@ -25,6 +28,8 @@ struct QueryOpts {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListBucketResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     is_truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     marker: Option<String>,
@@ -42,6 +47,7 @@ struct ListBucketResult {
 impl Default for ListBucketResult {
     fn default() -> Self {
         Self {
+            xmlns: Default::default(),
             is_truncated: false,
             marker: Default::default(),
             next_marker: Default::default(),

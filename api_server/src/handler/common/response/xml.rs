@@ -3,6 +3,17 @@ use serde::Serialize;
 
 use crate::handler::common::s3_error::S3Error;
 
+static XML_NS_S3: &str = "http://s3.amazonaws.com/doc/2006-03-01/";
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct XmlnsS3(&'static str);
+
+impl Default for XmlnsS3 {
+    fn default() -> Self {
+        Self(XML_NS_S3)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Xml<T>(pub T);
 
@@ -30,13 +41,15 @@ mod tests {
     use axum::http::header;
     use http_body_util::BodyExt;
 
-    #[derive(Debug, Serialize, PartialEq, Eq)]
+    #[derive(Debug, Serialize, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     struct TestCreateSessionOutput {
+        #[serde(rename = "@xmlns")]
+        xmlns: XmlnsS3,
         credentials: TestCredentials,
     }
 
-    #[derive(Debug, Serialize, PartialEq, Eq)]
+    #[derive(Debug, Serialize, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     struct TestCredentials {
         access_key_id: String,
@@ -48,6 +61,7 @@ mod tests {
     #[tokio::test]
     async fn test_response_xml_encode_ok() {
         let output = TestCreateSessionOutput {
+            xmlns: Default::default(),
             credentials: TestCredentials {
                 access_key_id: "test_key".into(),
                 expiration: 100,
@@ -64,7 +78,7 @@ mod tests {
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let expected = "\
 <?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-<TestCreateSessionOutput>\
+<TestCreateSessionOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\
 <Credentials>\
 <AccessKeyId>test_key</AccessKeyId>\
 <Expiration>100</Expiration>\

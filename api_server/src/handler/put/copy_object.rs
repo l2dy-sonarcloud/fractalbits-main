@@ -6,7 +6,7 @@ use crate::{
         common::{
             get_raw_object,
             request::extract::BucketNameAndKey,
-            response::xml::Xml,
+            response::xml::{Xml, XmlnsS3},
             s3_error::S3Error,
             signature::{body::ReqBody, checksum::ChecksumValue},
             time, xheader,
@@ -140,6 +140,8 @@ impl<'a> HeaderOpts<'a> {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct CopyObjectResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     #[serde(rename = "ETag")]
     etag: String,
     last_modified: String,

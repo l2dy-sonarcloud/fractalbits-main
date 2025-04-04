@@ -1,7 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::handler::common::s3_error::S3Error;
-use crate::handler::{common::response::xml::Xml, Request};
+use crate::handler::{
+    common::response::xml::{Xml, XmlnsS3},
+    Request,
+};
 use crate::object_layout::*;
 use axum::response::Response;
 use bucket_tables::bucket_table::Bucket;
@@ -29,6 +32,8 @@ struct ResponseHeaders {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct InitiateMultipartUploadResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     bucket: String,
     key: String,
     upload_id: String,
@@ -61,6 +66,7 @@ pub async fn create_multipart_upload_handler(
         .await?;
     assert_eq!(Some('\0'), key.pop());
     let init_mpu_res = InitiateMultipartUploadResult {
+        xmlns: Default::default(),
         bucket: bucket.bucket_name.clone(),
         key,
         upload_id: version_id.simple().to_string(),

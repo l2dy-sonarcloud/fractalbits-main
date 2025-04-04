@@ -1,5 +1,9 @@
 use crate::handler::{
-    common::{response::xml::Xml, s3_error::S3Error, time::format_timestamp},
+    common::{
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+        time::format_timestamp,
+    },
     Request,
 };
 use axum::{extract::Query, response::Response, RequestPartsExt};
@@ -10,7 +14,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::object_layout::ObjectLayout;
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct QueryOpts {
@@ -18,6 +21,7 @@ struct QueryOpts {
     continuation_token: Option<String>,
     delimiter: Option<String>,
     encoding_type: Option<String>,
+    #[allow(dead_code)]
     fetch_owner: Option<bool>,
     max_keys: Option<u32>,
     prefix: Option<String>,
@@ -27,11 +31,14 @@ struct QueryOpts {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListBucketResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     is_truncated: bool,
     contents: Vec<Object>,
     name: String,
     prefix: String,
-    delimiter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delimiter: Option<String>,
     max_keys: u32,
     common_prefixes: Vec<CommonPrefixes>,
     encoding_type: String,
@@ -47,11 +54,12 @@ struct ListBucketResult {
 impl Default for ListBucketResult {
     fn default() -> Self {
         Self {
+            xmlns: Default::default(),
             is_truncated: false,
             contents: Default::default(),
             name: Default::default(),
             prefix: Default::default(),
-            delimiter: "/".into(),
+            delimiter: Default::default(),
             max_keys: 1000,
             common_prefixes: Default::default(),
             encoding_type: "url".into(),
@@ -64,9 +72,13 @@ impl Default for ListBucketResult {
 }
 
 impl ListBucketResult {
-    fn key_count(self, key_count: usize) -> Self {
-        Self { key_count, ..self }
+    fn truncated(self, is_truncated: bool) -> Self {
+        Self {
+            is_truncated,
+            ..self
+        }
     }
+
     fn contents(self, contents: Vec<Object>) -> Self {
         Self { contents, ..self }
     }
@@ -82,20 +94,21 @@ impl ListBucketResult {
         Self { prefix, ..self }
     }
 
-    fn start_after(self, start_after: Option<String>) -> Self {
-        Self {
-            start_after,
-            ..self
-        }
+    fn delimiter(self, delimiter: Option<String>) -> Self {
+        Self { delimiter, ..self }
     }
 
     fn max_keys(self, max_keys: u32) -> Self {
         Self { max_keys, ..self }
     }
 
-    fn truncated(self, is_truncated: bool) -> Self {
+    fn key_count(self, key_count: usize) -> Self {
+        Self { key_count, ..self }
+    }
+
+    fn continuation_token(self, continuation_token: Option<String>) -> Self {
         Self {
-            is_truncated,
+            continuation_token,
             ..self
         }
     }
@@ -107,9 +120,9 @@ impl ListBucketResult {
         }
     }
 
-    fn continuation_token(self, continuation_token: Option<String>) -> Self {
+    fn start_after(self, start_after: Option<String>) -> Self {
         Self {
-            continuation_token,
+            start_after,
             ..self
         }
     }
@@ -154,7 +167,6 @@ pub struct Owner {
     pub id: String,
 }
 
-#[allow(dead_code)]
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub struct RestoreStatus {
@@ -217,6 +229,7 @@ pub async fn list_objects_v2_handler(
         .bucket_name(bucket.bucket_name.clone())
         .prefix(prefix)
         .start_after(opts.start_after)
+        .delimiter(opts.delimiter)
         .max_keys(max_keys)
         .continuation_token(opts.continuation_token)
         .truncated(next_continuation_token.is_some())
@@ -231,9 +244,6 @@ async fn fetch_objects(
     prefix: String,
     start_after: String,
 ) -> Result<(Vec<Object>, Option<String>), S3Error> {
-    dbg!(max_keys);
-    dbg!(&prefix);
-    dbg!(&start_after);
     let resp = rpc_client_nss
         .list_inodes(
             bucket.root_blob_name.clone(),
@@ -252,7 +262,6 @@ async fn fetch_objects(
             return Err(S3Error::InternalError);
         }
     };
-    dbg!(inodes.len());
 
     let objs = inodes
         .iter()

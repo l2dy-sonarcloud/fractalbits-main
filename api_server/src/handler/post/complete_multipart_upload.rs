@@ -6,7 +6,7 @@ use crate::{
         common::{
             extract_metadata_headers, gen_etag, get_raw_object, list_raw_objects,
             mpu_get_part_prefix, mpu_parse_part_number,
-            response::xml::Xml,
+            response::xml::{Xml, XmlnsS3},
             s3_error::S3Error,
             signature::{
                 body::ChecksumAlgorithm,
@@ -78,6 +78,8 @@ struct Part {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct CompleteMultipartUploadResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     location: String,
     bucket: String,
     key: String,

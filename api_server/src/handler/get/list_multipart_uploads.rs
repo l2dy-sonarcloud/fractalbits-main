@@ -1,5 +1,8 @@
 use crate::handler::{
-    common::{response::xml::Xml, s3_error::S3Error},
+    common::{
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+    },
     Request,
 };
 use axum::{extract::Query, response::Response, RequestPartsExt};
@@ -21,6 +24,8 @@ struct ListMultipartUploadsOptions {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListMultipartUploadsResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     bucket: String,
     key_marker: String,
     upload_id_marker: String,

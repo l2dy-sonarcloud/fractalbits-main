@@ -1,7 +1,10 @@
 use crate::handler::common::mpu_parse_part_number;
 use crate::handler::common::{
-    get_raw_object, list_raw_objects, mpu_get_part_prefix, response::xml::Xml, s3_error::S3Error,
-    signature::checksum::ChecksumValue, time,
+    get_raw_object, list_raw_objects, mpu_get_part_prefix,
+    response::xml::{Xml, XmlnsS3},
+    s3_error::S3Error,
+    signature::checksum::ChecksumValue,
+    time,
 };
 use crate::object_layout::{MpuState, ObjectState};
 use axum::{extract::Query, response::Response, RequestPartsExt};
@@ -25,6 +28,8 @@ struct QueryOpts {
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct ListPartsResult {
+    #[serde(rename = "@xmlns")]
+    xmlns: XmlnsS3,
     bucket: String,
     key: String,
     upload_id: String,
