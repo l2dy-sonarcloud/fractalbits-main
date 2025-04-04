@@ -73,9 +73,10 @@ impl RpcClient {
         root_blob_name: String,
         max_keys: u32,
         prefix: String,
-        start_after: String,
+        mut start_after: String,
         skip_mpu_parts: bool,
     ) -> Result<ListInodesResponse, RpcError> {
+        start_after.push('\0');
         let body = ListInodesRequest {
             root_blob_name,
             max_keys,

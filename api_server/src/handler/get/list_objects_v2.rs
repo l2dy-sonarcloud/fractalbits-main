@@ -208,11 +208,10 @@ pub async fn list_objects_v2_handler(
 
     let max_keys = opts.max_keys.unwrap_or(1000);
     let prefix = opts.prefix.unwrap_or("/".into());
-    let mut start_after = match opts.start_after {
+    let start_after = match opts.start_after {
         Some(ref start_after_key) => start_after_key.clone(),
         None => opts.continuation_token.clone().unwrap_or_default(),
     };
-    start_after.push('\0');
 
     let (objs, next_continuation_token) = fetch_objects(
         bucket,

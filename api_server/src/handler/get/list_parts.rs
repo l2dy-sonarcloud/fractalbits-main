@@ -135,7 +135,7 @@ async fn fetch_mpu_parts(
     let mpus = list_raw_objects(
         bucket.root_blob_name.clone(),
         rpc_client_nss,
-        max_parts,
+        10000, // TODO: use max_parts and retry if there are not enough valid results
         mpu_prefix,
         "".into(),
         false,
