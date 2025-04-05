@@ -59,6 +59,7 @@ pub async fn delete_object_handler(
                     10000,
                     mpu_prefix,
                     "".into(),
+                    "".into(),
                     false,
                 )
                 .await?;

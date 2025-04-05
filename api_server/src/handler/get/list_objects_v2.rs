@@ -207,7 +207,12 @@ pub async fn list_objects_v2_handler(
     }
 
     let max_keys = opts.max_keys.unwrap_or(1000);
-    let prefix = opts.prefix.unwrap_or("/".into());
+    let prefix = opts.prefix.unwrap_or("".into());
+    let delimiter = opts.delimiter.clone().unwrap_or("".into());
+    if !delimiter.is_empty() && delimiter != "/" {
+        tracing::warn!("Got delimiter: {delimiter}, which is not supported.");
+        return Err(S3Error::UnsupportedArgument);
+    }
     let start_after = match opts.start_after {
         Some(ref start_after_key) => start_after_key.clone(),
         None => opts.continuation_token.clone().unwrap_or_default(),
@@ -218,6 +223,7 @@ pub async fn list_objects_v2_handler(
         rpc_client_nss,
         max_keys,
         prefix.clone(),
+        delimiter.clone(),
         start_after,
     )
     .await?;
@@ -241,6 +247,7 @@ async fn fetch_objects(
     rpc_client_nss: &RpcClientNss,
     max_keys: u32,
     prefix: String,
+    delimiter: String,
     start_after: String,
 ) -> Result<(Vec<Object>, Option<String>), S3Error> {
     let resp = rpc_client_nss
@@ -248,6 +255,7 @@ async fn fetch_objects(
             bucket.root_blob_name.clone(),
             max_keys,
             prefix,
+            delimiter,
             start_after,
             true,
         )

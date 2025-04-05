@@ -216,6 +216,7 @@ pub async fn get_object_content(
                     10000,
                     mpu_prefix,
                     "".into(),
+                    "".into(),
                     false,
                 )
                 .await?;
@@ -283,6 +284,7 @@ async fn get_object_range_content(
                     rpc_client_nss,
                     10000,
                     mpu_prefix,
+                    "".into(),
                     "".into(),
                     false,
                 )

@@ -114,6 +114,7 @@ pub async fn list_objects_handler(
             max_keys,
             prefix.clone(),
             "".into(),
+            "".into(),
             true,
         )
         .await?;

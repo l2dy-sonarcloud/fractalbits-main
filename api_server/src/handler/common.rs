@@ -48,6 +48,7 @@ pub async fn list_raw_objects(
     rpc_client_nss: &RpcClientNss,
     max_parts: u32,
     prefix: String,
+    delimiter: String,
     start_after: String,
     skip_mpu_parts: bool,
 ) -> Result<Vec<(String, ObjectLayout)>, S3Error> {
@@ -56,6 +57,7 @@ pub async fn list_raw_objects(
             root_blob_name,
             max_parts,
             prefix,
+            delimiter,
             start_after,
             skip_mpu_parts,
         )

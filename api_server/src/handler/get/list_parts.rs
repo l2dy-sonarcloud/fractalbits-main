@@ -137,6 +137,7 @@ async fn fetch_mpu_parts(
         10000, // TODO: use max_parts and retry if there are not enough valid results
         mpu_prefix,
         "".into(),
+        "".into(),
         false,
     )
     .await?;

@@ -75,6 +75,7 @@ impl RpcClient {
         root_blob_name: String,
         max_keys: u32,
         prefix: String,
+        delimiter: String,
         mut start_after: String,
         skip_mpu_parts: bool,
     ) -> Result<ListInodesResponse, RpcError> {
@@ -83,6 +84,7 @@ impl RpcClient {
             root_blob_name,
             max_keys,
             prefix,
+            delimiter,
             start_after,
             skip_mpu_parts,
         };

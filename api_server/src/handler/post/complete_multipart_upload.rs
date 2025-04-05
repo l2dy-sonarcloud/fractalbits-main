@@ -245,6 +245,7 @@ pub async fn complete_multipart_upload_handler(
         max_parts,
         mpu_prefix.clone(),
         "".into(),
+        "".into(),
         false,
     )
     .await?;
