@@ -27,7 +27,7 @@ impl fmt::Debug for FixedBytes32 {
 }
 
 struct FixedBytes32Visitor;
-impl<'de> Visitor<'de> for FixedBytes32Visitor {
+impl Visitor<'_> for FixedBytes32Visitor {
     type Value = FixedBytes32;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

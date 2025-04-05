@@ -89,7 +89,7 @@ struct Owner {
 pub async fn list_parts_handler(
     request: Request,
     bucket: &Bucket,
-    mut key: String,
+    key: String,
     rpc_client_nss: &RpcClientNss,
 ) -> Result<Response, S3Error> {
     let Query(query_opts): Query<QueryOpts> = request.into_parts().0.extract().await?;
@@ -105,7 +105,6 @@ pub async fn list_parts_handler(
     let (parts, next_part_number_marker) =
         fetch_mpu_parts(bucket, key.clone(), &query_opts, max_parts, rpc_client_nss).await?;
 
-    assert_eq!(Some('\0'), key.pop());
     let resp = ListPartsResult {
         bucket: bucket.bucket_name.to_string(),
         key: key
@@ -142,10 +141,11 @@ async fn fetch_mpu_parts(
     )
     .await?;
     let mut parts = Vec::with_capacity(mpus.len());
-    for (mpu_key, mpu) in mpus {
+    for (mut mpu_key, mpu) in mpus {
         if let (Ok(etag), Ok(size)) = (mpu.etag(), mpu.size()) {
+            assert_eq!(Some('\0'), mpu_key.pop());
             let last_modified = time::format_timestamp(mpu.timestamp);
-            let part_number = mpu_parse_part_number(&mpu_key, &key)?;
+            let part_number = mpu_parse_part_number(&mpu_key)?;
             let mut part = Part {
                 last_modified,
                 etag,

@@ -32,15 +32,12 @@ impl BucketNameAndKey {
                 bucket_part = false;
                 return;
             }
-            if bucket_part && c != '\0' {
+            if bucket_part {
                 bucket.push(c);
             } else {
                 key.push(c);
             }
         });
-        if key != "/" {
-            key.push('\0'); // nss requires '\0' for now
-        }
         (bucket, key)
     }
 }
@@ -53,14 +50,11 @@ where
     type Rejection = S3Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let mut full_key = parts.uri.path().to_owned();
+        let full_key = parts.uri.path().to_owned();
         let config = ArcConfig::from_ref(state);
         let (bucket_name, key) = match Self::buket_name_from_host(parts, config).await? {
             // Virtual-hosted-style request
-            Some(bucket_name) => {
-                full_key.push('\0'); // nss requires '\0' for now
-                (bucket_name, full_key)
-            }
+            Some(bucket_name) => (bucket_name, full_key),
             // Path-style request
             None => Self::get_bucket_and_key_from_path(&full_key),
         };

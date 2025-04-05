@@ -79,7 +79,6 @@ pub async fn list_raw_objects(
 }
 
 pub fn mpu_get_part_prefix(mut key: String, part_number: u64) -> String {
-    assert_eq!(Some('\0'), key.pop());
     key.push('#');
     // if part number is 0, we treat it as object key
     if part_number != 0 {
@@ -91,9 +90,8 @@ pub fn mpu_get_part_prefix(mut key: String, part_number: u64) -> String {
     key
 }
 
-pub fn mpu_parse_part_number(mpu_key: &str, key: &str) -> Result<u32, S3Error> {
-    let mut part_str = mpu_key.to_owned().split_off(key.len());
-    part_str.pop(); // remove trailing '\0'
+pub fn mpu_parse_part_number(mpu_key: &str) -> Result<u32, S3Error> {
+    let part_str = mpu_key.split('#').last().ok_or(S3Error::InternalError)?;
     Ok(part_str
         .parse::<u32>()
         .map_err(|_| S3Error::InternalError)?

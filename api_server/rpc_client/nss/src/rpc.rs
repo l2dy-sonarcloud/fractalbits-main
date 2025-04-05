@@ -11,9 +11,10 @@ impl RpcClient {
     pub async fn put_inode(
         &self,
         root_blob_name: String,
-        key: String,
+        mut key: String,
         value: Bytes,
     ) -> Result<PutInodeResponse, RpcError> {
+        key.push('\0');
         let body = PutInodeRequest {
             root_blob_name,
             key,
@@ -42,8 +43,9 @@ impl RpcClient {
     pub async fn get_inode(
         &self,
         root_blob_name: String,
-        key: String,
+        mut key: String,
     ) -> Result<GetInodeResponse, RpcError> {
+        key.push('\0');
         let body = GetInodeRequest {
             root_blob_name,
             key,
@@ -107,8 +109,9 @@ impl RpcClient {
     pub async fn delete_inode(
         &self,
         root_blob_name: String,
-        key: String,
+        mut key: String,
     ) -> Result<DeleteInodeResponse, RpcError> {
+        key.push('\0');
         let body = DeleteInodeRequest {
             root_blob_name,
             key,

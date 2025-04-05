@@ -216,7 +216,7 @@ impl MpuChecksummer {
 pub async fn complete_multipart_upload_handler(
     request: Request,
     bucket: &Bucket,
-    mut key: String,
+    key: String,
     upload_id: String,
     rpc_client_nss: &RpcClientNss,
     blob_deletion: Sender<(BlobId, usize)>,
@@ -252,8 +252,9 @@ pub async fn complete_multipart_upload_handler(
     let mut total_size = 0;
     let mut invalid_part_keys = HashSet::new();
     let mut checksummer = MpuChecksummer::init(expected_checksum.map(|x| x.algorithm()));
-    for (mpu_key, mpu_obj) in mpu_objs.iter() {
-        let part_number = mpu_parse_part_number(mpu_key, &key)?;
+    for (mut mpu_key, mpu_obj) in mpu_objs {
+        assert_eq!(Some('\0'), mpu_key.pop());
+        let part_number = mpu_parse_part_number(&mpu_key)?;
         if !valid_part_numbers.remove(&part_number) {
             invalid_part_keys.insert(mpu_key.clone());
         } else {
@@ -302,7 +303,6 @@ pub async fn complete_multipart_upload_handler(
             return Err(S3Error::InternalError);
         }
     };
-    assert_eq!(Some('\0'), key.pop()); // removing nss's trailing '\0'
 
     let resp = CompleteMultipartUploadResult::default()
         .bucket(bucket.bucket_name.clone())

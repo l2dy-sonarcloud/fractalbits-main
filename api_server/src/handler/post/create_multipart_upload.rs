@@ -42,7 +42,7 @@ struct InitiateMultipartUploadResult {
 pub async fn create_multipart_upload_handler(
     _request: Request,
     bucket: &Bucket,
-    mut key: String,
+    key: String,
     rpc_client_nss: &RpcClientNss,
 ) -> Result<Response, S3Error> {
     let timestamp = SystemTime::now()
@@ -64,7 +64,6 @@ pub async fn create_multipart_upload_handler(
             object_layout_bytes.into(),
         )
         .await?;
-    assert_eq!(Some('\0'), key.pop());
     let init_mpu_res = InitiateMultipartUploadResult {
         xmlns: Default::default(),
         bucket: bucket.bucket_name.clone(),

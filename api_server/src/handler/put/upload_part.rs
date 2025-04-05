@@ -48,8 +48,7 @@ pub async fn upload_part_handler(
     }
     // TODO: check upload_id
 
-    let mut key = mpu_get_part_prefix(key, part_number);
-    key.push('\0');
+    let key = mpu_get_part_prefix(key, part_number);
     put_object_handler(
         request,
         bucket,
