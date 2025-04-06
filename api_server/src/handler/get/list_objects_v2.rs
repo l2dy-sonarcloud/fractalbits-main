@@ -222,7 +222,7 @@ pub async fn list_objects_v2_handler(
     }
     let start_after = match opts.start_after {
         Some(ref start_after_key) => format!("/{}", start_after_key.clone()),
-        None => opts.continuation_token.clone().unwrap_or("/".into()),
+        None => opts.continuation_token.clone().unwrap_or_default(),
     };
 
     let (objs, common_prefixes, next_continuation_token) = fetch_objects(

@@ -79,7 +79,9 @@ impl RpcClient {
         mut start_after: String,
         skip_mpu_parts: bool,
     ) -> Result<ListInodesResponse, RpcError> {
-        start_after.push('\0');
+        if !start_after.ends_with("/") {
+            start_after.push('\0');
+        }
         let body = ListInodesRequest {
             root_blob_name,
             max_keys,
