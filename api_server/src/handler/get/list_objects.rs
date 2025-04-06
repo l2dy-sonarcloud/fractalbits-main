@@ -1,3 +1,4 @@
+use super::{list_objects, Object, Prefix};
 use crate::handler::{
     common::{
         response::xml::{Xml, XmlnsS3},
@@ -7,12 +8,8 @@ use crate::handler::{
 };
 use axum::{extract::Query, response::Response, RequestPartsExt};
 use bucket_tables::bucket_table::Bucket;
-use rkyv::{self, rancor::Error};
-use rpc_client_nss::{rpc::list_inodes_response, RpcClientNss};
+use rpc_client_nss::RpcClientNss;
 use serde::{Deserialize, Serialize};
-
-use super::Object;
-use crate::object_layout::ObjectLayout;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -37,10 +34,10 @@ struct ListBucketResult {
     next_marker: Option<String>,
     contents: Vec<Object>,
     name: String,
-    prefix: String,
+    prefix: Option<String>,
     delimiter: String,
     max_keys: u32,
-    common_prefixes: Vec<CommonPrefixes>,
+    common_prefixes: Vec<Prefix>,
     encoding_type: String,
 }
 
@@ -62,6 +59,24 @@ impl Default for ListBucketResult {
     }
 }
 impl ListBucketResult {
+    fn truncated(self, is_truncated: bool) -> Self {
+        Self {
+            is_truncated,
+            ..self
+        }
+    }
+
+    fn marker(self, marker: Option<String>) -> Self {
+        Self { marker, ..self }
+    }
+
+    fn next_marker(self, next_marker: Option<String>) -> Self {
+        Self {
+            next_marker,
+            ..self
+        }
+    }
+
     fn contents(self, contents: Vec<Object>) -> Self {
         Self { contents, ..self }
     }
@@ -73,19 +88,20 @@ impl ListBucketResult {
         }
     }
 
-    fn prefix(self, prefix: String) -> Self {
+    fn prefix(self, prefix: Option<String>) -> Self {
         Self { prefix, ..self }
     }
 
     fn max_keys(self, max_keys: u32) -> Self {
         Self { max_keys, ..self }
     }
-}
 
-#[derive(Default, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
-struct CommonPrefixes {
-    prefix: String,
+    fn common_prefixes(self, common_prefixes: Vec<Prefix>) -> Self {
+        Self {
+            common_prefixes,
+            ..self
+        }
+    }
 }
 
 pub async fn list_objects_handler(
@@ -107,45 +123,35 @@ pub async fn list_objects_handler(
     }
 
     let max_keys = opts.max_keys.unwrap_or(1000);
-    let prefix = opts.prefix.unwrap_or("/".into());
-    let resp = rpc_client_nss
-        .list_inodes(
-            bucket.root_blob_name.clone(),
-            max_keys,
-            prefix.clone(),
-            "".into(),
-            "".into(),
-            true,
-        )
-        .await?;
-
-    // Process results
-    let inodes = match resp.result.unwrap() {
-        list_inodes_response::Result::Ok(res) => res.inodes,
-        list_inodes_response::Result::Err(e) => {
-            tracing::error!(e);
-            return Err(S3Error::InternalError);
-        }
+    let prefix = format!("/{}", opts.prefix.clone().unwrap_or_default());
+    let delimiter = opts.delimiter.clone().unwrap_or("".into());
+    if !delimiter.is_empty() && delimiter != "/" {
+        tracing::warn!("Got delimiter: {delimiter}, which is not supported.");
+        return Err(S3Error::UnsupportedArgument);
+    }
+    let start_after = match opts.marker {
+        Some(ref marker) => format!("/{}", marker),
+        None => "".into(),
     };
 
-    let contents = inodes
-        .iter()
-        .map(|x| {
-            match rkyv::from_bytes::<ObjectLayout, Error>(&x.inode) {
-                Err(e) => Err(e.into()),
-                Ok(obj) => {
-                    let mut key = x.key.clone();
-                    assert_eq!(Some('\0'), key.pop()); // removing nss's trailing '\0'
-                    Object::from_layout_and_key(obj, key)
-                }
-            }
-        })
-        .collect::<Result<Vec<Object>, S3Error>>()?;
+    let (objs, common_prefixes, next_continuation_token) = list_objects(
+        bucket,
+        rpc_client_nss,
+        max_keys,
+        prefix.clone(),
+        delimiter.clone(),
+        start_after,
+    )
+    .await?;
 
     Xml(ListBucketResult::default()
-        .contents(contents)
+        .truncated(next_continuation_token.is_some())
+        .marker(opts.marker)
+        .next_marker(next_continuation_token)
+        .contents(objs)
         .bucket_name(bucket.bucket_name.clone())
-        .prefix(prefix)
-        .max_keys(max_keys))
+        .prefix(opts.prefix)
+        .max_keys(max_keys)
+        .common_prefixes(common_prefixes))
     .try_into()
 }

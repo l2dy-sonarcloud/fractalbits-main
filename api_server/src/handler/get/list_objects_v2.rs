@@ -183,7 +183,7 @@ pub struct RestoreStatus {
 
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
-struct Prefix {
+pub struct Prefix {
     prefix: String,
 }
 
@@ -220,17 +220,21 @@ pub async fn list_objects_v2_handler(
         tracing::warn!("Got delimiter: {delimiter}, which is not supported.");
         return Err(S3Error::UnsupportedArgument);
     }
-    let start_after = match opts.start_after {
-        Some(ref start_after_key) => format!("/{}", start_after_key.clone()),
+    let mut start_after = match opts.start_after {
+        Some(ref start_after_key) => start_after_key.clone(),
         None => opts.continuation_token.clone().unwrap_or_default(),
     };
+    // Prepend "/" for valid start_after key
+    if !start_after.is_empty() {
+        start_after = format!("/{start_after}");
+    }
 
-    let (objs, common_prefixes, next_continuation_token) = fetch_objects(
+    let (objs, common_prefixes, next_continuation_token) = list_objects(
         bucket,
         rpc_client_nss,
         max_keys,
-        prefix.clone(),
-        delimiter.clone(),
+        prefix,
+        delimiter,
         start_after,
     )
     .await?;
@@ -250,7 +254,7 @@ pub async fn list_objects_v2_handler(
     .try_into()
 }
 
-async fn fetch_objects(
+pub async fn list_objects(
     bucket: &Bucket,
     rpc_client_nss: &RpcClientNss,
     max_keys: u32,
@@ -303,7 +307,7 @@ async fn fetch_objects(
     } else {
         inodes
             .last()
-            .map(|inode| inode.key.trim_end_matches('\0').to_owned())
+            .map(|inode| inode.key[1..].trim_end_matches('\0').to_owned())
     };
 
     Ok((objs, common_prefixes, next_continuation_token))

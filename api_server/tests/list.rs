@@ -221,7 +221,6 @@ async fn test_listobjectsv2() {
     }
 }
 
-#[ignore = "TODO"]
 #[tokio::test]
 async fn test_listobjectsv1() {
     let ctx = common::context();
@@ -332,6 +331,7 @@ async fn test_listobjectsv1() {
             match (r.contents, r.common_prefixes) {
                 (Some(k), None) if k.len() == 1 => cnt_key += 1,
                 (None, Some(pfx)) if pfx.len() == 1 => cnt_pfx += 1,
+                (None, None) => {}
                 _ => unreachable!("logic error"),
             };
             if next.is_none() {
@@ -339,11 +339,7 @@ async fn test_listobjectsv1() {
             }
         }
         assert_eq!(cnt_key, 3);
-        // We have no optimization to skip the whole prefix
-        // on listobjectsv1 so we return the same one 5 times,
-        // for each element. It is up to the client to merge its result.
-        // This is compliant with AWS spec.
-        assert_eq!(cnt_pfx, 5);
+        assert_eq!(cnt_pfx, 1);
     }
 
     {
@@ -617,7 +613,7 @@ async fn test_listmultipart() {
     }
 }
 
-#[ignore = "TODO"]
+#[ignore = "Not supported"]
 #[tokio::test]
 async fn test_multichar_delimiter() {
     // Test case from dpape from issue #692 with reference results from Amazon
