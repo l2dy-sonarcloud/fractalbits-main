@@ -10,6 +10,7 @@ use axum::extract::FromRef;
 use bytes::Bytes;
 use config::ArcConfig;
 use futures::stream::{self, StreamExt};
+use object_layout::ObjectLayout;
 use rpc_client_bss::{RpcClientBss, RpcErrorBss};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::{ArcRpcClientRss, RpcClientRss};
@@ -163,7 +164,21 @@ impl BlobClient {
         block_number: u32,
         body: Bytes,
     ) -> Result<usize, RpcErrorBss> {
-        self.client_bss.put_blob(blob_id, block_number, body).await
+        if block_number == 0 && body.len() < ObjectLayout::DEFAULT_BLOCK_SIZE as usize {
+            return self.client_bss.put_blob(blob_id, block_number, body).await;
+        }
+
+        let (res_s3, res_bss) = tokio::join!(
+            self.client_s3
+                .put_object()
+                .bucket("mybucket")
+                .key(format!("{}-{}", blob_id.to_string(), block_number))
+                .body(body.clone().into())
+                .send(),
+            self.client_bss.put_blob(blob_id, block_number, body)
+        );
+        assert!(res_s3.is_ok());
+        res_bss
     }
 
     pub async fn get_blob(
@@ -176,6 +191,19 @@ impl BlobClient {
     }
 
     pub async fn delete_blob(&self, blob_id: Uuid, block_number: u32) -> Result<(), RpcErrorBss> {
-        self.client_bss.delete_blob(blob_id, block_number).await
+        let s3_key = format!("{}-{}", blob_id.to_string(), block_number);
+        let (res_s3, res_bss) = tokio::join!(
+            self.client_s3
+                .delete_object()
+                .bucket("mybucket")
+                .key(&s3_key)
+                .send(),
+            self.client_bss.delete_blob(blob_id, block_number)
+        );
+        if let Err(e) = res_s3 {
+            // note this blob may not be uploaded to s3 yet
+            tracing::warn!("delete {s3_key} failed: {e}");
+        }
+        res_bss
     }
 }
