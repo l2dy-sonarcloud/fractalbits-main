@@ -137,8 +137,7 @@ fn start_etcd_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let service_file = "etc/etcd.service";
     let service_file_content = format!(
-        r##"
-[Unit]
+        r##"[Unit]
 Description=etcd for root_server
 
 [Install]
@@ -172,8 +171,7 @@ fn start_minio_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let service_file = "etc/minio.service";
     let service_file_content = format!(
-        r##"
-[Unit]
+        r##"[Unit]
 Description=Simulated s3 service (minio)
 
 [Install]
@@ -245,8 +243,7 @@ fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdR
         ServiceName::All => unreachable!(),
     };
     let systemd_unit_content = format!(
-        r##"
-[Unit]
+        r##"[Unit]
 Description={service_name} Service
 
 [Service]

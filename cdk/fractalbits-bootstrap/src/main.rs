@@ -134,19 +134,23 @@ fn download_config(file_name: &str) -> CmdResult {
 
 fn create_systemd_unit_file(service: ServiceName) -> CmdResult {
     let service_name = service.as_ref();
-    let exec_start = match service {
-        ServiceName::ApiServer => {
-            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}")
-        }
-        ServiceName::NssServer => {
-            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{NSS_SERVER_CONFIG}")
-        }
-        ServiceName::BssServer | ServiceName::RootServer => format!("{BIN_PATH}{service_name}"),
+    let (requires, exec_start) = match service {
+        ServiceName::ApiServer => (
+            "",
+            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}"),
+        ),
+        ServiceName::NssServer => (
+            "",
+            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{NSS_SERVER_CONFIG}"),
+        ),
+        ServiceName::BssServer => ("", format!("{BIN_PATH}{service_name}")),
+        ServiceName::RootServer => ("etcd.service", format!("{BIN_PATH}{service_name}")),
     };
     let systemd_unit_content = format!(
-        r##"
-[Unit]
+        r##"[Unit]
 Description={service_name} Service
+Requires={requires}
+After={requires}
 
 [Service]
 LimitNOFILE=1000000
@@ -173,8 +177,7 @@ WantedBy=multi-user.target
 fn start_etcd_service() -> CmdResult {
     let service_file = format!("{ETC_PATH}etcd.service");
     let service_file_content = format!(
-        r##"
-[Unit]
+        r##"[Unit]
 Description=etcd for root_server
 
 [Install]
@@ -188,17 +191,14 @@ WorkingDirectory=/var/data
 "##
     );
 
-    let etcd_wait_secs = 5;
     run_cmd! {
         mkdir -p /var/data;
         mkdir -p $ETC_PATH;
         echo $service_file_content > $service_file;
         info "Linking $service_file into /etc/systemd/system";
         systemctl link $service_file --force --quiet;
+        info "Starting etcd.service";
         systemctl start etcd.service;
-        info "Waiting ${etcd_wait_secs}s for etcd up";
-        sleep $etcd_wait_secs;
-        systemctl is-active --quiet etcd.service;
     }?;
 
     Ok(())
