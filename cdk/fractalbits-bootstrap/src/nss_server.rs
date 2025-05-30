@@ -1,0 +1,37 @@
+use super::common::*;
+use cmd_lib::*;
+
+pub fn bootstrap() -> CmdResult {
+    info!("Bootstrapping nss_server ...");
+
+    download_binary("mkfs")?;
+    run_cmd! {
+        mkdir -p /var/data;
+        cd /var/data;
+        $BIN_PATH/mkfs;
+    }?;
+
+    let service = super::Service::NssServer;
+    download_binary(service.as_ref())?;
+    create_config()?;
+    create_systemd_unit_file(service)?;
+    run_cmd! {
+        info "Starting nss_server.service";
+        systemctl start nss_server.service;
+    }?;
+    Ok(())
+}
+
+fn create_config() -> CmdResult {
+    let config_content = r##"[s3_cache]
+s3_host = "s3.us-west-1.amazonaws.com"
+s3_port = 80
+s3_region = "us-west-1"
+s3_bucket = "fractalbits-bucket"
+"##;
+    run_cmd! {
+        mkdir -p $ETC_PATH;
+        echo $config_content > $ETC_PATH/$NSS_SERVER_CONFIG
+    }?;
+    Ok(())
+}
