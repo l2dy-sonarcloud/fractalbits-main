@@ -3,18 +3,15 @@ use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 
 #[derive(Parser)]
+#[command(rename_all = "snake_case")]
 #[clap(
     name = "fractalbits-bootstrap",
     about = "Bootstrap for cloud ec2 instances"
 )]
 enum Cmd {
-    #[command(name = "api_server")]
     ApiServer,
-    #[command(name = "bss_server")]
     BssServer,
-    #[command(name = "nss_server")]
     NssServer,
-    #[command(name = "root_server")]
     RootServer,
 }
 
