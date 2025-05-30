@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 
 export class FractalbitsVpcStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -53,6 +54,12 @@ export class FractalbitsVpcStack extends cdk.Stack {
       sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(port), `Allow port ${port}`);
     });
 
+    const bucket = new s3.Bucket(this, 'Bucket', {
+      // No bucketName provided – name will be auto-generated
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
+      autoDeleteObjects: true,                  // Empty bucket before deletion
+    });
+
     // Reusable function to create UserData
     const createUserData = (serverName: string): ec2.UserData => {
       const userData = ec2.UserData.forLinux();
@@ -60,7 +67,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         'set -e',
         'aws s3 cp --no-progress s3://fractalbits-builds/fractalbits-bootstrap /opt/fractalbits/bin/',
         'chmod -v +x /opt/fractalbits/bin/fractalbits-bootstrap',
-        `/opt/fractalbits/bin/fractalbits-bootstrap ${serverName}`,
+        `/opt/fractalbits/bin/fractalbits-bootstrap --bucket=${bucket.bucketName} ${serverName}`,
       );
       return userData;
     };
@@ -98,6 +105,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     // Outputs
+    new cdk.CfnOutput(this, 'FractalbitsBucketName', {
+      value: bucket.bucketName,
+    });
+
     for (const [id, instance] of Object.entries(instances)) {
       new cdk.CfnOutput(this, `${id}Id`, {
         value: instance.instanceId,

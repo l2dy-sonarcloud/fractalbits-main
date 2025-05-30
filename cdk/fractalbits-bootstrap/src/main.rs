@@ -8,6 +8,15 @@ use clap::Parser;
 use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 
+#[derive(Parser)]
+struct Cli {
+    #[clap(long, long_help = "S3 bucket name for fractalbits service")]
+    bucket: String,
+
+    #[command(subcommand)]
+    service: Service,
+}
+
 #[derive(Parser, AsRefStr, EnumString, Copy, Clone)]
 #[strum(serialize_all = "snake_case")]
 #[command(rename_all = "snake_case")]
@@ -32,10 +41,11 @@ fn main() -> CmdResult {
         .format_target(false)
         .init();
 
-    match Service::parse() {
-        Service::ApiServer => api_server::bootstrap(),
+    let cli = Cli::parse();
+    match cli.service {
+        Service::ApiServer => api_server::bootstrap(&cli.bucket),
         Service::BssServer => bss_server::bootstrap(),
-        Service::NssServer => nss_server::bootstrap(),
+        Service::NssServer => nss_server::bootstrap(&cli.bucket),
         Service::RootServer => root_server::bootstrap(),
     }
 }
