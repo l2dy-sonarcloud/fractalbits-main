@@ -3266,12 +3266,14 @@ dependencies = [
 name = "rss_admin"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-sdk-dynamodb",
  "bucket_tables",
  "bytes",
  "clap 4.5.27",
- "etcd-client",
  "openssl",
  "strum",
+ "thiserror",
  "tokio",
 ]
 

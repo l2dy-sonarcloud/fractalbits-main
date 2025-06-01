@@ -180,6 +180,7 @@ impl BlobClient {
             None,
             "s3_cache",
         );
+        #[allow(deprecated)]
         let s3_config = S3Config::builder()
             .endpoint_url(format!("{}:{}", config.s3_host, config.s3_port))
             .region(Region::new(config.s3_region.clone()))

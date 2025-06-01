@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::build::BuildMode;
 use crate::TEST_BUCKET_ROOT_BLOB_NAME;
 use crate::{ServiceAction, ServiceName};
@@ -28,7 +29,7 @@ pub fn stop_services(service: ServiceName) -> CmdResult {
             ServiceName::Nss.as_ref().to_owned(),
             ServiceName::Bss.as_ref().to_owned(),
             ServiceName::Rss.as_ref().to_owned(),
-            "etcd".to_owned(),
+            "ddb_local".to_owned(),
             "minio".to_owned(),
         ],
         single_service => vec![single_service.as_ref().to_owned()],
@@ -84,6 +85,11 @@ pub fn start_bss_service(build_mode: BuildMode) -> CmdResult {
 }
 
 pub fn start_nss_service(build_mode: BuildMode) -> CmdResult {
+    // Start minio to simulate local s3 service
+    if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
+        start_minio_service()?;
+    }
+
     create_systemd_unit_file(ServiceName::Nss, build_mode)?;
 
     if run_cmd!(test -f ./ebs/fbs.state).is_err() {
@@ -107,18 +113,19 @@ pub fn start_nss_service(build_mode: BuildMode) -> CmdResult {
 }
 
 pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
-    // Start etcd service at first if needed, since root server stores infomation in etcd
-    if run_cmd!(systemctl --user is-active --quiet etcd.service).is_err() {
-        start_etcd_service()?;
-    }
-
-    // Start minio to simulate local s3 service
-    if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
-        start_minio_service()?;
+    // Start ddb_local service at first if needed, since root server stores infomation in ddb_local
+    if run_cmd!(systemctl --user is-active --quiet ddb_local.service).is_err() {
+        start_ddb_local_service()?;
     }
 
     // Initialize api key for testing
-    run_cmd!(./target/debug/rss_admin api-key init-test)?;
+    run_cmd! {
+        AWS_DEFAULT_REGION=fakeRegion
+        AWS_ACCESS_KEY_ID=fakeMyKeyId
+        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+        AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+        ./target/debug/rss_admin api-key init-test
+    }?;
 
     create_systemd_unit_file(ServiceName::Rss, build_mode)?;
     let rss_wait_secs = 10;
@@ -162,6 +169,58 @@ WorkingDirectory={pwd}/ebs
         info "Waiting ${etcd_wait_secs}s for etcd up";
         sleep $etcd_wait_secs;
         systemctl --user is-active --quiet etcd.service;
+    }?;
+
+    Ok(())
+}
+
+fn start_ddb_local_service() -> CmdResult {
+    let pwd = run_fun!(pwd)?;
+    let service_file = "etc/ddb_local.service";
+    let java = run_fun!(bash -c "command -v java")?;
+    let service_file_content = format!(
+        r##"[Unit]
+Description=dynamodb local service for root_server
+
+[Install]
+WantedBy=default.target
+
+[Service]
+Type=simple
+ExecStart={java} -Djava.library.path={pwd}/dynamodb_local/DynamoDBLocal_lib -jar {pwd}/dynamodb_local/DynamoDBLocal.jar -sharedDb -dbPath {pwd}/rss
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory={pwd}/rss
+"##
+    );
+
+    let ddb_local_wait_secs = 5;
+    run_cmd! {
+        mkdir -p rss;
+        mkdir -p etc;
+        echo $service_file_content > $service_file;
+        info "Linking $service_file into ~/.config/systemd/user";
+        systemctl --user link $service_file --force --quiet;
+        systemctl --user start ddb_local.service;
+        info "Waiting ${ddb_local_wait_secs}s for ddb_local up";
+        sleep $ddb_local_wait_secs;
+        systemctl --user is-active --quiet ddb_local.service;
+    }?;
+
+    const DDB_TABLE_NAME: &str = "fractalbits-keys-and-buckets";
+    run_cmd! {
+        info "Initializing table: $DDB_TABLE_NAME ...";
+        AWS_DEFAULT_REGION=fakeRegion
+        AWS_ACCESS_KEY_ID=fakeMyKeyId
+        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+        AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+        aws dynamodb create-table
+            --table-name $DDB_TABLE_NAME
+            --attribute-definitions AttributeName=id,AttributeType=S
+            --key-schema AttributeName=id,KeyType=HASH
+            --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
     }?;
 
     Ok(())
@@ -224,19 +283,32 @@ fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdR
     let pwd = run_fun!(pwd)?;
     let build = build_mode.as_ref();
     let service_name = service.as_ref();
-    let mut env_settings = "";
+    let mut env_settings = String::new();
     let exec_start = match service {
         ServiceName::Bss => format!("{pwd}/zig-out/bin/bss_server"),
         ServiceName::Nss => format!("{pwd}/zig-out/bin/nss_server"),
         ServiceName::Rss => {
+            env_settings = format!(
+                r##"
+Environment="AWS_DEFAULT_REGION=fakeRegion"
+Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
+Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
+Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
+            );
             if let BuildMode::Debug = build_mode {
-                env_settings = "\nEnvironment=\"RUST_LOG=info\"";
+                env_settings = format!(
+                    r##"{env_settings}
+Environment="RUST_LOG=info""##
+                );
             }
             format!("{pwd}/target/{build}/root_server")
         }
         ServiceName::ApiServer => {
             if let BuildMode::Debug = build_mode {
-                env_settings = "\nEnvironment=\"RUST_LOG=debug\"";
+                env_settings = format!(
+                    r##"
+Environment="RUST_LOG=debug""##
+                );
             }
             format!("{pwd}/target/{build}/api_server")
         }
