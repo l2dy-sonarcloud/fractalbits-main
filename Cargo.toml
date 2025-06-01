@@ -71,6 +71,7 @@ sync_wrapper = "1.0.2"
 http-range = "0.1.5"
 aws-config = "1.6.3"
 openssl = { version = "0.10.72", features = ["vendored"]}
+aws-sdk-dynamodb = "1.0.0"
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
