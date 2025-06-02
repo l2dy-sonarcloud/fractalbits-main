@@ -27,6 +27,8 @@ pub fn create_systemd_unit_file(service: Service) -> CmdResult {
     let systemd_unit_content = format!(
         r##"[Unit]
 Description={service_name} Service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 LimitNOFILE=1000000
