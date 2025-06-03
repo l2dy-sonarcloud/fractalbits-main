@@ -15,6 +15,7 @@ pub fn run_cmd_deploy() -> CmdResult {
             aws s3 mb $bucket
         }?;
     }
+    update_builds_bucket_access_policy(&bucket_name)?;
 
     const BUILD_MODE: &str = "release";
     run_cmd! {
@@ -44,6 +45,62 @@ pub fn run_cmd_deploy() -> CmdResult {
     for bin in &zig_bins {
         run_cmd!(aws s3 cp zig-out/bin/$bin $bucket)?;
     }
+
+    Ok(())
+}
+
+fn update_builds_bucket_access_policy(bucket_name: &str) -> CmdResult {
+    // Remove Block Public Access
+    let new_public_access_conf = r##"{
+"BlockPublicAcls": false,
+"IgnorePublicAcls": false,
+"BlockPublicPolicy": false,
+"RestrictPublicBuckets": false
+}"##;
+    run_cmd! {
+        aws s3api put-public-access-block
+          --bucket $bucket_name
+          --public-access-block-configuration $new_public_access_conf
+    }?;
+
+    // Allows s3:GetObject to anyone except anonymous users
+    let new_policy = format!(
+        r##"{{
+"Version": "2012-10-17",
+"Statement": [
+  {{
+    "Sid": "AllowGetObjectToAuthenticatedAWSAccounts",
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::{bucket_name}/*",
+    "Condition": {{
+      "StringNotEquals": {{
+        "aws:PrincipalType": "Anonymous"
+      }}
+    }}
+  }},
+  {{
+    "Sid": "DenyAnonymousAccess",
+    "Effect": "Deny",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::{bucket_name}/*",
+    "Condition": {{
+      "StringEquals": {{
+        "aws:PrincipalType": "Anonymous"
+      }}
+    }}
+  }}
+]
+}}"##
+    );
+
+    run_cmd! {
+          aws s3api put-bucket-policy
+            --bucket $bucket_name
+            --policy $new_policy
+    }?;
 
     Ok(())
 }
