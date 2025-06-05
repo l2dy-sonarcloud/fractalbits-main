@@ -14,7 +14,6 @@ use object_layout::ObjectLayout;
 use rpc_client_bss::{RpcClientBss, RpcErrorBss};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::{ArcRpcClientRss, RpcClientRss};
-use serde::Deserialize;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -139,56 +138,27 @@ pub struct BlobClient {
     s3_cache_bucket: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
-struct ImdsCredentials {
-    code: String,
-    last_updated: String, // timestamp
-    #[serde(rename = "Type")]
-    cred_type: String,
-    access_key_id: String,
-    secret_access_key: String,
-    token: String,
-    expiration: String, // timestamp
-}
-
 impl BlobClient {
     pub async fn new(bss_url: &str, config: &S3CacheConfig) -> Self {
         let client_bss = RpcClientBss::new(bss_url)
             .await
             .expect("rpc client bss failure");
 
-        let (access_key_id, secret_access_key, session_token) =
-            if config.s3_host.ends_with("amazonaws.com") {
-                let path = "/latest/meta-data/iam/security-credentials/FractalbitsInstanceRole";
-                let client = aws_config::imds::client::Client::builder().build();
-                let security_token = client
-                    .get(path)
-                    .await
-                    .expect("failure communicating with IMDS");
+        let client_s3 = if config.s3_host.ends_with("amazonaws.com") {
+            let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            S3Client::new(&aws_config)
+        } else {
+            let credentials = Credentials::new("minioadmin", "minioadmin", None, None, "s3_cache");
+            let s3_config = S3Config::builder()
+                .endpoint_url(format!("{}:{}", config.s3_host, config.s3_port))
+                .region(Region::new(config.s3_region.clone()))
+                .credentials_provider(credentials)
+                .behavior_version(BehaviorVersion::latest())
+                .build();
 
-                let cred: ImdsCredentials = serde_json::from_str(security_token.as_ref()).unwrap();
-                (cred.access_key_id, cred.secret_access_key, Some(cred.token))
-            } else {
-                ("minioadmin".to_string(), "minioadmin".to_string(), None)
-            };
+            S3Client::from_conf(s3_config)
+        };
 
-        let credentials = Credentials::new(
-            access_key_id,
-            secret_access_key,
-            session_token,
-            None,
-            "s3_cache",
-        );
-        #[allow(deprecated)]
-        let s3_config = S3Config::builder()
-            .endpoint_url(format!("{}:{}", config.s3_host, config.s3_port))
-            .region(Region::new(config.s3_region.clone()))
-            .credentials_provider(credentials)
-            .behavior_version(BehaviorVersion::v2024_03_28())
-            .build();
-
-        let client_s3 = S3Client::from_conf(s3_config);
         Self {
             client_bss,
             client_s3,
