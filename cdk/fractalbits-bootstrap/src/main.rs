@@ -20,6 +20,15 @@ enum Service {
     ApiServer {
         #[clap(long, long_help = "S3 bucket name for fractalbits service")]
         bucket: String,
+
+        #[clap(long, long_help = "bss_server IP address")]
+        bss_ip: String,
+
+        #[clap(long, long_help = "primary nss_server IP address")]
+        nss_ip: String,
+
+        #[clap(long, long_help = "root_server IP address")]
+        rss_ip: String,
     },
 
     #[clap(about = "Run on bss_server instance to bootstrap fractalbits service(s)")]
@@ -57,7 +66,12 @@ fn main() -> CmdResult {
 
     let service = Service::parse();
     match service {
-        Service::ApiServer { bucket } => api_server::bootstrap(&bucket),
+        Service::ApiServer {
+            bucket,
+            bss_ip,
+            nss_ip,
+            rss_ip,
+        } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip),
         Service::BssServer => bss_server::bootstrap(),
         Service::NssServer { bucket, secondary } => nss_server::bootstrap(&bucket, secondary),
         Service::RootServer {
