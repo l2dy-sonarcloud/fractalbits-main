@@ -10,6 +10,7 @@ members = [
     "cdk/fractalbits-bootstrap",
     "root_server",
     "root_server/admin",
+    "root_server/ebs-failover",
     "xtask",
 ]
 resolver = "2"
@@ -71,7 +72,9 @@ sync_wrapper = "1.0.2"
 http-range = "0.1.5"
 aws-config = "1.6.3"
 openssl = { version = "0.10.72", features = ["vendored"]}
-aws-sdk-dynamodb = "1.0.0"
+aws-sdk-dynamodb = "1.78.0"
+aws-sdk-ec2 = "1.136.0"
+log = "0.4.27"
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
