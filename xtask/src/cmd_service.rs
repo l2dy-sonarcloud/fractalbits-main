@@ -220,7 +220,7 @@ WorkingDirectory={pwd}/rss
             --table-name $DDB_TABLE_NAME
             --attribute-definitions AttributeName=id,AttributeType=S
             --key-schema AttributeName=id,KeyType=HASH
-            --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1;
+            --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1 >/dev/null;
     }?;
 
     Ok(())
@@ -258,7 +258,7 @@ WorkingDirectory={pwd}
         sleep $minio_wait_secs;
         info "Creating s3 bucket (\"$bucket_name\") in minio ...";
         AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb $my_bucket;
+            aws s3 mb $my_bucket >/dev/null;
     }?;
 
     Ok(())
