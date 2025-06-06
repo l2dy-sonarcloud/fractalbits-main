@@ -1,44 +1,44 @@
-use std::{thread::sleep, time::Duration};
-
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(bucket_name: &str, secondary: bool) -> CmdResult {
+pub fn bootstrap(bucket_name: &str, volume_id: &str, secondary: bool) -> CmdResult {
     download_binary("mkfs")?;
-    const EBS: &str = "/dev/xvdf";
-    const MNT: &str = "/var/data";
+
+    // Sanitize: convert vol-07451bc901d5e1e09 → vol07451bc901d5e1e09
+    let volume_id = &volume_id.replace("-", "");
+    let ebs = format!("nvme-Amazon_Elastic_Block_Store_{volume_id}");
+    let ebs_dev = format! {"/dev/disk/by-id/{ebs}"};
+    const MNT: &str = "/data";
     if secondary {
         run_cmd! {
-            info "Creating mount point and fstab entry for secondary";
+            info "Creating mount point $MNT";
             mkdir -p $MNT;
-            echo "$EBS $MNT xfs defaults,nofail 0 2" >> /etc/fstab;
         }?;
     } else {
         loop {
-            if let Ok(true) = std::fs::exists(EBS) {
+            if let Ok(true) = std::fs::exists(&ebs_dev) {
                 break;
             }
-            sleep(Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
-
-        info!("Checking filesystem on {EBS}");
-        if run_cmd!(file -s $EBS | grep -q filesystem).is_err() {
+        info!("Checking filesystem on {ebs}");
+        // TODO: check and set dynamodb ebs state as being formatted
+        if run_cmd!(file -s $ebs_dev | grep -q filesystem).is_err() {
             run_cmd! {
-                info "Formatting $EBS with XFS";
-                mkfs -t xfs $EBS;
+                info "Formatting $ebs with XFS";
+                mkfs -t xfs $ebs_dev;
             }?;
         }
 
         run_cmd! {
-            info "Mounting $EBS to $MNT";
+            info "Mounting $ebs to $MNT";
             mkdir -p $MNT;
-            mount $EBS $MNT;
-            echo "$EBS $MNT xfs defaults,nofail 0 2" >> /etc/fstab;
+            mount $ebs_dev $MNT;
         }?;
 
         run_cmd! {
             info "Formatting for nss_server";
-            cd /var/data;
+            cd $MNT;
             $BIN_PATH/mkfs;
         }?;
     }
@@ -46,6 +46,8 @@ pub fn bootstrap(bucket_name: &str, secondary: bool) -> CmdResult {
     let service_name = "nss_server";
     download_binary(service_name)?;
     create_config(bucket_name)?;
+    create_ebs_mount_unit(volume_id)?;
+    create_udev_rule(volume_id)?;
     create_systemd_unit_file(service_name)?;
     if !secondary {
         run_cmd! {
@@ -70,5 +72,38 @@ s3_bucket = "{bucket_name}"
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/$NSS_SERVER_CONFIG
     }?;
+    Ok(())
+}
+
+fn create_ebs_mount_unit(volume_id: &str) -> CmdResult {
+    let content = format!(
+        r##"[Unit]
+Description=Mount EBS Volume at /data
+
+[Mount]
+What=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id}
+Where=/data
+Type=xfs
+Options=defaults,nofail
+
+[Install]
+WantedBy=multi-user.target
+"##
+    );
+    run_cmd! {
+        echo $content > /etc/systemd/system/data.mount;
+    }?;
+
+    Ok(())
+}
+
+fn create_udev_rule(volume_id: &str) -> CmdResult {
+    let content = format!(
+        r##"KERNEL=="nvme*n*", SUBSYSTEM=="block", ENV{{ID_SERIAL}}=="Amazon_Elastic_Block_Store_{volume_id}_1", TAG+="systemd", ENV{{SYSTEMD_WANTS}}="nss_server.service""##
+    );
+    run_cmd! {
+        echo $content > /etc/udev/rules.d/99-ebs.rules;
+    }?;
+
     Ok(())
 }

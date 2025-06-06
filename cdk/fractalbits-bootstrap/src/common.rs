@@ -20,7 +20,7 @@ pub fn create_systemd_unit_file(service_name: &str) -> CmdResult {
     let exec_start = match service_name {
         "api_server" => format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}"),
         "nss_server" => {
-            requires = "var-data.mount";
+            requires = "data.mount";
             format!("{BIN_PATH}{service_name} -c {ETC_PATH}{NSS_SERVER_CONFIG}")
         }
         "bss_server" | "root_server" | "ebs-failover" => format!("{BIN_PATH}{service_name}"),
@@ -31,11 +31,12 @@ pub fn create_systemd_unit_file(service_name: &str) -> CmdResult {
 Description={service_name} Service
 After=network-online.target {requires}
 Requires={requires}
+BindsTo={requires}
 
 [Service]
 LimitNOFILE=1000000
 LimitCORE=infinity
-WorkingDirectory=/var/data
+WorkingDirectory=/data
 ExecStart={exec_start}
 
 [Install]
@@ -45,7 +46,7 @@ WantedBy=multi-user.target
     let service_file = format!("{service_name}.service");
 
     run_cmd! {
-        mkdir -p /var/data;
+        mkdir -p /data;
         mkdir -p $ETC_PATH;
         echo $systemd_unit_content > ${ETC_PATH}${service_file};
         info "Linking ${ETC_PATH}${service_file} into /etc/systemd/system";

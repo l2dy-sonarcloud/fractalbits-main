@@ -30,8 +30,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
     });
 
-    // Add Interface Endpoint for SSM
-    ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES'].forEach(service => {
+    // Add Interface Endpoint for EC2 and SSM
+    ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES'].forEach(service => {
       vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -46,6 +46,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
       ],
     });
 
@@ -123,19 +124,19 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     // Create EBS Volume with Multi-Attach for nss_server
-    const ebsVolume = new ec2.CfnVolume(this, 'MultiAttachVolume', {
+    const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
       availabilityZone: vpc.availabilityZones[0],
-      size: 10, // Size in GiB
-      volumeType: 'io2',
+      size: cdk.Size.gibibytes(10),
+      volumeType: ec2.EbsDeviceVolumeType.IO2,
       iops: 100,
-      multiAttachEnabled: true,
-      tags: [{ key: 'Name', value: 'MultiAttachVolume' }],
+      enableMultiAttach: true,
     });
 
     // Create UserData: we need to make it a separate step since we want to get the instance/volume ids
     const primary_nss = instances['nss_server_primary'].instanceId;
     const secondary_nss = instances['nss_server_secondary'].instanceId;
-    const ebs_volume_id = ebsVolume.attrVolumeId;
+    const ebs_volume_id = ebsVolume.volumeId;
     const bss_ip = instances["bss_server"].instancePrivateIp;
     const nss_ip = instances["nss_server_primary"].instancePrivateIp;
     const rss_ip = instances["root_server"].instancePrivateIp;
@@ -164,22 +165,22 @@ export class FractalbitsVpcStack extends cdk.Stack {
         bootstrapOptions: `bss_server` },
       {
         id: 'nss_server_primary',
-        bootstrapOptions: `nss_server --bucket=${bucket_name}`
+        bootstrapOptions: `nss_server --bucket=${bucket_name} --volume_id=${ebs_volume_id}`
       },
       {
         id: 'nss_server_secondary',
-        bootstrapOptions: `nss_server --bucket=${bucket_name} --secondary`
+        bootstrapOptions: `nss_server --bucket=${bucket_name} --volume_id=${ebs_volume_id} --secondary`
       },
     ];
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
       instances[id].addUserData(createUserData(bootstrapOptions).render())
     })
 
-    // Attach volume to nss_server instances (only one should use it at a time)
+    // Attach volume to primary nss_server instance
     new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
       instanceId: instances['nss_server_primary'].instanceId,
-      volumeId: ebsVolume.ref,
       device: '/dev/xvdf',
+      volumeId: ebsVolume.volumeId,
     });
 
     // Outputs
@@ -197,6 +198,11 @@ export class FractalbitsVpcStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ServicePublicIP', {
       value: instances['api_server'].instancePublicIp,
       description: 'Public IP of the API server',
+    });
+
+    new cdk.CfnOutput(this, 'VolumeId', {
+      value: ebs_volume_id,
+      description: 'EBS volume ID',
     });
   }
 }
