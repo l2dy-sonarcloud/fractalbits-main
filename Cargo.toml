@@ -76,6 +76,7 @@ openssl = { version = "0.10.72", features = ["vendored"]}
 aws-sdk-dynamodb = "1.78.0"
 aws-sdk-ec2 = "1.136.0"
 log = "0.4.27"
+systemd-journal-logger = "2.2.2"
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
