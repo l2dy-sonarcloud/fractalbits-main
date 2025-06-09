@@ -23,6 +23,9 @@ pub fn create_systemd_unit_file(service_name: &str) -> CmdResult {
             requires = "data-ebs.mount";
             format!("{BIN_PATH}{service_name} -c {ETC_PATH}{NSS_SERVER_CONFIG}")
         }
+        "nss_bench" => {
+            format!("{BIN_PATH}nss_server -c {ETC_PATH}{NSS_SERVER_CONFIG}")
+        }
         "bss_server" | "root_server" | "ebs-failover" => format!("{BIN_PATH}{service_name}"),
         _ => unreachable!(),
     };
@@ -65,4 +68,50 @@ pub fn get_current_aws_region() -> FunResult {
 
     let token = run_fun!(curl -sS -X PUT -H "$HDR_TOKEN_TTL: 21600" "$IMDS_URL/$TOKEN_PATH")?;
     run_fun!(curl -sS -H "$HDR_TOKEN: $token" "$IMDS_URL/$ID_PATH" | jq -r .region)
+}
+
+pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
+    run_cmd! {
+        info "Installing rpms (nvme-cli, mdadm)";
+        yum install -y -q nvme-cli mdadm >/dev/null;
+    }?;
+    let nvme_disks = run_fun! {
+        nvme list
+            | grep -v "Amazon Elastic Block Store"
+            | awk r##"/nvme[0-9]n[0-9]/ {print $1}"##
+    }?;
+    let nvme_disks: &Vec<&str> = &nvme_disks.split("\n").collect();
+    info!("Found local nvme disks: {nvme_disks:?}");
+    let num = nvme_disks.len();
+    if num != num_nvme_disks {
+        cmd_die!("Found $num local nvme disks, expected: $num_nvme_disks");
+    }
+
+    const DATA_LOCAL_MNT: &str = "/data/local";
+    run_cmd! {
+        info "Zeroing superblocks";
+        mdadm -q --zero-superblock $[nvme_disks];
+
+        info "Creating md0";
+        mdadm -q --create /dev/md0 --level=0 --raid-devices=${num_nvme_disks} $[nvme_disks];
+
+        info "Creating XFS on /dev/md0";
+        mkfs.xfs -q /dev/md0;
+
+        info "Mounting to $DATA_LOCAL_MNT";
+        mkdir -p $DATA_LOCAL_MNT;
+        mount /dev/md0 $DATA_LOCAL_MNT;
+
+        info "Updating /etc/mdadm/mdadm.conf";
+        mkdir -p /etc/mdadm;
+        mdadm --detail --scan > /etc/mdadm/mdadm.conf;
+    }?;
+
+    let md0_uuid = run_fun!(blkid -s UUID -o value /dev/md0)?;
+    run_cmd! {
+        info "Updating /etc/fstab (md0 uuid=$md0_uuid)";
+        echo "UUID=$md0_uuid $DATA_LOCAL_MNT xfs defaults,nofail 0 0" >> /etc/fstab;
+    }?;
+
+    Ok(())
 }

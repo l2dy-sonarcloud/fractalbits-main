@@ -47,8 +47,8 @@ pub fn run_cmd_deploy() -> CmdResult {
         "bss_server",
         "nss_server",
         "mkfs",
-        "fbs",      // to create test art tree for nss_rpc
-        "test_art", // to create test.data for nss_rpc
+        "fbs",      // to create test art tree for benchmarking nss_rpc
+        "test_art", // to create test.data for benchmarking nss_rpc
     ];
     for bin in &zig_bins {
         run_cmd!(aws s3 cp zig-out/bin/$bin $bucket)?;

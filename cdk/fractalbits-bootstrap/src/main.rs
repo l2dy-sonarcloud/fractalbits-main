@@ -1,6 +1,7 @@
 mod api_server;
 mod bss_server;
 mod common;
+mod nss_bench;
 mod nss_server;
 mod root_server;
 
@@ -55,6 +56,12 @@ enum Service {
         #[clap(long, long_help = "Multi-attached EBS volume ID")]
         volume_id: String,
     },
+
+    #[clap(about = "Bootstrap a nss_server to benchmark nss")]
+    NssBench {
+        #[clap(long, long_help = "Number of NVME disks")]
+        num_nvme_disks: usize,
+    },
 }
 
 #[cmd_lib::main]
@@ -82,5 +89,6 @@ fn main() -> CmdResult {
             secondary_instance_id,
             volume_id,
         } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id),
+        Service::NssBench { num_nvme_disks } => nss_bench::bootstrap(num_nvme_disks),
     }
 }

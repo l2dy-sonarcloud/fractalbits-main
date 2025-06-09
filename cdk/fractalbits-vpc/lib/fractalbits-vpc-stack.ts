@@ -62,7 +62,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
       sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(port), `Allow port ${port}`);
     });
 
-    const region = cdk.Stack.of(this).region;
     const bucket = new s3.Bucket(this, 'Bucket', {
       // No bucketName provided – name will be auto-generated
       removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
@@ -89,7 +88,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       tableName: 'ebs-failover-state',
     });
 
-    // Reusable function to create instances
+    // Reusable functions to create instances
     const createInstance = (
       id: string,
       subnetType: ec2.SubnetType,
@@ -103,6 +102,17 @@ export class FractalbitsVpcStack extends cdk.Stack {
         securityGroup: sg,
         role: ec2Role,
       });
+    };
+    const createUserData = (bootstrapOptions: string): ec2.UserData => {
+      const region = cdk.Stack.of(this).region;
+      const userData = ec2.UserData.forLinux();
+      userData.addCommands(
+        'set -ex',
+        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/fractalbits-bootstrap /opt/fractalbits/bin/`,
+        'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
+        `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
+      );
+      return userData;
     };
 
     // Define instance metadata
@@ -119,7 +129,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
     ];
 
     const instances: Record<string, ec2.Instance> = {};
-
     instanceConfigs.forEach(({ id, subnet, instanceType}) => {
       instances[id] = createInstance(id, subnet, instanceType);
     });
@@ -133,6 +142,12 @@ export class FractalbitsVpcStack extends cdk.Stack {
       iops: 100,
       enableMultiAttach: true,
     });
+    // Attach volume to primary nss_server instance
+    new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
+      instanceId: instances['nss_server_primary'].instanceId,
+      device: '/dev/xvdf',
+      volumeId: ebsVolume.volumeId,
+    });
 
     // Create UserData: we need to make it a separate step since we want to get the instance/volume ids
     const primary_nss = instances['nss_server_primary'].instanceId;
@@ -141,16 +156,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const bss_ip = instances["bss_server"].instancePrivateIp;
     const nss_ip = instances["nss_server_primary"].instancePrivateIp;
     const rss_ip = instances["root_server"].instancePrivateIp;
-    const createUserData = (bootstrapOptions: string): ec2.UserData => {
-      const userData = ec2.UserData.forLinux();
-      userData.addCommands(
-        'set -ex',
-        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/fractalbits-bootstrap /opt/fractalbits/bin/`,
-        'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
-        `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
-      );
-      return userData;
-    };
 
     const instanceBootstrapOptions = [
       {
@@ -176,13 +181,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
       instances[id]?.addUserData(createUserData(bootstrapOptions).render())
     })
-
-    // Attach volume to primary nss_server instance
-    new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
-      instanceId: instances['nss_server_primary'].instanceId,
-      device: '/dev/xvdf',
-      volumeId: ebsVolume.volumeId,
-    });
 
     // Outputs
     new cdk.CfnOutput(this, 'FractalbitsBucketName', {
