@@ -18,6 +18,7 @@ pub fn run_cmd_bench(
     service: BenchService,
     workload: BenchWorkload,
     with_flame_graph: bool,
+    nss_data_on_local: bool,
     service_name: &mut ServiceName,
 ) -> CmdResult {
     let http_method = match workload {
@@ -55,7 +56,7 @@ pub fn run_cmd_bench(
         BenchService::NssRpc => {
             *service_name = ServiceName::Nss;
             build_rewrk_rpc()?;
-            start_nss_service(build_mode)?;
+            start_nss_service(build_mode, nss_data_on_local)?;
             uri = "127.0.0.1:9224";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[

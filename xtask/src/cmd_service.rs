@@ -53,13 +53,13 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
 pub fn start_services(build_mode: BuildMode, service: ServiceName) -> CmdResult {
     match service {
         ServiceName::Bss => start_bss_service(build_mode)?,
-        ServiceName::Nss => start_nss_service(build_mode)?,
+        ServiceName::Nss => start_nss_service(build_mode, false)?,
         ServiceName::Rss => start_rss_service(build_mode)?,
         ServiceName::ApiServer => start_api_server(build_mode)?,
         ServiceName::All => {
             start_rss_service(build_mode)?;
             start_bss_service(build_mode)?;
-            start_nss_service(build_mode)?;
+            start_nss_service(build_mode, false)?;
             start_api_server(build_mode)?;
         }
         ServiceName::Minio => start_minio_service()?,
@@ -85,10 +85,12 @@ pub fn start_bss_service(build_mode: BuildMode) -> CmdResult {
     Ok(())
 }
 
-pub fn start_nss_service(build_mode: BuildMode) -> CmdResult {
-    // Start minio to simulate local s3 service
-    if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
-        start_minio_service()?;
+pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResult {
+    if !data_on_local {
+        // Start minio to simulate local s3 service
+        if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
+            start_minio_service()?;
+        }
     }
 
     create_systemd_unit_file(ServiceName::Nss, build_mode)?;

@@ -34,6 +34,13 @@ enum Cmd {
         )]
         with_flame_graph: bool,
 
+        #[clap(
+            short = 'l',
+            long = "nss_data_on_local",
+            long_help = "Nss data on local disks (without s3)"
+        )]
+        nss_data_on_local: bool,
+
         #[clap(long_help = "api_server/nss_rpc/bss_rpc")]
         service: BenchService,
     },
@@ -48,7 +55,10 @@ enum Cmd {
     Service {
         #[clap(long_help = "stop/start/restart")]
         action: ServiceAction,
-        #[clap(long_help = "api_server/nss/bss/all", default_value = "all")]
+        #[clap(
+            long_help = "all/api_server/nss/bss/ddb_local/minio",
+            default_value = "all"
+        )]
         service: ServiceName,
     },
 
@@ -121,18 +131,21 @@ fn main() -> CmdResult {
             service,
             workload,
             with_flame_graph,
+            nss_data_on_local,
         } => {
             let mut service_name = ServiceName::All;
             cmd_bench::prepare_bench(with_flame_graph)?;
-            cmd_bench::run_cmd_bench(service, workload, with_flame_graph, &mut service_name)
-                .inspect_err(|_| {
-                    cmd_service::run_cmd_service(
-                        BuildMode::Release,
-                        ServiceAction::Stop,
-                        service_name,
-                    )
+            cmd_bench::run_cmd_bench(
+                service,
+                workload,
+                with_flame_graph,
+                nss_data_on_local,
+                &mut service_name,
+            )
+            .inspect_err(|_| {
+                cmd_service::run_cmd_service(BuildMode::Release, ServiceAction::Stop, service_name)
                     .unwrap();
-                })?;
+            })?;
         }
         Cmd::Service { action, service } => {
             if action != ServiceAction::Stop {
