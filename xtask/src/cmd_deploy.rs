@@ -31,19 +31,25 @@ pub fn run_cmd_deploy() -> CmdResult {
         "fractalbits-bootstrap",
         "ebs-failover",
         "format-ebs",
+        "rewrk_rpc",
     ];
     for bin in &rust_bins {
         run_cmd!(aws s3 cp target/x86_64-unknown-linux-gnu/$BUILD_MODE/$bin $bucket)?;
     }
 
-    // TODO: zig build in release safe mode
     run_cmd! {
         info "Building Zig project";
-        zig build -Dcpu=x86_64_v3 2>&1;
+        zig build -Dcpu=x86_64_v3 --release=safe 2>&1;
     }?;
 
     info!("Uploading Zig-built binaries");
-    let zig_bins = ["bss_server", "nss_server", "mkfs"];
+    let zig_bins = [
+        "bss_server",
+        "nss_server",
+        "mkfs",
+        "fbs",      // to create test art tree for nss_rpc
+        "test_art", // to create test.data for nss_rpc
+    ];
     for bin in &zig_bins {
         run_cmd!(aws s3 cp zig-out/bin/$bin $bucket)?;
     }
