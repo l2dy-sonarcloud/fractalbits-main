@@ -3,14 +3,14 @@ use cmd_lib::*;
 const TARGET_ACCOUNT_ID: &str = "ACCOUNT_ID_TARGET"; // TARGET_EMAIL@example.com
 const BUCKET_OWNER_ACCOUNT_ID: &str = "ACCOUNT_ID_OWNER";
 
-pub fn run_cmd_deploy(use_s3_backend: bool) -> CmdResult {
+pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool) -> CmdResult {
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
 
-    const BUILD_MODE: &str = "release";
+    let rust_build_mode = if release_mode { "release" } else { "debug" };
     run_cmd! {
         info "Building with zigbuild";
-        cargo zigbuild --target x86_64-unknown-linux-gnu --$BUILD_MODE;
+        cargo zigbuild --target x86_64-unknown-linux-gnu --$rust_build_mode;
     }?;
 
     info!("Uploading Rust-built binaries");
@@ -24,12 +24,13 @@ pub fn run_cmd_deploy(use_s3_backend: bool) -> CmdResult {
         "rewrk_rpc",
     ];
     for bin in &rust_bins {
-        run_cmd!(aws s3 cp target/x86_64-unknown-linux-gnu/$BUILD_MODE/$bin $bucket)?;
+        run_cmd!(aws s3 cp target/x86_64-unknown-linux-gnu/$rust_build_mode/$bin $bucket)?;
     }
 
+    let zig_build_opt = if release_mode { "--release=safe" } else { "" };
     run_cmd! {
         info "Building Zig project";
-        zig build -Duse_s3_backend=$use_s3_backend --release=safe 2>&1;
+        zig build -Duse_s3_backend=$use_s3_backend $zig_build_opt 2>&1;
     }?;
 
     info!("Uploading Zig-built binaries");
