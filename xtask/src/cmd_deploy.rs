@@ -8,9 +8,13 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool) -> CmdResult {
     let bucket = format!("s3://{bucket_name}");
 
     let rust_build_mode = if release_mode { "release" } else { "debug" };
+    let zig_build_opt = if release_mode { "--release=safe" } else { "" };
     run_cmd! {
-        info "Building with zigbuild";
+        info "Building Rust projects with zigbuild";
         cargo zigbuild --target x86_64-unknown-linux-gnu --$rust_build_mode;
+
+        info "Building Zig projects";
+        zig build -Duse_s3_backend=$use_s3_backend -Dcpu=cascadelake $zig_build_opt 2>&1;
     }?;
 
     info!("Uploading Rust-built binaries");
@@ -26,12 +30,6 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool) -> CmdResult {
     for bin in &rust_bins {
         run_cmd!(aws s3 cp target/x86_64-unknown-linux-gnu/$rust_build_mode/$bin $bucket)?;
     }
-
-    let zig_build_opt = if release_mode { "--release=safe" } else { "" };
-    run_cmd! {
-        info "Building Zig project";
-        zig build -Duse_s3_backend=$use_s3_backend $zig_build_opt 2>&1;
-    }?;
 
     info!("Uploading Zig-built binaries");
     let zig_bins = [
