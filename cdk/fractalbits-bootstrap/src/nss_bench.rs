@@ -31,7 +31,6 @@ pub fn bootstrap(num_nvme_disks: usize) -> CmdResult {
         info "Starting ${service_name}.service";
         systemctl enable --now ${service_name}.service;
     }?;
-    // Note the nss_server service is not started until EBS formatted from root_server
     Ok(())
 }
 
@@ -39,7 +38,7 @@ fn create_nss_bench_config() -> CmdResult {
     let config_content = include_str!("../../../etc/nss_server_dev_config.toml");
     run_cmd! {
         mkdir -p $ETC_PATH;
-        echo $config_content > $ETC_PATH/$NSS_SERVER_CONFIG
+        echo $config_content > ${ETC_PATH}${NSS_SERVER_CONFIG};
     }?;
     Ok(())
 }

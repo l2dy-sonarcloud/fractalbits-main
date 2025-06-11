@@ -8,12 +8,13 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
 
     // Sanitize: convert vol-07451bc901d5e1e09 → vol07451bc901d5e1e09
     let volume_id = &volume_id.replace("-", "");
+    let volume_dev = format!("/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id}");
     let service_name = "nss_server";
     for bin in ["nss_server", "mkfs", "format-ebs"] {
         download_binary(bin)?;
     }
     create_nss_config(bucket_name)?;
-    create_ebs_mount_unit(volume_id)?;
+    create_mount_unit(&volume_dev, "/data/ebs")?;
     create_ebs_udev_rule(volume_id)?;
     create_systemd_unit_file(service_name)?;
     run_cmd! {
@@ -38,28 +39,6 @@ s3_bucket = "{bucket_name}"
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/$NSS_SERVER_CONFIG
     }?;
-    Ok(())
-}
-
-fn create_ebs_mount_unit(volume_id: &str) -> CmdResult {
-    let content = format!(
-        r##"[Unit]
-Description=Mount EBS Volume at /data/ebs
-
-[Mount]
-What=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id}
-Where=/data/ebs
-Type=xfs
-Options=defaults,nofail
-
-[Install]
-WantedBy=multi-user.target
-"##
-    );
-    run_cmd! {
-        echo $content > /etc/systemd/system/data-ebs.mount;
-    }?;
-
     Ok(())
 }
 

@@ -91,7 +91,7 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
     if num == 1 {
         run_cmd! {
             info "Creating XFS";
-            mkfs.xfs -q $[nvme_disks];
+            mkfs.xfs -f -q $[nvme_disks];
 
             info "Mounting to $DATA_LOCAL_MNT";
             mkdir -p $DATA_LOCAL_MNT;
@@ -99,10 +99,7 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
         }?;
 
         let uuid = run_fun!(blkid -s UUID -o value $[nvme_disks])?;
-        run_cmd! {
-            info "Updating /etc/fstab";
-            echo "UUID=$uuid $DATA_LOCAL_MNT xfs defaults,nofail 0 0" >> /etc/fstab;
-        }?;
+        create_mount_unit(&format!("/dev/disk/by-uuid/{uuid}"), DATA_LOCAL_MNT)?;
         return Ok(());
     }
 
@@ -127,9 +124,32 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
     }?;
 
     let md0_uuid = run_fun!(blkid -s UUID -o value /dev/md0)?;
+    create_mount_unit(&format!("/dev/disk/by-uuid/{md0_uuid}"), DATA_LOCAL_MNT)?;
+
+    Ok(())
+}
+
+pub fn create_mount_unit(what: &str, mount_point: &str) -> CmdResult {
+    let content = format!(
+        r##"[Unit]
+Description=Mount {what} at {mount_point}
+
+[Mount]
+What={what}
+Where={mount_point}
+Type=xfs
+Options=defaults,nofail
+
+[Install]
+WantedBy=multi-user.target
+"##
+    );
+    let mount_unit_name = mount_point.trim_start_matches("/").replace("/", "-");
     run_cmd! {
-        info "Updating /etc/fstab (md0 uuid=$md0_uuid)";
-        echo "UUID=$md0_uuid $DATA_LOCAL_MNT xfs defaults,nofail 0 0" >> /etc/fstab;
+        info "Creating systemd unit ${mount_unit_name}.mount";
+        mkdir -p $ETC_PATH;
+        echo $content > ${ETC_PATH}${mount_unit_name}.mount;
+        systemctl enable ${ETC_PATH}${mount_unit_name}.mount;
     }?;
 
     Ok(())
