@@ -59,7 +59,9 @@ export class FractalbitsMetaStack extends cdk.Stack {
       return new ec2.Instance(this, id, {
         vpc,
         instanceType: instanceType,
-        machineImage: ec2.MachineImage.latestAmazonLinux2023(),
+        machineImage: ec2.MachineImage.latestAmazonLinux2023({
+          cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+        }),
         vpcSubnets: { subnetType },
         securityGroup: sg,
         role: ec2Role,
@@ -77,8 +79,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
       return userData;
     };
 
-    const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M5D, ec2.InstanceSize.XLARGE4);
-    const nssBootstrapOptions = `nss_bench --num_nvme_disks=2`;
+    const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE8);
+    const nssBootstrapOptions = `nss_bench --num_nvme_disks=1`;
     let nssInstance = createInstance("nss_bench", ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType);
     nssInstance.addUserData(createUserData(nssBootstrapOptions).render());
 
