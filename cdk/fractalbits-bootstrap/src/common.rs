@@ -87,6 +87,24 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
         cmd_die!("Found $num local nvme disks, expected: $num_nvme_disks");
     }
 
+    if num == 1 {
+        run_cmd! {
+            info "Creating XFS";
+            mkfs.xfs -q $[nvme_disks];
+
+            info "Mounting to $DATA_LOCAL_MNT";
+            mkdir -p $DATA_LOCAL_MNT;
+            mount $[nvme_disks] $DATA_LOCAL_MNT;
+        }?;
+
+        let uuid = run_fun!(blkid -s UUID -o value $[nvme_disks])?;
+        run_cmd! {
+            info "Updating /etc/fstab";
+            echo "UUID=$uuid $DATA_LOCAL_MNT xfs defaults,nofail 0 0" >> /etc/fstab;
+        }?;
+        return Ok(());
+    }
+
     const DATA_LOCAL_MNT: &str = "/data/local";
     run_cmd! {
         info "Zeroing superblocks";
