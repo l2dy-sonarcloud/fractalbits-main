@@ -97,18 +97,20 @@ export class FractalbitsVpcStack extends cdk.Stack {
       return new ec2.Instance(this, id, {
         vpc,
         instanceType: instanceType,
-        machineImage: ec2.MachineImage.latestAmazonLinux2023(),
+        machineImage: ec2.MachineImage.latestAmazonLinux2023({
+          cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+        }),
         vpcSubnets: { subnetType },
         securityGroup: sg,
         role: ec2Role,
       });
     };
-    const createUserData = (bootstrapOptions: string): ec2.UserData => {
+    const createUserData = (cpuArch: string, bootstrapOptions: string): ec2.UserData => {
       const region = cdk.Stack.of(this).region;
       const userData = ec2.UserData.forLinux();
       userData.addCommands(
         'set -ex',
-        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/fractalbits-bootstrap /opt/fractalbits/bin/`,
+        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/${cpuArch}/fractalbits-bootstrap /opt/fractalbits/bin/`,
         'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
         `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
       );
@@ -116,14 +118,14 @@ export class FractalbitsVpcStack extends cdk.Stack {
     };
 
     // Define instance metadata
-    const t2_micro = ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO);
-    const nss_instance_type = ec2.InstanceType.of(ec2.InstanceClass.M5D, ec2.InstanceSize.XLARGE4);
-    const nss_num_nvme_disks = 2;
+    const t4g_small = ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO);
+    const nss_instance_type = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
+    const nss_num_nvme_disks = 1;
     const bucket_name = bucket.bucketName;
     const instanceConfigs = [
-      { id: 'api_server', subnet: ec2.SubnetType.PUBLIC, instanceType: t2_micro },
-      { id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: t2_micro },
-      { id: 'bss_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: t2_micro },
+      { id: 'api_server', subnet: ec2.SubnetType.PUBLIC, instanceType: t4g_small },
+      { id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: t4g_small },
+      { id: 'bss_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: t4g_small },
       { id: 'nss_server_primary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type },
       // { id: 'nss_server_secondary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type },
     ];
@@ -156,7 +158,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const bss_ip = instances["bss_server"].instancePrivateIp;
     const nss_ip = instances["nss_server_primary"].instancePrivateIp;
     const rss_ip = instances["root_server"].instancePrivateIp;
-
+    const cpuArch = "aarch64";
     const instanceBootstrapOptions = [
       {
         id: 'api_server',
@@ -179,7 +181,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       },
     ];
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
-      instances[id]?.addUserData(createUserData(bootstrapOptions).render())
+      instances[id]?.addUserData(createUserData(cpuArch, bootstrapOptions).render())
     })
 
     // Outputs

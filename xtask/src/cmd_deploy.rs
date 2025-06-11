@@ -7,7 +7,9 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
 
-    let rust_build_mode = if release_mode { "release" } else { "debug" };
+    // XXX: rust always uses release mode, to reduce binarie sizes for now
+    // let rust_build_opt = if release_mode { "--release" } else { "" };
+    let rust_build_opt = "--release";
     let zig_build_opt = if release_mode { "--release=safe" } else { "" };
     let rust_build_target = if target_arm {
         "aarch64-unknown-linux-gnu"
@@ -22,12 +24,13 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
     std::env::set_var("PROTOC_PATH", "/usr/bin/protoc");
     run_cmd! {
         info "Building Rust projects with zigbuild";
-        cargo zigbuild --target $rust_build_target --$rust_build_mode;
+        cargo zigbuild --target $rust_build_target $rust_build_opt;
 
         info "Building Zig projects";
         zig build -Duse_s3_backend=$use_s3_backend -D$zig_build_target $zig_build_opt 2>&1;
     }?;
 
+    let prefix = if target_arm { "aarch64" } else { "x86_64" };
     info!("Uploading Rust-built binaries");
     let rust_bins = [
         "api_server",
@@ -38,8 +41,10 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
         "format-ebs",
         "rewrk_rpc",
     ];
+    // let rust_build_mode = if release_mode { "release" } else { "debug" };
+    let rust_build_mode = "release";
     for bin in &rust_bins {
-        run_cmd!(aws s3 cp target/$rust_build_target/$rust_build_mode/$bin $bucket)?;
+        run_cmd!(aws s3 cp target/$rust_build_target/$rust_build_mode/$bin $bucket/$prefix/$bin)?;
     }
 
     info!("Uploading Zig-built binaries");
@@ -51,7 +56,7 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
         "test_art", // to create test.data for benchmarking nss_rpc
     ];
     for bin in &zig_bins {
-        run_cmd!(aws s3 cp zig-out/bin/$bin $bucket)?;
+        run_cmd!(aws s3 cp zig-out/bin/$bin $bucket/$prefix/$bin)?;
     }
 
     Ok(())

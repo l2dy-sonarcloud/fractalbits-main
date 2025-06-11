@@ -67,22 +67,23 @@ export class FractalbitsMetaStack extends cdk.Stack {
         role: ec2Role,
       });
     };
-    const createUserData = (bootstrapOptions: string): ec2.UserData => {
+    const createUserData = (cpuArch: string, bootstrapOptions: string): ec2.UserData => {
       const region = cdk.Stack.of(this).region;
       const userData = ec2.UserData.forLinux();
       userData.addCommands(
         'set -ex',
-        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/fractalbits-bootstrap /opt/fractalbits/bin/`,
+        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/${cpuArch}/fractalbits-bootstrap /opt/fractalbits/bin/`,
         'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
         `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
       );
       return userData;
     };
 
-    const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE8);
-    const nssBootstrapOptions = `nss_bench --num_nvme_disks=1`;
+    const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
+    const cpuArch = "aarch64";
+    const nssBootstrapOptions = `nss_bench --num_nvme_disks=2`;
     let nssInstance = createInstance("nss_bench", ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType);
-    nssInstance.addUserData(createUserData(nssBootstrapOptions).render());
+    nssInstance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
 
     new cdk.CfnOutput(this, 'nssBenchId', {
       value: nssInstance.instanceId,

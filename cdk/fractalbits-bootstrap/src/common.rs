@@ -7,9 +7,10 @@ pub const API_SERVER_CONFIG: &str = "api_server_cloud_config.toml";
 
 pub fn download_binary(file_name: &str) -> CmdResult {
     let builds_bucket = format!("s3://fractalbits-builds-{}", get_current_aws_region()?);
+    let cpu_arch = run_fun!(arch)?;
     run_cmd! {
         info "Downloading $file_name from $builds_bucket to $BIN_PATH";
-        aws s3 cp --no-progress $builds_bucket/$file_name $BIN_PATH;
+        aws s3 cp --no-progress $builds_bucket/$cpu_arch/$file_name $BIN_PATH;
         chmod +x $BIN_PATH/$file_name
     }?;
     Ok(())

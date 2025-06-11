@@ -5,9 +5,7 @@ const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 
 pub fn bootstrap(num_nvme_disks: usize) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
-    if run_cmd!(mount | grep md0 | grep -q "/data/local").is_err() {
-        format_local_nvme_disks(num_nvme_disks)?;
-    }
+    format_local_nvme_disks(num_nvme_disks)?;
 
     for bin in ["nss_server", "mkfs", "fbs", "test_art", "rewrk_rpc"] {
         download_binary(bin)?;
