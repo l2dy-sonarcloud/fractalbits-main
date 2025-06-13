@@ -14,7 +14,7 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
         download_binary(bin)?;
     }
     create_nss_config(bucket_name)?;
-    create_mount_unit(&volume_dev, "/data/ebs")?;
+    create_mount_unit(&volume_dev, "/data/ebs", "ext4")?;
     create_ebs_udev_rule(volume_id)?;
     create_systemd_unit_file(service_name)?;
     run_cmd! {

@@ -99,7 +99,7 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
         }?;
 
         let uuid = run_fun!(blkid -s UUID -o value $[nvme_disks])?;
-        create_mount_unit(&format!("/dev/disk/by-uuid/{uuid}"), DATA_LOCAL_MNT)?;
+        create_mount_unit(&format!("/dev/disk/by-uuid/{uuid}"), DATA_LOCAL_MNT, "xfs")?;
         return Ok(());
     }
 
@@ -124,12 +124,16 @@ pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
     }?;
 
     let md0_uuid = run_fun!(blkid -s UUID -o value /dev/md0)?;
-    create_mount_unit(&format!("/dev/disk/by-uuid/{md0_uuid}"), DATA_LOCAL_MNT)?;
+    create_mount_unit(
+        &format!("/dev/disk/by-uuid/{md0_uuid}"),
+        DATA_LOCAL_MNT,
+        "xfs",
+    )?;
 
     Ok(())
 }
 
-pub fn create_mount_unit(what: &str, mount_point: &str) -> CmdResult {
+pub fn create_mount_unit(what: &str, mount_point: &str, fs_type: &str) -> CmdResult {
     let content = format!(
         r##"[Unit]
 Description=Mount {what} at {mount_point}
@@ -137,7 +141,7 @@ Description=Mount {what} at {mount_point}
 [Mount]
 What={what}
 Where={mount_point}
-Type=xfs
+Type={fs_type}
 Options=defaults,nofail
 
 [Install]
