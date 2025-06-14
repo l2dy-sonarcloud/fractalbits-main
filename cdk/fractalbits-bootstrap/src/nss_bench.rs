@@ -3,7 +3,7 @@ use cmd_lib::*;
 
 const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 
-pub fn bootstrap(volume_id: &str, num_nvme_disks: usize) -> CmdResult {
+pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
     format_local_nvme_disks(num_nvme_disks)?;
 
@@ -18,7 +18,7 @@ pub fn bootstrap(volume_id: &str, num_nvme_disks: usize) -> CmdResult {
         download_binary(bin)?;
     }
     let service_name = "nss_bench";
-    create_nss_bench_config()?;
+    super::nss_server::create_nss_config(bucket_name)?;
     create_systemd_unit_file(service_name)?;
 
     let ebs_dev = format! {
@@ -43,15 +43,6 @@ pub fn bootstrap(volume_id: &str, num_nvme_disks: usize) -> CmdResult {
 
         info "Starting ${service_name}.service";
         systemctl enable --now ${service_name}.service;
-    }?;
-    Ok(())
-}
-
-fn create_nss_bench_config() -> CmdResult {
-    let config_content = include_str!("../../../etc/nss_server_dev_config.toml");
-    run_cmd! {
-        mkdir -p $ETC_PATH;
-        echo $config_content > ${ETC_PATH}${NSS_SERVER_CONFIG};
     }?;
     Ok(())
 }

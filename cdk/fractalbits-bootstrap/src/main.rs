@@ -2,7 +2,7 @@ mod api_server;
 mod bss_server;
 mod common;
 mod nss_bench;
-mod nss_server;
+pub mod nss_server;
 mod root_server;
 
 use clap::Parser;
@@ -59,6 +59,9 @@ enum Service {
 
     #[clap(about = "Bootstrap a nss_server to benchmark nss")]
     NssBench {
+        #[clap(long, long_help = "S3 bucket name for nss bench")]
+        bucket: String,
+
         #[clap(long, long_help = "Multi-attached EBS volume ID")]
         volume_id: String,
 
@@ -93,8 +96,9 @@ fn main() -> CmdResult {
             volume_id,
         } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id),
         Service::NssBench {
+            bucket,
             volume_id,
             num_nvme_disks,
-        } => nss_bench::bootstrap(&volume_id, num_nvme_disks),
+        } => nss_bench::bootstrap(&bucket, &volume_id, num_nvme_disks),
     }
 }

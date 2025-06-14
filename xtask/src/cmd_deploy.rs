@@ -7,7 +7,7 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
 
-    // XXX: rust always uses release mode, to reduce binarie sizes for now
+    // Note: rust always uses release mode, to reduce binaries sizes for now
     // let rust_build_opt = if release_mode { "--release" } else { "" };
     let rust_build_opt = "--release";
     let zig_build_opt = if release_mode { "--release=safe" } else { "" };

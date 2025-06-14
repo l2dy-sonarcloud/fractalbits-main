@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-
+import * as s3 from 'aws-cdk-lib/aws-s3';
 
 export class FractalbitsMetaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -79,6 +79,11 @@ export class FractalbitsMetaStack extends cdk.Stack {
       iops: 10000,
       enableMultiAttach: true,
     });
+    const bucket = new s3.Bucket(this, 'Bucket', {
+      // No bucketName provided – name will be auto-generated
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
+      autoDeleteObjects: true,                  // Empty bucket before deletion
+    });
 
     const createUserData = (cpuArch: string, bootstrapOptions: string): ec2.UserData => {
       const region = cdk.Stack.of(this).region;
@@ -91,7 +96,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
       );
       return userData;
     };
-    const nssBootstrapOptions = `nss_bench --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1`;
+    const nssBootstrapOptions = `nss_bench --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1`;
     nssInstance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
 
     // Attach volume

@@ -25,7 +25,7 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
     Ok(())
 }
 
-fn create_nss_config(bucket_name: &str) -> CmdResult {
+pub fn create_nss_config(bucket_name: &str) -> CmdResult {
     let aws_region = get_current_aws_region()?;
     let config_content = format!(
         r##"[s3_cache]
