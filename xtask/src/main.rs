@@ -61,13 +61,13 @@ enum Cmd {
     #[clap(about = "Deploy binaries to s3 builds bucket")]
     Deploy {
         #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
-        use_s3_backend: bool,
-
-        #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
         release: bool,
 
         #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
         target_arm: bool,
+
+        #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
+        use_s3_backend: bool,
     },
 
     #[clap(about = "Grant S3 build bucket policy")]
