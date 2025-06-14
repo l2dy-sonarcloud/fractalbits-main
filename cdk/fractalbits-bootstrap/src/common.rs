@@ -72,25 +72,20 @@ pub fn get_current_aws_region() -> FunResult {
 }
 
 pub fn format_local_nvme_disks(num_nvme_disks: usize) -> CmdResult {
-    run_cmd! {
-        info "Installing rpms (nvme-cli, mdadm)";
-        yum install -y -q nvme-cli mdadm >/dev/null;
-    }?;
     let nvme_disks = run_fun! {
         nvme list
             | grep -v "Amazon Elastic Block Store"
             | awk r##"/nvme[0-9]n[0-9]/ {print $1}"##
     }?;
     let nvme_disks: &Vec<&str> = &nvme_disks.split("\n").collect();
-    info!("Found local nvme disks: {nvme_disks:?}");
     let num = nvme_disks.len();
     if num != num_nvme_disks {
-        cmd_die!("Found $num local nvme disks, expected: $num_nvme_disks");
+        cmd_die!("Found $num local nvme disks ${nvme_disks:?}, expected: $num_nvme_disks");
     }
 
     if num == 1 {
         run_cmd! {
-            info "Creating XFS";
+            info "Creating XFS on local nvme disks: ${nvme_disks:?}";
             mkfs.xfs -f -q $[nvme_disks];
 
             info "Mounting to $DATA_LOCAL_MNT";

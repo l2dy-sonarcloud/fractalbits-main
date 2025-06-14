@@ -5,6 +5,7 @@ const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 
 pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
+    install_rpms()?;
     format_local_nvme_disks(num_nvme_disks)?;
 
     for bin in [
@@ -44,5 +45,15 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
         info "Starting ${service_name}.service";
         systemctl enable --now ${service_name}.service;
     }?;
+    Ok(())
+}
+
+fn install_rpms() -> CmdResult {
+    let rpms = ["nvme-cli", "mdadm", "gdb", "perf"];
+    run_cmd! {
+        info "Installing ${rpms:?}";
+        yum install -y -q $[rpms] >/dev/null;
+    }?;
+
     Ok(())
 }

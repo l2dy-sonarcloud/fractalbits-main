@@ -80,7 +80,7 @@ systemd-journal-logger = "2.2.2"
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
-cmd_lib = "1.9.5"
+cmd_lib = "1.9.6"
 tracing-test = {version = "0.2.5", features = ["no-env-filter"]}
 env_logger = "0.11.5"
 num_cpus = "1.16.0"
