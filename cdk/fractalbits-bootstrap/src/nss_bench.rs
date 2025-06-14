@@ -26,7 +26,7 @@ pub fn bootstrap(volume_id: &str, num_nvme_disks: usize) -> CmdResult {
         volume_id.replace("-", "")
     };
     run_cmd! {
-        info "Formatting EBS: $ebs_dev (see detailed logs with `journalctl -f _COMM=format-ebs`)";
+        info "Formatting EBS: $ebs_dev (see detailed logs with `journalctl _COMM=format-ebs`)";
         /opt/fractalbits/bin/format-ebs $ebs_dev;
 
         mkdir -p /data/local;
