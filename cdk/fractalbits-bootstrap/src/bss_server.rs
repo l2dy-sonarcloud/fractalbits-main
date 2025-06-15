@@ -2,12 +2,7 @@ use super::common::*;
 use cmd_lib::*;
 
 pub fn bootstrap() -> CmdResult {
-    let service_name = "bss_server";
-    download_binary(service_name)?;
-    create_systemd_unit_file(service_name)?;
-    run_cmd! {
-        info "Starting bss_server.service";
-        systemctl enable --now bss_server.service;
-    }?;
+    download_binaries(&["bss_server"])?;
+    create_systemd_unit_file("bss_server", true)?;
     Ok(())
 }

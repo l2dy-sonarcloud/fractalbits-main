@@ -5,7 +5,14 @@ pub const ETC_PATH: &str = "/opt/fractalbits/etc/";
 pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const API_SERVER_CONFIG: &str = "api_server_cloud_config.toml";
 
-pub fn download_binary(file_name: &str) -> CmdResult {
+pub fn download_binaries(file_list: &[&str]) -> CmdResult {
+    for file_name in file_list {
+        download_binary(file_name)?;
+    }
+    Ok(())
+}
+
+fn download_binary(file_name: &str) -> CmdResult {
     let builds_bucket = format!("s3://fractalbits-builds-{}", get_current_aws_region()?);
     let cpu_arch = run_fun!(arch)?;
     run_cmd! {
@@ -16,7 +23,7 @@ pub fn download_binary(file_name: &str) -> CmdResult {
     Ok(())
 }
 
-pub fn create_systemd_unit_file(service_name: &str) -> CmdResult {
+pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResult {
     let mut requires = "";
     let exec_start = match service_name {
         "api_server" => format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}"),
@@ -49,14 +56,15 @@ ExecStart={exec_start}
 WantedBy=multi-user.target
 "##
     );
-    let service_file = format!("{service_name}.service");
 
+    let service_file = format!("{service_name}.service");
+    let enable_now_opt = if enable_now { "--now" } else { "" };
     run_cmd! {
         mkdir -p /data;
         mkdir -p $ETC_PATH;
         echo $systemd_unit_content > ${ETC_PATH}${service_file};
-        info "Enabling ${ETC_PATH}${service_file}";
-        systemctl enable ${ETC_PATH}${service_file} --force --quiet;
+        info "Enabling ${ETC_PATH}${service_file} (enable_now=${enable_now})";
+        systemctl enable ${ETC_PATH}${service_file} --force --quiet ${enable_now_opt};
     }?;
     Ok(())
 }

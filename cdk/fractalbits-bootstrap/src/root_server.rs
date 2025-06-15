@@ -10,16 +10,10 @@ pub fn bootstrap(
     secondary_instance_id: &str,
     volume_id: &str,
 ) -> CmdResult {
-    download_binary("rss_admin")?;
+    download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
     run_cmd!($BIN_PATH/rss_admin api-key init-test)?;
 
-    let service_name = "root_server";
-    download_binary(service_name)?;
-    create_systemd_unit_file(service_name)?;
-    run_cmd! {
-        info "Starting root_server.service";
-        systemctl enable --now root_server.service;
-    }?;
+    create_systemd_unit_file("root_server", true)?;
 
     // Format EBS with SSM
     let ebs_dev = get_volume_dev(volume_id);
@@ -108,8 +102,6 @@ fn bootstrap_ebs_failover_service(
     volume_id: &str,
 ) -> CmdResult {
     let service_name = "ebs-failover";
-    download_binary(service_name)?;
-    create_systemd_unit_file(service_name)?;
 
     let config_content = format!(
         r##"primary_instance_id = "{primary_instance_id}"    # Primary instance ID
@@ -131,9 +123,8 @@ fencing_timeout_seconds = 300                  # Max time to wait for instance t
     run_cmd! {
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/${service_name}-config.toml;
-        info "Starting ${service_name}.service";
-        systemctl enable --now ${service_name}.service;
     }?;
 
+    create_systemd_unit_file(service_name, true)?;
     Ok(())
 }

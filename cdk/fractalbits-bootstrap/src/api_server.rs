@@ -2,14 +2,9 @@ use super::common::*;
 use cmd_lib::*;
 
 pub fn bootstrap(bucket_name: &str, bss_ip: &str, nss_ip: &str, rss_ip: &str) -> CmdResult {
-    let service_name = "api_server";
-    download_binary(service_name)?;
+    download_binaries(&["api_server"])?;
     create_config(bucket_name, bss_ip, nss_ip, rss_ip)?;
-    create_systemd_unit_file(service_name)?;
-    run_cmd! {
-        info "Starting api_server.service";
-        systemctl enable --now api_server.service;
-    }?;
+    create_systemd_unit_file("api_server", true)?;
     Ok(())
 }
 

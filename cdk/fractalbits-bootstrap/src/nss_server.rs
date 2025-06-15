@@ -2,19 +2,14 @@ use super::common::*;
 use cmd_lib::*;
 
 pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> CmdResult {
+    assert_ne!(num_nvme_disks, 0);
+
     install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
-    if num_nvme_disks != 0 {
-        format_local_nvme_disks(num_nvme_disks)?;
-    }
+    format_local_nvme_disks(num_nvme_disks)?;
+    download_binaries(&["nss_server", "mkfs", "format-nss"])?;
+    setup_configs(bucket_name, volume_id, "nss_server")?;
 
-    for bin in ["nss_server", "mkfs", "format-nss"] {
-        download_binary(bin)?;
-    }
-
-    let service_name = "nss_server";
-    setup_configs(bucket_name, volume_id, service_name)?;
-
-    // Note the nss_server service is not started until EBS formatted from root_server
+    // Note the nss_server service is not started until EBS/nss formatted from root_server
     Ok(())
 }
 
@@ -23,7 +18,8 @@ pub fn setup_configs(bucket_name: &str, volume_id: &str, service_name: &str) -> 
     create_nss_config(bucket_name)?;
     create_mount_unit(&volume_dev, "/data/ebs", "ext4")?;
     create_ebs_udev_rule(volume_id, service_name)?;
-    create_systemd_unit_file(service_name)?;
+    create_coredump_config()?;
+    create_systemd_unit_file(service_name, false)?;
     Ok(())
 }
 
