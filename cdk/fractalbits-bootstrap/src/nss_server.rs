@@ -7,7 +7,7 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
         format_local_nvme_disks(num_nvme_disks)?;
     }
 
-    for bin in ["nss_server", "mkfs", "format-ebs"] {
+    for bin in ["nss_server", "mkfs", "format-nss"] {
         download_binary(bin)?;
     }
 

@@ -26,7 +26,7 @@ pub fn bootstrap(
     wait_for_ssm_ready(primary_instance_id);
     run_cmd_with_ssm(
         primary_instance_id,
-        &format! {"sudo /opt/fractalbits/bin/format-ebs --ebs_dev {ebs_dev}"},
+        &format! {"sudo /opt/fractalbits/bin/format-nss --ebs_dev {ebs_dev}"},
     )?;
 
     if secondary_instance_id != "null" {

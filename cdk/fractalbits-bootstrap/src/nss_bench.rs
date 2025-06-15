@@ -13,7 +13,7 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
         "fbs",
         "test_art",
         "rewrk_rpc",
-        "format-ebs",
+        "format-nss",
     ] {
         download_binary(bin)?;
     }
@@ -28,8 +28,8 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
         info "Generating random 10_000_000 keys";
         /opt/fractalbits/bin/test_art --gen --size 10000000;
 
-        info "Formatting EBS: $volume_dev (see detailed logs with `journalctl _COMM=format-ebs`)";
-        /opt/fractalbits/bin/format-ebs --dev_mode --ebs_dev $volume_dev;
+        info "Formatting EBS: $volume_dev (see detailed logs with `journalctl _COMM=format-nss`)";
+        /opt/fractalbits/bin/format-nss --dev_mode --ebs_dev $volume_dev;
     }?;
     Ok(())
 }

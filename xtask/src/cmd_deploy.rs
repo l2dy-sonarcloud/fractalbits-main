@@ -38,7 +38,7 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
         "rss_admin",
         "fractalbits-bootstrap",
         "ebs-failover",
-        "format-ebs",
+        "format-nss",
         "rewrk_rpc",
     ];
     // let rust_build_mode = if release_mode { "release" } else { "debug" };
