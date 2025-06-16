@@ -31,7 +31,13 @@ enum Service {
     },
 
     #[clap(about = "Run on bss_server instance to bootstrap fractalbits service(s)")]
-    BssServer,
+    BssServer {
+        #[clap(long, long_help = "Number of NVME disks")]
+        num_nvme_disks: usize,
+
+        #[clap(long, default_value = "false", long_help = "For benchmark testing")]
+        bench: bool,
+    },
 
     #[clap(about = "Run on nss_server instance to bootstrap fractalbits service(s)")]
     NssServer {
@@ -84,7 +90,10 @@ fn main() -> CmdResult {
             nss_ip,
             rss_ip,
         } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip),
-        Service::BssServer => bss_server::bootstrap(),
+        Service::BssServer {
+            num_nvme_disks,
+            bench,
+        } => bss_server::bootstrap(num_nvme_disks, bench),
         Service::NssServer {
             bucket,
             volume_id,

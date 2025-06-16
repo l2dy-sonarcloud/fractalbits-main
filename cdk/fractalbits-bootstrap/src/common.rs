@@ -25,13 +25,19 @@ fn download_binary(file_name: &str) -> CmdResult {
 
 pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResult {
     let mut requires = "";
+    let mut working_dir = "/data";
     let exec_start = match service_name {
         "api_server" => format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}"),
         "nss_server" | "nss_bench" => {
             requires = "data-ebs.mount data-local.mount";
             format!("{BIN_PATH}nss_server -c {ETC_PATH}{NSS_SERVER_CONFIG}")
         }
-        "bss_server" | "root_server" | "ebs-failover" => format!("{BIN_PATH}{service_name}"),
+        "bss_server" => {
+            requires = "data-local.mount";
+            working_dir = "/data/local";
+            format!("{BIN_PATH}{service_name}")
+        }
+        "root_server" | "ebs-failover" => format!("{BIN_PATH}{service_name}"),
         _ => unreachable!(),
     };
     let systemd_unit_content = format!(
@@ -49,7 +55,7 @@ LimitNOFILE=1000000
 LimitCORE=infinity
 Restart=on-failure
 RestartSec=5
-WorkingDirectory=/data
+WorkingDirectory={working_dir}
 ExecStart={exec_start}
 
 [Install]

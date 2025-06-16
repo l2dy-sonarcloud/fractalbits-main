@@ -39,6 +39,7 @@ pub fn run_cmd_deploy(use_s3_backend: bool, release_mode: bool, target_arm: bool
         "ebs-failover",
         "format-nss",
         "rewrk_rpc",
+        "xtask",
     ];
     // let rust_build_mode = if release_mode { "release" } else { "debug" };
     let rust_build_mode = "release";
