@@ -4,8 +4,12 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 
+interface FractalbitsMetaStackProps extends cdk.StackProps {
+  serviceName: string;
+}
+
 export class FractalbitsMetaStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: FractalbitsMetaStackProps) {
     super(scope, id, props);
 
     const vpc = new ec2.Vpc(this, 'FractalbitsMetaStackVpc', {
@@ -67,24 +71,6 @@ export class FractalbitsMetaStack extends cdk.Stack {
         role: ec2Role,
       });
     };
-    const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
-    const cpuArch = "aarch64";
-    let nssInstance = createInstance("nss_bench", ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType);
-    // Create EBS Volume with Multi-Attach capabilities
-    const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      availabilityZone: vpc.availabilityZones[0],
-      size: cdk.Size.gibibytes(20),
-      volumeType: ec2.EbsDeviceVolumeType.IO2,
-      iops: 10000,
-      enableMultiAttach: true,
-    });
-    const bucket = new s3.Bucket(this, 'Bucket', {
-      // No bucketName provided – name will be auto-generated
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
-      autoDeleteObjects: true,                  // Empty bucket before deletion
-    });
-
     const createUserData = (cpuArch: string, bootstrapOptions: string): ec2.UserData => {
       const region = cdk.Stack.of(this).region;
       const userData = ec2.UserData.forLinux();
@@ -96,19 +82,41 @@ export class FractalbitsMetaStack extends cdk.Stack {
       );
       return userData;
     };
-    const nssBootstrapOptions = `nss_bench --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1`;
-    nssInstance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
+    const instanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
+    const cpuArch = "aarch64";
+    let instance = createInstance(`{props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, instanceType);
+    if (props.serviceName == "nss") {
+      // Create EBS Volume with Multi-Attach capabilities
+      const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        availabilityZone: vpc.availabilityZones[0],
+        size: cdk.Size.gibibytes(20),
+        volumeType: ec2.EbsDeviceVolumeType.IO2,
+        iops: 10000,
+        enableMultiAttach: true,
+      });
+      const bucket = new s3.Bucket(this, 'Bucket', {
+        // No bucketName provided – name will be auto-generated
+        removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
+        autoDeleteObjects: true,                  // Empty bucket before deletion
+      });
 
-    // Attach volume
-    new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
-      instanceId: nssInstance.instanceId,
-      device: '/dev/xvdf',
-      volumeId: ebsVolume.volumeId,
-    });
+      const nssBootstrapOptions = `nss_bench --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1`;
+      instance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
 
-    new cdk.CfnOutput(this, 'nssBenchId', {
-      value: nssInstance.instanceId,
-      description: `EC2 nss instance ID`,
+      // Attach volume
+      new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
+        instanceId: instance.instanceId,
+        device: '/dev/xvdf',
+        volumeId: ebsVolume.volumeId,
+      });
+    } else {
+      instance.addUserData(createUserData(cpuArch, "bss_server --num_nvme_disks=1 --bench").render());
+    }
+
+    new cdk.CfnOutput(this, 'instanceId', {
+      value: instance.instanceId,
+      description: `EC2 instance ID`,
     });
   }
 }
