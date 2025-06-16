@@ -1,7 +1,12 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> CmdResult {
+pub fn bootstrap(
+    bucket_name: &str,
+    volume_id: &str,
+    num_nvme_disks: usize,
+    bench: bool,
+) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
 
     install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
@@ -9,11 +14,21 @@ pub fn bootstrap(bucket_name: &str, volume_id: &str, num_nvme_disks: usize) -> C
     download_binaries(&["nss_server", "mkfs", "format-nss"])?;
     setup_configs(bucket_name, volume_id, "nss_server")?;
 
-    // Note the nss_server service is not started until EBS/nss formatted from root_server
+    // Note for normal deployment, the nss_server service is not started
+    // until EBS/nss formatted from root_server
+    if bench {
+        download_binaries(&["fbs", "test_art", "rewrk_rpc"])?;
+
+        let volume_dev = get_volume_dev(volume_id);
+        run_cmd! {
+            info "Formatting nss with ebs $volume_dev (see detailed logs with `journalctl _COMM=format-nss`)";
+            /opt/fractalbits/bin/format-nss --dev_mode --ebs_dev $volume_dev;
+        }?;
+    }
     Ok(())
 }
 
-pub fn setup_configs(bucket_name: &str, volume_id: &str, service_name: &str) -> CmdResult {
+fn setup_configs(bucket_name: &str, volume_id: &str, service_name: &str) -> CmdResult {
     let volume_dev = get_volume_dev(volume_id);
     create_nss_config(bucket_name)?;
     create_mount_unit(&volume_dev, "/data/ebs", "ext4")?;

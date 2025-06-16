@@ -1,8 +1,7 @@
 mod api_server;
 mod bss_server;
 mod common;
-mod nss_bench;
-pub mod nss_server;
+mod nss_server;
 mod root_server;
 
 use clap::Parser;
@@ -49,6 +48,9 @@ enum Service {
 
         #[clap(long, long_help = "Number of NVME disks")]
         num_nvme_disks: usize,
+
+        #[clap(long, default_value = "false", long_help = "For benchmark testing")]
+        bench: bool,
     },
 
     #[clap(about = "Run on root_server instance to bootstrap fractalbits service(s)")]
@@ -61,18 +63,6 @@ enum Service {
 
         #[clap(long, long_help = "Multi-attached EBS volume ID")]
         volume_id: String,
-    },
-
-    #[clap(about = "Bootstrap a nss_server to benchmark nss")]
-    NssBench {
-        #[clap(long, long_help = "S3 bucket name for nss bench")]
-        bucket: String,
-
-        #[clap(long, long_help = "Multi-attached EBS volume ID")]
-        volume_id: String,
-
-        #[clap(long, long_help = "Number of NVME disks")]
-        num_nvme_disks: usize,
     },
 }
 
@@ -98,16 +88,12 @@ fn main() -> CmdResult {
             bucket,
             volume_id,
             num_nvme_disks,
-        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks),
+            bench,
+        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, bench),
         Service::RootServer {
             primary_instance_id,
             secondary_instance_id,
             volume_id,
         } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id),
-        Service::NssBench {
-            bucket,
-            volume_id,
-            num_nvme_disks,
-        } => nss_bench::bootstrap(&bucket, &volume_id, num_nvme_disks),
     }
 }

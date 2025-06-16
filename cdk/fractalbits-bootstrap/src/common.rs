@@ -28,7 +28,7 @@ pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResu
     let mut working_dir = "/data";
     let exec_start = match service_name {
         "api_server" => format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}"),
-        "nss_server" | "nss_bench" => {
+        "nss_server" => {
             requires = "data-ebs.mount data-local.mount";
             format!("{BIN_PATH}nss_server -c {ETC_PATH}{NSS_SERVER_CONFIG}")
         }

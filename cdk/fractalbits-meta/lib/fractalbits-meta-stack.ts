@@ -101,7 +101,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         autoDeleteObjects: true,                  // Empty bucket before deletion
       });
 
-      const nssBootstrapOptions = `nss_bench --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1`;
+      const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1 --bench`;
       instance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
 
       // Attach volume
