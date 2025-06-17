@@ -11,11 +11,8 @@ pub fn bootstrap(num_nvme_disks: usize, bench: bool) -> CmdResult {
     create_systemd_unit_file("bss_server", true)?;
 
     if bench {
-        download_binaries(&["xtask", "rewrk_rpc"])?;
-        run_cmd! {
-            cd /data;
-            /opt/fractalbits/bin/xtask tool gen_uuids;
-        }?;
+        download_binaries(&["rewrk_rpc"])?;
+        xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
     }
     Ok(())
 }

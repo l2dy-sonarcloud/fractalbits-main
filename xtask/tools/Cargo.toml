@@ -1,0 +1,10 @@
+[package]
+name = "xtask_tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cmd_lib.workspace = true
+num_cpus.workspace = true
+rayon.workspace = true
+uuid.workspace = true

@@ -13,6 +13,7 @@ members = [
     "root_server/admin",
     "root_server/ebs-failover",
     "xtask",
+    "xtask/tools",
 ]
 resolver = "2"
 
@@ -21,6 +22,7 @@ rpc_client_bss = { path = "api_server/rpc_client/bss" }
 rpc_client_nss = { path = "api_server/rpc_client/nss" }
 rpc_client_rss = { path = "api_server/rpc_client/rss" }
 bucket_tables = { path = "api_server/bucket_tables" }
+xtask_tools = { path = "xtask/tools" }
 
 tokio-util = { version = "0.7.12", features = ["codec"] }
 tokio-stream = "0.1.16"
