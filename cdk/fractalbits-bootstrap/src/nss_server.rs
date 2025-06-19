@@ -40,8 +40,14 @@ fn setup_configs(bucket_name: &str, volume_id: &str, service_name: &str) -> CmdR
 
 fn create_nss_config(bucket_name: &str) -> CmdResult {
     let aws_region = get_current_aws_region()?;
+    // TODO: generate proper values based on system's resources
+    let blob_dram_kilo_bytes = 256 * 1024 * 1024;
+    let art_journal_segment_size: usize = 16 * 1024 * 1024 * 1024;
     let config_content = format!(
-        r##"[s3_cache]
+        r##"blob_dram_kilo_bytes = {blob_dram_kilo_bytes}
+art_journal_segment_size = {art_journal_segment_size}
+
+[s3_cache]
 s3_host = "s3.{aws_region}.amazonaws.com"
 s3_port = 80
 s3_region = "{aws_region}"
