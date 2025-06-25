@@ -2,8 +2,7 @@ use crate::{cmd_service, BuildMode, ServiceName, TEST_BUCKET_ROOT_BLOB_NAME};
 use cmd_lib::*;
 
 pub fn run_cmd_precheckin() -> CmdResult {
-    crate::cmd_service::stop_service(ServiceName::All)?;
-    crate::cmd_service::start_minio_service()?;
+    cmd_service::stop_service(ServiceName::All)?;
 
     run_cmd! {
         info "Building ...";
@@ -12,6 +11,7 @@ pub fn run_cmd_precheckin() -> CmdResult {
     }?;
 
     cmd_service::create_dirs_for_nss_server()?;
+    cmd_service::start_minio_service()?;
     run_cmd! {
         cd data;
         info "Formatting nss_server";
@@ -32,6 +32,9 @@ fn run_art_tests() -> CmdResult {
     let format_log = "data/format.log";
     let fbs_log = "data/fbs.log";
     let ts = ["ts", "-m", "%b %d %H:%M:%.S"];
+
+    cmd_service::create_dirs_for_nss_server()?;
+    cmd_service::start_minio_service()?;
     run_cmd! {
         info "Running art tests (random) with log $rand_log";
         cd data;
