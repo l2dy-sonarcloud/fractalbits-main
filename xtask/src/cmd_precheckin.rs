@@ -54,7 +54,7 @@ fn run_art_tests() -> CmdResult {
         cd data;
         ../zig-out/bin/nss_server format |& $[ts] >$format_log;
         ../zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
-        ../zig-out/bin/test_async_art--prefill 100000 --tests rename
+        ../zig-out/bin/test_async_art --prefill 100000 --tests rename
             --ops 10000 --parallelism 1000 --debug |& $[ts] >$async_art_log;
     }?;
 
