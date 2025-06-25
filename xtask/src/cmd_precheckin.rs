@@ -23,6 +23,11 @@ pub fn run_cmd_precheckin() -> CmdResult {
     run_s3_api_tests()?;
     run_art_tests()?;
 
+    if let Ok(core_file) = run_fun!(ls data | grep ^core) {
+        let core_file = core_file.replace('\n', " ");
+        cmd_die!("Found core file(s) in data/: $core_file");
+    }
+
     info!("Precheckin is OK");
     Ok(())
 }
