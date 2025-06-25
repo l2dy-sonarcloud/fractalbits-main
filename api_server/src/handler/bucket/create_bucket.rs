@@ -9,7 +9,7 @@ use bucket_tables::{
 };
 use bytes::Buf;
 use rpc_client_nss::rpc::create_root_inode_response;
-use rpc_client_rss::{ArcRpcClientRss, RpcErrorRss};
+use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -82,11 +82,10 @@ pub async fn create_bucket_handler(
         }
     };
 
-    let rpc_client_rss = app.get_rpc_client_rss();
     let retry_times = 10;
     for i in 0..retry_times {
-        let mut bucket_table: Table<ArcRpcClientRss, BucketTable> =
-            Table::new(rpc_client_rss.clone());
+        let rpc_client_rss = app.get_rpc_client_rss().await;
+        let bucket_table: Table<RpcClientRss, BucketTable> = Table::new(&rpc_client_rss);
         if bucket_table.get(bucket_name.clone()).await.is_ok() {
             return Err(S3Error::BucketAlreadyExists);
         }
@@ -99,8 +98,8 @@ pub async fn create_bucket_handler(
             .authorized_keys
             .insert(api_key_id.clone(), bucket_key_perm);
 
-        let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> =
-            Table::new(rpc_client_rss.clone());
+        let rpc_client_rss = app.get_rpc_client_rss().await;
+        let api_key_table: Table<RpcClientRss, ApiKeyTable> = Table::new(&rpc_client_rss);
         let mut api_key = api_key_table.get(api_key_id.clone()).await?;
         api_key
             .data

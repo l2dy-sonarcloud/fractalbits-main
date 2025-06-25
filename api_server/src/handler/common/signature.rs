@@ -3,8 +3,9 @@ use bucket_tables::api_key_table::ApiKey;
 use bucket_tables::table::Versioned;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
-use rpc_client_rss::ArcRpcClientRss;
 use sha2::Sha256;
+
+use crate::AppState;
 
 use super::data::{sha256sum, Hash};
 use super::request::extract::Authentication;
@@ -56,15 +57,17 @@ pub struct VerifiedRequest {
 }
 
 pub async fn verify_request(
+    app: &AppState,
     mut req: Request<Body>,
     auth: &Authentication,
-    rpc_client_rss: ArcRpcClientRss,
-    region: &str,
 ) -> Result<VerifiedRequest, Error> {
+    let rpc_client_rss = app.get_rpc_client_rss().await;
     let checked_signature =
-        payload::check_payload_signature(auth, &mut req, rpc_client_rss, region).await?;
+        payload::check_payload_signature(auth, &mut req, &rpc_client_rss, &app.config.region)
+            .await?;
 
-    let request = streaming::parse_streaming_body(req, &checked_signature, region, "s3")?;
+    let request =
+        streaming::parse_streaming_body(req, &checked_signature, &app.config.region, "s3")?;
 
     let api_key = checked_signature
         .key

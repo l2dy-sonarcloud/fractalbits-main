@@ -21,7 +21,7 @@ pub async fn head_bucket_handler(
         }
     }
 
-    let rpc_client_rss = app.get_rpc_client_rss();
-    resolve_bucket(bucket_name, rpc_client_rss).await?;
+    let rpc_client_rss = app.get_rpc_client_rss().await;
+    resolve_bucket(bucket_name, &rpc_client_rss).await?;
     Ok(Response::new(Body::empty()))
 }

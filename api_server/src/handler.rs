@@ -68,10 +68,9 @@ async fn any_handler_inner(
     request: http::Request<Body>,
     endpoint: Endpoint,
 ) -> Result<Response, S3Error> {
-    let rpc_client_rss = app.get_rpc_client_rss();
     let VerifiedRequest {
         request, api_key, ..
-    } = match verify_request(request, &auth, rpc_client_rss.clone(), &app.config.region).await {
+    } = match verify_request(&app, request, &auth).await {
         Ok(res) => res,
         Err(signature::error::Error::RpcErrorRss(RpcErrorRss::NotFound)) => {
             return Err(S3Error::InvalidAccessKeyId)
@@ -90,20 +89,22 @@ async fn any_handler_inner(
     }
 
     let blob_deletion = app.blob_deletion.clone();
+    let app_clone = app.clone();
+    let rpc_client_rss = app_clone.get_rpc_client_rss().await;
     match endpoint {
         Endpoint::Bucket(bucket_endpoint) => {
             bucket_handler(app, request, api_key, bucket_name, bucket_endpoint).await
         }
         Endpoint::Head(head_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             head_handler(app, request, &bucket, key, head_endpoint).await
         }
         Endpoint::Get(get_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             get_handler(app, request, &bucket, key, get_endpoint).await
         }
         Endpoint::Put(put_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             put_handler(
                 app,
                 request,
@@ -116,11 +117,11 @@ async fn any_handler_inner(
             .await
         }
         Endpoint::Post(post_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             post_handler(app, request, &bucket, key, blob_deletion, post_endpoint).await
         }
         Endpoint::Delete(delete_endpoint) => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             delete_handler(app, request, &bucket, key, blob_deletion, delete_endpoint).await
         }
     }
@@ -133,13 +134,14 @@ async fn bucket_handler(
     bucket_name: String,
     endpoint: BucketEndpoint,
 ) -> Result<Response, S3Error> {
-    let rpc_client_rss = app.get_rpc_client_rss();
     match endpoint {
         BucketEndpoint::CreateBucket => {
             bucket::create_bucket_handler(app, api_key, bucket_name, request).await
         }
         BucketEndpoint::DeleteBucket => {
-            let bucket = bucket::resolve_bucket(bucket_name, rpc_client_rss.clone()).await?;
+            let app_clone = app.clone();
+            let rpc_client_rss = app_clone.get_rpc_client_rss().await;
+            let bucket = bucket::resolve_bucket(bucket_name, &rpc_client_rss).await?;
             bucket::delete_bucket_handler(app, api_key, &bucket, request).await
         }
         BucketEndpoint::HeadBucket => bucket::head_bucket_handler(app, api_key, bucket_name).await,

@@ -160,55 +160,49 @@ impl RpcClient {
 }
 
 #[cfg(feature = "rss")]
-#[derive(Clone)]
-pub struct ArcRpcClient(pub Arc<RpcClient>);
-
-#[cfg(feature = "rss")]
-impl KvClient for ArcRpcClient {
+impl KvClient for RpcClient {
     type Error = RpcError;
-    async fn put(&mut self, key: String, value: Versioned<String>) -> Result<(), Self::Error> {
-        self.0.put(value.version, key, value.data).await
+    async fn put(&self, key: String, value: Versioned<String>) -> Result<(), Self::Error> {
+        Self::put(self, value.version, key, value.data).await
     }
 
-    async fn get(&mut self, key: String) -> Result<Versioned<String>, Self::Error> {
-        self.0.get(key).await.map(|x| x.into())
+    async fn get(&self, key: String) -> Result<Versioned<String>, Self::Error> {
+        Self::get(self, key).await.map(|x| x.into())
     }
 
-    async fn delete(&mut self, key: String) -> Result<(), Self::Error> {
-        self.0.delete(key).await
+    async fn delete(&self, key: String) -> Result<(), Self::Error> {
+        Self::delete(self, key).await
     }
 
-    async fn list(&mut self, prefix: String) -> Result<Vec<String>, Self::Error> {
-        self.0.list(prefix).await
+    async fn list(&self, prefix: String) -> Result<Vec<String>, Self::Error> {
+        Self::list(self, prefix).await
     }
 
     async fn put_with_extra(
-        &mut self,
+        &self,
         key: String,
         value: Versioned<String>,
         extra_key: String,
         extra_value: Versioned<String>,
     ) -> Result<(), Self::Error> {
-        self.0
-            .put_with_extra(
-                value.version,
-                key,
-                value.data,
-                extra_value.version,
-                extra_key,
-                extra_value.data,
-            )
-            .await
+        Self::put_with_extra(
+            self,
+            value.version,
+            key,
+            value.data,
+            extra_value.version,
+            extra_key,
+            extra_value.data,
+        )
+        .await
     }
 
     async fn delete_with_extra(
-        &mut self,
+        &self,
         key: String,
         extra_key: String,
         extra_value: Versioned<String>,
     ) -> Result<(), Self::Error> {
-        self.0
-            .delete_with_extra(key, extra_value.version, extra_key, extra_value.data)
-            .await
+        Self::delete_with_extra(self, key, extra_value.version, extra_key, extra_value.data).await
     }
 }

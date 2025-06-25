@@ -10,7 +10,7 @@ use bucket_tables::table::{Table, Versioned};
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use itertools::Itertools;
-use rpc_client_rss::ArcRpcClientRss;
+use rpc_client_rss::RpcClientRss;
 use sha2::{Digest, Sha256};
 
 use crate::handler::common::{request::extract::Authentication, xheader};
@@ -30,7 +30,7 @@ pub struct CheckedSignature {
 pub async fn check_payload_signature(
     auth: &Authentication,
     request: &mut Request<Body>,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<CheckedSignature, Error> {
     let Query(mut query): Query<BTreeMap<String, String>> = request.extract_parts().await?;
@@ -92,7 +92,7 @@ fn parse_x_amz_content_sha256(header: Option<&str>) -> Result<ContentSha256Heade
 pub async fn check_standard_signature(
     authentication: &Authentication,
     request: &mut Request<Body>,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<CheckedSignature, Error> {
     let query_params: Query<BTreeMap<String, String>> = request.extract_parts().await?;
@@ -134,7 +134,7 @@ async fn check_presigned_signature(
     authentication: &Authentication,
     request: &mut Request<Body>,
     query: &mut BTreeMap<String, String>,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<CheckedSignature, Error> {
     let signed_headers = &authentication.signed_headers;
@@ -285,10 +285,10 @@ pub fn canonical_request(
 pub async fn verify_v4(
     auth: &Authentication,
     payload: &[u8],
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<Option<Versioned<ApiKey>>, Error> {
-    let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
+    let api_key_table: Table<RpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
     let key = api_key_table.get(auth.key_id.clone()).await?;
 
     let mut hmac = signing_hmac(&auth.date, &key.data.secret_key, region)

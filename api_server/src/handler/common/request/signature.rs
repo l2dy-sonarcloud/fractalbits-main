@@ -8,7 +8,7 @@ use bucket_tables::{api_key_table::ApiKey, table::Versioned};
 use chrono::{DateTime, Utc};
 use hex::FromHexError;
 use hmac::{Hmac, Mac};
-use rpc_client_rss::{ArcRpcClientRss, RpcErrorRss};
+use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -40,7 +40,7 @@ pub enum SignatureError {
 pub async fn verify_request(
     request: Request,
     auth: &Authentication,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<(Request, Option<Versioned<ApiKey>>), SignatureError> {
     payload::check_standard_signature(auth, request, rpc_client_rss, region).await

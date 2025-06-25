@@ -13,13 +13,13 @@ use bucket_tables::{
     bucket_table::{Bucket, BucketTable},
     table::Table,
 };
-use rpc_client_rss::{ArcRpcClientRss, RpcErrorRss};
+use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 
 pub async fn resolve_bucket(
     bucket_name: String,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
 ) -> Result<Bucket, S3Error> {
-    let mut bucket_table: Table<ArcRpcClientRss, BucketTable> = Table::new(rpc_client_rss.clone());
+    let bucket_table: Table<RpcClientRss, BucketTable> = Table::new(rpc_client_rss);
     match bucket_table.get(bucket_name).await {
         Ok(bucket) => Ok(bucket.data),
         Err(RpcErrorRss::NotFound) => Err(S3Error::NoSuchBucket),

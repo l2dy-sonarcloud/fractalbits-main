@@ -7,7 +7,7 @@ use bucket_tables::table::{Table, Versioned};
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use itertools::Itertools;
-use rpc_client_rss::ArcRpcClientRss;
+use rpc_client_rss::RpcClientRss;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,7 +24,7 @@ const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
 pub async fn check_standard_signature(
     auth: &Authentication,
     request: Request,
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<(Request, Option<Versioned<ApiKey>>), SignatureError> {
     let (mut head, body) = request.into_parts();
@@ -109,10 +109,10 @@ pub fn canonical_request(
 pub async fn verify_v4(
     auth: &Authentication,
     payload: &[u8],
-    rpc_client_rss: ArcRpcClientRss,
+    rpc_client_rss: &RpcClientRss,
     region: &str,
 ) -> Result<Option<Versioned<ApiKey>>, SignatureError> {
-    let mut api_key_table: Table<ArcRpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
+    let api_key_table: Table<RpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
     let key = api_key_table.get(auth.key_id.clone()).await?;
 
     let mut hmac = signing_hmac(&auth.date, &key.data.secret_key, region)

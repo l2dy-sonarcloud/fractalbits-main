@@ -35,39 +35,39 @@ pub trait TableSchema {
 #[allow(async_fn_in_trait)]
 pub trait KvClient {
     type Error: std::error::Error;
-    async fn put(&mut self, key: String, value: Versioned<String>) -> Result<(), Self::Error>;
+    async fn put(&self, key: String, value: Versioned<String>) -> Result<(), Self::Error>;
     async fn put_with_extra(
-        &mut self,
+        &self,
         key: String,
         value: Versioned<String>,
         extra_key: String,
         extra_value: Versioned<String>,
     ) -> Result<(), Self::Error>;
-    async fn get(&mut self, key: String) -> Result<Versioned<String>, Self::Error>;
-    async fn delete(&mut self, key: String) -> Result<(), Self::Error>;
+    async fn get(&self, key: String) -> Result<Versioned<String>, Self::Error>;
+    async fn delete(&self, key: String) -> Result<(), Self::Error>;
     async fn delete_with_extra(
-        &mut self,
+        &self,
         key: String,
         extra_key: String,
         extra_value: Versioned<String>,
     ) -> Result<(), Self::Error>;
-    async fn list(&mut self, prefix: String) -> Result<Vec<String>, Self::Error>;
+    async fn list(&self, prefix: String) -> Result<Vec<String>, Self::Error>;
 }
 
-pub struct Table<C: KvClient, F: TableSchema> {
-    kv_client: C,
+pub struct Table<'a, C: KvClient, F: TableSchema> {
+    kv_client: &'a C,
     phantom: PhantomData<F>,
 }
 
-impl<C: KvClient, F: TableSchema> Table<C, F> {
-    pub fn new(kv_client: C) -> Self {
+impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
+    pub fn new(kv_client: &'a C) -> Self {
         Self {
             kv_client,
             phantom: PhantomData,
         }
     }
 
-    pub async fn put(&mut self, e: &Versioned<F::E>) -> Result<(), C::Error> {
+    pub async fn put(&self, e: &Versioned<F::E>) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.data.key());
         let data: String = serde_json::to_string(&e.data).unwrap();
         self.kv_client
@@ -77,7 +77,7 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
     }
 
     pub async fn put_with_extra<F2>(
-        &mut self,
+        &self,
         e: &Versioned<F::E>,
         extra: &Versioned<F2::E>,
     ) -> Result<(), C::Error>
@@ -99,9 +99,9 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
         Ok(())
     }
 
-    pub async fn get(&mut self, key: String) -> Result<Versioned<F::E>, C::Error>
+    pub async fn get(&self, key: String) -> Result<Versioned<F::E>, C::Error>
     where
-        <F as TableSchema>::E: for<'a> serde::Deserialize<'a>,
+        <F as TableSchema>::E: for<'s> serde::Deserialize<'s>,
     {
         let full_key = Self::get_full_key(F::TABLE_NAME, &key);
         let json = self.kv_client.get(full_key).await?;
@@ -112,9 +112,9 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
             .into())
     }
 
-    pub async fn list(&mut self) -> Result<Vec<F::E>, C::Error>
+    pub async fn list(&self) -> Result<Vec<F::E>, C::Error>
     where
-        <F as TableSchema>::E: for<'a> serde::Deserialize<'a>,
+        <F as TableSchema>::E: for<'s> serde::Deserialize<'s>,
     {
         let prefix = Self::get_prefix(F::TABLE_NAME);
         let kvs = self.kv_client.list(prefix).await?;
@@ -124,14 +124,14 @@ impl<C: KvClient, F: TableSchema> Table<C, F> {
             .collect())
     }
 
-    pub async fn delete(&mut self, e: &F::E) -> Result<(), C::Error> {
+    pub async fn delete(&self, e: &F::E) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
         self.kv_client.delete(full_key).await?;
         Ok(())
     }
 
     pub async fn delete_with_extra<F2>(
-        &mut self,
+        &self,
         e: &F::E,
         extra: &Versioned<F2::E>,
     ) -> Result<(), C::Error>

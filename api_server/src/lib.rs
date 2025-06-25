@@ -15,7 +15,7 @@ use object_layout::ObjectLayout;
 use rand::Rng;
 use rpc_client_bss::{RpcClientBss, RpcErrorBss};
 use rpc_client_nss::RpcConnManagerNss;
-use rpc_client_rss::{ArcRpcClientRss, RpcClientRss};
+use rpc_client_rss::RpcConnManagerRss;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     net::TcpStream,
@@ -34,7 +34,7 @@ pub struct AppState {
     pub blob_clients: Vec<Arc<BlobClient>>,
     pub blob_deletion: Sender<(BlobId, usize)>,
 
-    pub rpc_client_rss: ArcRpcClientRss,
+    pub rpc_clients_rss: Pool<RpcConnManagerRss>,
 }
 
 impl FromRef<Arc<AppState>> for ArcConfig {
@@ -45,8 +45,8 @@ impl FromRef<Arc<AppState>> for ArcConfig {
 
 impl AppState {
     const NSS_CONNECTION_POOL_SIZE: u32 = 16;
+    const RSS_CONNECTION_POOL_SIZE: u32 = 32;
     const MAX_BLOB_IO_CONNECTION: usize = 8;
-    const RPC_CLIENT_MAX_WAIT: usize = 300;
 
     pub async fn new(config: ArcConfig) -> Self {
         let rpc_clients_nss = Self::new_rpc_clients_pool_nss(&config.nss_addr).await;
@@ -65,33 +65,20 @@ impl AppState {
             }
         });
 
-        let mut wait_secs = 0;
-        let rpc_client_rss = loop {
-            if let Ok(stream) = TcpStream::connect(&config.rss_addr).await {
-                if let Ok(client) = RpcClientRss::new(stream).await {
-                    break client;
-                }
-            }
-            wait_secs += 1;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            if wait_secs >= Self::RPC_CLIENT_MAX_WAIT {
-                tracing::error!("Could not create NSS RPC client");
-                std::process::exit(1);
-            }
-        };
+        let rpc_clients_rss = Self::new_rpc_clients_pool_rss(&config.rss_addr).await;
         Self {
             config,
             rpc_clients_nss,
             blob_clients,
             blob_deletion: tx,
-            rpc_client_rss: ArcRpcClientRss(Arc::new(rpc_client_rss)),
+            rpc_clients_rss,
         }
     }
 
     async fn new_rpc_clients_pool_nss(nss_addr: &str) -> Pool<RpcConnManagerNss> {
         let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(nss_addr)
             .await
-            .expect("Failed to resolve RPC server address")
+            .expect("Failed to resolve NSS RPC server address")
             .collect();
 
         assert!(!resolved_addrs.is_empty());
@@ -110,6 +97,28 @@ impl AppState {
         rpc_clients_nss
     }
 
+    async fn new_rpc_clients_pool_rss(rss_addr: &str) -> Pool<RpcConnManagerRss> {
+        let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(rss_addr)
+            .await
+            .expect("Failed to resolve RSS RPC server address")
+            .collect();
+
+        assert!(!resolved_addrs.is_empty());
+        let manager = RpcConnManagerRss::new(resolved_addrs);
+        let rpc_clients_rss = Pool::builder()
+            .max_size(Self::RSS_CONNECTION_POOL_SIZE)
+            .min_idle(Some(2))
+            .build(manager)
+            .await
+            .expect("Failed to build rss rpc clients pool");
+
+        info!(
+            "RSS RPC client pool initialized with {} connections.",
+            Self::RSS_CONNECTION_POOL_SIZE
+        );
+        rpc_clients_rss
+    }
+
     pub async fn get_rpc_client_nss(&self) -> PooledConnection<RpcConnManagerNss> {
         self.rpc_clients_nss.get().await.unwrap()
     }
@@ -119,8 +128,8 @@ impl AppState {
         self.blob_clients[hash].clone()
     }
 
-    pub fn get_rpc_client_rss(&self) -> ArcRpcClientRss {
-        ArcRpcClientRss(Arc::clone(&self.rpc_client_rss.0))
+    pub async fn get_rpc_client_rss(&self) -> PooledConnection<RpcConnManagerRss> {
+        self.rpc_clients_rss.get().await.unwrap()
     }
 
     async fn blob_deletion_task(
