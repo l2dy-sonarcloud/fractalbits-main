@@ -61,6 +61,7 @@ bb8.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 tokio-retry.workspace = true
+moka.workspace = true
 
 [dev-dependencies]
 cmd_lib.workspace = true

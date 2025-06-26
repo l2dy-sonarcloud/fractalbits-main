@@ -3,15 +3,15 @@ members = [
     "api_server",
     "api_server/benches/rewrk",
     "api_server/benches/rewrk_rpc",
+    "api_server/bucket_tables",
     "api_server/rpc_client/bss",
     "api_server/rpc_client/nss",
     "api_server/rpc_client/rss",
-    "api_server/bucket_tables",
     "cdk/fractalbits-bootstrap",
-    "tools/format-nss",
     "root_server",
     "root_server/admin",
     "root_server/ebs-failover",
+    "tools/format-nss",
     "xtask",
     "xtask/tools",
 ]
@@ -83,6 +83,7 @@ bb8 = "0.9.0"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.17.2"
 tokio-retry = "0.3"
+moka = { version = "0.12", features = ["future"] }
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
