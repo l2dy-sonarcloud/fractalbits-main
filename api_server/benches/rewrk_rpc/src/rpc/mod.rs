@@ -132,11 +132,10 @@ async fn benchmark_nss_read(
 
         let mut futures = Vec::new();
         for _ in 0..io_depth {
-            let mut key: String = match keys.pop_front() {
+            let key: String = match keys.pop_front() {
                 Some(key) => key,
                 None => break,
             };
-            key.push('\0');
 
             let future = async {
                 rpc_client
@@ -332,11 +331,10 @@ async fn benchmark_nss_write(
 
         let mut futures = Vec::new();
         for _ in 0..io_depth {
-            let mut key: String = match keys.pop_front() {
+            let key: String = match keys.pop_front() {
                 Some(key) => key,
                 None => break,
             };
-            key.push('\0');
 
             let value = Bytes::from(key.clone());
             let future = async {
