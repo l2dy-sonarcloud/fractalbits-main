@@ -1,4 +1,4 @@
-use crate::{cmd_service, BuildMode, ServiceName, TEST_BUCKET_ROOT_BLOB_NAME};
+use crate::{cmd_service, BuildMode, ServiceName, TEST_BUCKET_ROOT_BLOB_NAME, TS_FMT};
 use cmd_lib::*;
 
 pub fn run_cmd_precheckin() -> CmdResult {
@@ -36,7 +36,7 @@ fn run_art_tests() -> CmdResult {
     let rand_log = "data/test_art_random.log";
     let format_log = "data/format.log";
     let fbs_log = "data/fbs.log";
-    let ts = ["ts", "-m", "%b %d %H:%M:%.S"];
+    let ts = ["ts", "-m", TS_FMT];
 
     cmd_service::create_dirs_for_nss_server()?;
     cmd_service::start_minio_service()?;

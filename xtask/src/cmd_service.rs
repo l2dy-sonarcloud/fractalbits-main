@@ -1,6 +1,6 @@
 use crate::build::BuildMode;
-use crate::TEST_BUCKET_ROOT_BLOB_NAME;
 use crate::{ServiceAction, ServiceName};
+use crate::{NSS_SERVER_BENCH_CONFIG, TEST_BUCKET_ROOT_BLOB_NAME};
 use cmd_lib::*;
 
 pub fn run_cmd_service(
@@ -53,13 +53,13 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
 pub fn start_services(build_mode: BuildMode, service: ServiceName) -> CmdResult {
     match service {
         ServiceName::Bss => start_bss_service(build_mode)?,
-        ServiceName::Nss => start_nss_service(build_mode, false)?,
+        ServiceName::Nss => start_nss_service(build_mode, false, false)?,
         ServiceName::Rss => start_rss_service(build_mode)?,
         ServiceName::ApiServer => start_api_server(build_mode)?,
         ServiceName::All => {
             start_rss_service(build_mode)?;
             start_bss_service(build_mode)?;
-            start_nss_service(build_mode, false)?;
+            start_nss_service(build_mode, false, false)?;
             start_api_server(build_mode)?;
         }
         ServiceName::Minio => start_minio_service()?,
@@ -85,7 +85,7 @@ pub fn start_bss_service(build_mode: BuildMode) -> CmdResult {
     Ok(())
 }
 
-pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResult {
+pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool, keep_data: bool) -> CmdResult {
     if !data_on_local {
         // Start minio to simulate local s3 service
         if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
@@ -96,14 +96,22 @@ pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResul
     create_systemd_unit_file(ServiceName::Nss, build_mode)?;
 
     let pwd = run_fun!(pwd)?;
-    if run_cmd!(test -f ./data/ebs/fbs.state).is_err() {
+    if !keep_data {
         create_dirs_for_nss_server()?;
-        run_cmd! {
-            info "Could not find state log, formatting at first ...";
-            cd data;
-            ${pwd}/zig-out/bin/nss_server format;
-            ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
-        }?;
+        match build_mode {
+            BuildMode::Debug => run_cmd! {
+                cd data;
+                info "formatting nss_server with default configs";
+                ${pwd}/zig-out/bin/nss_server format;
+                ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
+            }?,
+            BuildMode::Release => run_cmd! {
+                cd data;
+                info "formatting nss_server for benchmarking";
+                ${pwd}/zig-out/bin/nss_server format -c ../$NSS_SERVER_BENCH_CONFIG;
+                ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME -c ../$NSS_SERVER_BENCH_CONFIG;
+            }?,
+        }
     }
 
     let nss_wait_secs = 10;
@@ -314,9 +322,12 @@ fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdR
     let mut env_settings = String::new();
     let exec_start = match service {
         ServiceName::Bss => format!("{pwd}/zig-out/bin/bss_server"),
-        ServiceName::Nss => {
-            format!("{pwd}/zig-out/bin/nss_server serve -c {pwd}/etc/nss_server_dev_config.toml")
-        }
+        ServiceName::Nss => match build_mode {
+            BuildMode::Debug => format!("{pwd}/zig-out/bin/nss_server serve"),
+            BuildMode::Release => {
+                format!("{pwd}/zig-out/bin/nss_server serve -c {pwd}/{NSS_SERVER_BENCH_CONFIG}")
+            }
+        },
         ServiceName::Rss => {
             env_settings = r##"
                 Environment="AWS_DEFAULT_REGION=fakeRegion"
