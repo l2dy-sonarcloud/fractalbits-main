@@ -86,8 +86,6 @@ fn run_s3_api_tests() -> CmdResult {
         info "Removing previous buckets (ddb_local) data";
         cd data;
         rm -f rss/shared-local-instance.db;
-        info "Formatting nss_server";
-        ../zig-out/bin/nss_server format;
     }?;
 
     cmd_service::start_services(BuildMode::Debug, ServiceName::All)?;
