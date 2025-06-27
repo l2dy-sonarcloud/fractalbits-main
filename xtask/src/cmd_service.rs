@@ -330,10 +330,10 @@ fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdR
         },
         ServiceName::Rss => {
             env_settings = r##"
-                Environment="AWS_DEFAULT_REGION=fakeRegion"
-                Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
-                Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
-                Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
+Environment="AWS_DEFAULT_REGION=fakeRegion"
+Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
+Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
+Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
                 .to_string();
             if let BuildMode::Debug = build_mode {
                 env_settings = format!(
@@ -346,10 +346,10 @@ Environment="RUST_LOG=info""##
         ServiceName::ApiServer => {
             if let BuildMode::Debug = build_mode {
                 env_settings = r##"
-                    Environment="RUST_LOG=debug""##
+Environment="RUST_LOG=debug""##
                     .to_string();
             }
-            format!("{pwd}/target/{build}/api_server -c {pwd}/etc/api_server_dev_config.toml")
+            format!("{pwd}/target/{build}/api_server")
         }
         _ => unreachable!(),
     };
