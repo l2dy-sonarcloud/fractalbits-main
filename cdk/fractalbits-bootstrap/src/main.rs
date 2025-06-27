@@ -6,6 +6,7 @@ mod root_server;
 
 use clap::Parser;
 use cmd_lib::*;
+use common::CLOUD_INIT_DONE_FILE;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Parser)]
@@ -80,21 +81,24 @@ fn main() -> CmdResult {
             bss_ip,
             nss_ip,
             rss_ip,
-        } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip),
+        } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip)?,
         Service::BssServer {
             num_nvme_disks,
             bench,
-        } => bss_server::bootstrap(num_nvme_disks, bench),
+        } => bss_server::bootstrap(num_nvme_disks, bench)?,
         Service::NssServer {
             bucket,
             volume_id,
             num_nvme_disks,
             bench,
-        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, bench),
+        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, bench)?,
         Service::RootServer {
             primary_instance_id,
             secondary_instance_id,
             volume_id,
-        } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id),
+        } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id)?,
     }
+
+    run_cmd!(touch $CLOUD_INIT_DONE_FILE)?;
+    Ok(())
 }

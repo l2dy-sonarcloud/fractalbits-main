@@ -44,8 +44,26 @@ fn wait_for_ssm_ready(instance_id: &str) {
             Ok(ref s) if s == "Online" => break,
             _ => std::thread::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECONDS)),
         };
+
         if attempt >= MAX_POLL_ATTEMPTS {
             cmd_die!("Timed out while waiting for SSM after $MAX_POLL_ATTEMPTS attempts.");
+        }
+    }
+
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let result = run_cmd_with_ssm(instance_id, &format!("test -f {CLOUD_INIT_DONE_FILE}"));
+        match result {
+            Ok(()) => break,
+            _ => {
+                info!("Waiting for {instance_id} cloud init to be done");
+                std::thread::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECONDS));
+            }
+        }
+
+        if attempt >= MAX_POLL_ATTEMPTS {
+            cmd_die!("Timed out while waiting for cloud init after $MAX_POLL_ATTEMPTS attempts.");
         }
     }
 }

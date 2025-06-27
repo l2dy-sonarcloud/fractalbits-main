@@ -4,6 +4,7 @@ pub const BIN_PATH: &str = "/opt/fractalbits/bin/";
 pub const ETC_PATH: &str = "/opt/fractalbits/etc/";
 pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const API_SERVER_CONFIG: &str = "api_server_cloud_config.toml";
+pub const CLOUD_INIT_DONE_FILE: &str = "/opt/fractalbits/.cloud_init_done";
 
 pub fn download_binaries(file_list: &[&str]) -> CmdResult {
     for file_name in file_list {
