@@ -64,8 +64,25 @@ where
             .decode_utf8()?
             .into_owned();
 
+        check_key_name(&key)?;
+
         Ok(Self { bucket_name, key })
     }
+}
+
+// Allow key names as documented:
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+fn check_key_name(n: &str) -> Result<(), S3Error> {
+    if n.len() > 1024 {
+        return Err(S3Error::KeyTooLongError);
+    }
+
+    // Our internal implementation reserved these characters for ending
+    if n.ends_with("#") || n.ends_with("\0") {
+        return Err(S3Error::KeyUnsupported);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

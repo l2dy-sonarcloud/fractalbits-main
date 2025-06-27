@@ -9,7 +9,7 @@ const SZ_10MB: usize = 10 * 1024 * 1024;
 #[tokio::test]
 async fn test_multipart_upload() {
     let ctx = common::context();
-    let bucket = ctx.create_bucket("test_mpu").await;
+    let bucket = ctx.create_bucket("test-mpu").await;
 
     let u1 = vec![0x11; SZ_5MB];
     let u2 = vec![0x22; SZ_5MB];

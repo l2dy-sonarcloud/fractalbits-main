@@ -85,7 +85,7 @@ async fn test_checksum(
 #[case(true)]
 #[tokio::test]
 async fn test_crc32_checksum(#[case] streaming: bool) {
-    let (ctx, bucket, key) = setup(&format!("test_crc32_checksum_on_streaming_{streaming}")).await;
+    let (ctx, bucket, key) = setup(&format!("crc32-checksum-on-streaming-{streaming}")).await;
 
     let expected_encoded_content_length = if streaming {
         b"B\r\nHello world\r\n0\r\nx-amz-checksum-crc32:i9aeUg==\r\n\r\n".len()
@@ -116,7 +116,7 @@ async fn test_crc32_checksum(#[case] streaming: bool) {
 #[case(true)]
 #[tokio::test]
 async fn test_crc32c_checksum(#[case] streaming: bool) {
-    let (ctx, bucket, key) = setup(&format!("test_crc32c_checksum_on_streaming_{streaming}")).await;
+    let (ctx, bucket, key) = setup(&format!("crc32c-checksum-on-streaming-{streaming}")).await;
 
     let expected_encoded_content_length = if streaming {
         b"B\r\nHello world\r\n0\r\nx-amz-checksum-crc32c:crUfeA==\r\n\r\n".len()
@@ -146,7 +146,7 @@ async fn test_crc32c_checksum(#[case] streaming: bool) {
 #[case(true)]
 #[tokio::test]
 async fn test_sha1_checksum(#[case] streaming: bool) {
-    let (ctx, bucket, key) = setup(&format!("test_sha1_checksum_on_streaming_{streaming}")).await;
+    let (ctx, bucket, key) = setup(&format!("sha1-checksum-on-streaming-{streaming}")).await;
 
     let expected_encoded_content_length = if streaming {
         b"B\r\nHello world\r\n0\r\nx-amz-checksum-sha1:e1AsOh9IyGCa4hLN+2Od7jlnP14=\r\n\r\n".len()
@@ -176,7 +176,7 @@ async fn test_sha1_checksum(#[case] streaming: bool) {
 #[case(true)]
 #[tokio::test]
 async fn test_sha256_checksum(#[case] streaming: bool) {
-    let (ctx, bucket, key) = setup(&format!("test_sha256_checksum_on_streaming_{streaming}")).await;
+    let (ctx, bucket, key) = setup(&format!("sha256-checksum-on-streaming-{streaming}")).await;
 
     let expected_encoded_content_length = if streaming {
         b"B\r\nHello world\r\n0\r\nx-amz-checksum-sha256:ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw=\r\n\r\n".len()

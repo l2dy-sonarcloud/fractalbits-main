@@ -317,6 +317,9 @@ pub enum S3Error {
     #[error("Your key is too long.")]
     KeyTooLongError,
 
+    #[error("Your key contains unsupported character(s).")]
+    KeyUnsupported,
+
     #[error("The request was rejected because the specified KMS key is not enabled.")]
     #[strum(serialize = "KMS.DisabledException")]
     KMSDisabledException,
@@ -631,6 +634,7 @@ impl S3Error {
             S3Error::InvalidToken => StatusCode::BAD_REQUEST,
             S3Error::InvalidURI => StatusCode::BAD_REQUEST,
             S3Error::KeyTooLongError => StatusCode::BAD_REQUEST,
+            S3Error::KeyUnsupported => StatusCode::BAD_REQUEST,
             S3Error::KMSDisabledException => StatusCode::BAD_REQUEST,
             S3Error::KMSInvalidKeyUsageException0 => StatusCode::BAD_REQUEST,
             S3Error::KMSInvalidKeyUsageException1 => StatusCode::BAD_REQUEST,

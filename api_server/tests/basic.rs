@@ -4,7 +4,7 @@ use aws_sdk_s3::primitives::ByteStream;
 #[tokio::test]
 async fn test_basic_object_apis() {
     let ctx = common::context();
-    let bucket = ctx.create_bucket("my_bucket1").await;
+    let bucket = ctx.create_bucket("my-bucket1").await;
 
     let key = "hello";
     let value = b"42";
@@ -44,7 +44,7 @@ async fn test_basic_object_apis() {
 #[tokio::test]
 async fn test_basic_bucket_apis() {
     let ctx = common::context();
-    let bucket = ctx.create_bucket("my_bucket2").await;
+    let bucket = ctx.create_bucket("my-bucket2").await;
 
     let buckets = ctx.list_buckets().await.buckets.unwrap();
     // Note we may have concurrent tests running, so just do basic testing here
