@@ -19,7 +19,8 @@ use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 
 pub async fn resolve_bucket(app: &AppState, bucket_name: String) -> Result<Bucket, S3Error> {
     let rpc_client_rss = app.get_rpc_client_rss().await;
-    let bucket_table: Table<RpcClientRss, BucketTable> = Table::new(&rpc_client_rss);
+    let bucket_table: Table<RpcClientRss, BucketTable> =
+        Table::new(&rpc_client_rss, Some(app.cache.clone()));
     match bucket_table.get(bucket_name).await {
         Ok(bucket) => Ok(bucket.data),
         Err(RpcErrorRss::NotFound) => Err(S3Error::NoSuchBucket),

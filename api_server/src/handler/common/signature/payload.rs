@@ -273,7 +273,8 @@ pub async fn verify_v4(
     payload: &[u8],
 ) -> Result<Option<Versioned<ApiKey>>, Error> {
     let rpc_client_rss = app.get_rpc_client_rss().await;
-    let api_key_table: Table<RpcClientRss, ApiKeyTable> = Table::new(&rpc_client_rss);
+    let api_key_table: Table<RpcClientRss, ApiKeyTable> =
+        Table::new(&rpc_client_rss, Some(app.cache.clone()));
     let key = api_key_table.get(auth.key_id.clone()).await?;
     drop(rpc_client_rss);
 

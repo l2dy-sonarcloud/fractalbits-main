@@ -11,11 +11,12 @@ use bb8::{Pool, PooledConnection};
 use bytes::Bytes;
 use config::{ArcConfig, S3CacheConfig};
 use futures::stream::{self, StreamExt};
+use moka::future::Cache;
 use object_layout::ObjectLayout;
 use rpc_client_bss::{RpcConnManagerBss, RpcErrorBss};
 use rpc_client_nss::RpcConnManagerNss;
 use rpc_client_rss::RpcConnManagerRss;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
@@ -27,12 +28,13 @@ pub type BlobId = uuid::Uuid;
 
 pub struct AppState {
     pub config: ArcConfig,
+    pub cache: Arc<Cache<String, String>>,
 
-    pub rpc_clients_nss: Pool<RpcConnManagerNss>,
-    pub rpc_clients_rss: Pool<RpcConnManagerRss>,
+    rpc_clients_nss: Pool<RpcConnManagerNss>,
+    rpc_clients_rss: Pool<RpcConnManagerRss>,
 
-    pub blob_client: Arc<BlobClient>,
-    pub blob_deletion: Sender<(BlobId, usize)>,
+    blob_client: Arc<BlobClient>,
+    blob_deletion: Sender<(BlobId, usize)>,
 }
 
 impl FromRef<Arc<AppState>> for ArcConfig {
@@ -52,12 +54,19 @@ impl AppState {
         let (tx, rx) = mpsc::channel(1024 * 1024);
         let blob_client = Arc::new(BlobClient::new(&config.bss_addr, &config.s3_cache, rx).await);
 
+        let cache = Arc::new(
+            Cache::builder()
+                .time_to_idle(Duration::from_secs(300))
+                .max_capacity(10_000)
+                .build(),
+        );
         Self {
             config,
             rpc_clients_nss,
             blob_client,
             blob_deletion: tx,
             rpc_clients_rss,
+            cache,
         }
     }
 

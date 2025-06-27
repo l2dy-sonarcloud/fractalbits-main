@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use std::marker::PhantomData;
+use moka::future::Cache;
+use std::{marker::PhantomData, sync::Arc};
 
 pub struct Versioned<T: Sized> {
     pub version: i64,
@@ -57,12 +58,14 @@ pub trait KvClient {
 pub struct Table<'a, C: KvClient, F: TableSchema> {
     kv_client: &'a C,
     phantom: PhantomData<F>,
+    cache: Option<Arc<Cache<String, String>>>,
 }
 
 impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
-    pub fn new(kv_client: &'a C) -> Self {
+    pub fn new(kv_client: &'a C, cache: Option<Arc<Cache<String, String>>>) -> Self {
         Self {
             kv_client,
+            cache,
             phantom: PhantomData,
         }
     }

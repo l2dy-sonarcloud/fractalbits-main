@@ -1,53 +1,15 @@
 use axum::http::{HeaderMap, HeaderValue, Method};
-use axum::{
-    extract::{Query, Request},
-    RequestPartsExt,
-};
-use bucket_tables::table::{Table, Versioned};
 use chrono::{DateTime, Utc};
-use hmac::Mac;
 use itertools::Itertools;
-use rpc_client_rss::RpcClientRss;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-use bucket_tables::api_key_table::{ApiKey, ApiKeyTable};
-
 use crate::handler::common::encoding::uri_encode;
-use crate::handler::common::request::extract::Authentication;
 use crate::handler::common::time::LONG_DATETIME;
 
-use super::{signing_hmac, SignatureError};
+use super::SignatureError;
 
 const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
-
-pub async fn check_standard_signature(
-    auth: &Authentication,
-    request: Request,
-    rpc_client_rss: &RpcClientRss,
-    region: &str,
-) -> Result<(Request, Option<Versioned<ApiKey>>), SignatureError> {
-    let (mut head, body) = request.into_parts();
-    let query_params: Query<BTreeMap<String, String>> = head.extract().await?;
-    let request = Request::from_parts(head, body);
-    let canonical_request = canonical_request(
-        request.method(),
-        request.uri().path(),
-        &query_params,
-        request.headers(),
-        &auth.signed_headers,
-        &auth.content_sha256,
-    )?;
-    let string_to_sign =
-        string_to_sign(&auth.date, &auth.scope.to_sign_string(), &canonical_request);
-
-    tracing::trace!("canonical request:\n{}", canonical_request);
-    tracing::trace!("string to sign:\n{}", string_to_sign);
-
-    let key = verify_v4(auth, string_to_sign.as_bytes(), rpc_client_rss, region).await?;
-
-    Ok((request, key))
-}
 
 pub fn string_to_sign(datetime: &DateTime<Utc>, scope_string: &str, canonical_req: &str) -> String {
     let mut hasher = Sha256::default();
@@ -104,24 +66,4 @@ pub fn canonical_request(
         content_sha256,
     ];
     Ok(list.join("\n"))
-}
-
-pub async fn verify_v4(
-    auth: &Authentication,
-    payload: &[u8],
-    rpc_client_rss: &RpcClientRss,
-    region: &str,
-) -> Result<Option<Versioned<ApiKey>>, SignatureError> {
-    let api_key_table: Table<RpcClientRss, ApiKeyTable> = Table::new(rpc_client_rss);
-    let key = api_key_table.get(auth.key_id.clone()).await?;
-
-    let mut hmac = signing_hmac(&auth.date, &key.data.secret_key, region)
-        .map_err(|_| SignatureError::Invalid("Unable to build signing HMAC".into()))?;
-    hmac.update(payload);
-    let signature = hex::decode(&auth.signature)?;
-    if hmac.verify_slice(&signature).is_err() {
-        return Err(SignatureError::Invalid("signature mismatch".into()));
-    }
-
-    Ok(Some(key))
 }

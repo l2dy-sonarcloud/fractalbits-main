@@ -2,13 +2,11 @@ use std::str::Utf8Error;
 
 use crate::handler::common::time::SHORT_DATE;
 
-use super::extract::Authentication;
-use axum::extract::{rejection::QueryRejection, Request};
-use bucket_tables::{api_key_table::ApiKey, table::Versioned};
+use axum::extract::rejection::QueryRejection;
 use chrono::{DateTime, Utc};
 use hex::FromHexError;
 use hmac::{Hmac, Mac};
-use rpc_client_rss::{RpcClientRss, RpcErrorRss};
+use rpc_client_rss::RpcErrorRss;
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -35,15 +33,6 @@ pub enum SignatureError {
 
     #[error(transparent)]
     RpcErrorRss(#[from] RpcErrorRss),
-}
-
-pub async fn verify_request(
-    request: Request,
-    auth: &Authentication,
-    rpc_client_rss: &RpcClientRss,
-    region: &str,
-) -> Result<(Request, Option<Versioned<ApiKey>>), SignatureError> {
-    payload::check_standard_signature(auth, request, rpc_client_rss, region).await
 }
 
 pub fn signing_hmac(
