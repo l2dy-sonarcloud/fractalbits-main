@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use axum::{body::Body, response::Response};
+use axum::{
+    body::Body,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use rkyv::{self, rancor::Error};
 use rpc_client_nss::rpc::delete_inode_response;
 use tokio::sync::mpsc::Sender;
@@ -75,7 +79,7 @@ pub async fn delete_object_handler(
             }
         },
     }
-    Ok(Response::new(Body::empty()))
+    Ok((StatusCode::NO_CONTENT).into_response())
 }
 
 async fn delete_blob(
