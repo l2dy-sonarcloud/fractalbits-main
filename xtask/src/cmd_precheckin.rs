@@ -1,5 +1,4 @@
-use crate::{cmd_service, BuildMode, ServiceName, TEST_BUCKET_ROOT_BLOB_NAME, TS_FMT};
-use cmd_lib::*;
+use crate::*;
 
 pub fn run_cmd_precheckin() -> CmdResult {
     cmd_service::stop_service(ServiceName::All)?;
@@ -88,7 +87,7 @@ fn run_s3_api_tests() -> CmdResult {
         rm -f rss/shared-local-instance.db;
     }?;
 
-    cmd_service::start_services(BuildMode::Debug, ServiceName::All)?;
+    cmd_service::start_services(ServiceName::All, BuildMode::Debug)?;
     run_cmd! {
         info "Run cargo tests (s3 api tests)";
         cargo test;

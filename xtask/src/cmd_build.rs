@@ -1,4 +1,4 @@
-use cmd_lib::*;
+use crate::*;
 use strum::{AsRefStr, EnumString};
 
 #[derive(Copy, Clone, AsRefStr, EnumString)]
@@ -6,6 +6,13 @@ use strum::{AsRefStr, EnumString};
 pub enum BuildMode {
     Debug,
     Release,
+}
+
+pub fn build_mode(release: bool) -> BuildMode {
+    match release {
+        true => BuildMode::Release,
+        false => BuildMode::Debug,
+    }
 }
 
 pub fn build_rewrk() -> CmdResult {

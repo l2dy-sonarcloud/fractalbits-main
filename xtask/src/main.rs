@@ -1,13 +1,13 @@
-mod build;
 mod cmd_bench;
+mod cmd_build;
 mod cmd_deploy;
 mod cmd_nightly;
 mod cmd_precheckin;
-pub mod cmd_service;
+mod cmd_service;
 mod cmd_tool;
 
-use build::BuildMode;
 use clap::{ArgAction, Parser};
+use cmd_build::{build_mode, BuildMode};
 use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 
@@ -54,15 +54,25 @@ enum Cmd {
     #[clap(about = "Run precheckin tests")]
     Precheckin,
 
+    #[clap(about = "Build the whole project")]
+    Build {
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
+    },
+
     #[clap(about = "Service stop/start/restart")]
     Service {
         #[clap(long_help = "stop/start/restart")]
         action: ServiceAction,
+
         #[clap(
             long_help = "all/api_server/bss/nss/minio/ddb_local",
             default_value = "all"
         )]
         service: ServiceName,
+
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
     },
 
     #[clap(about = "Run tool related commands (gen_uuids only for now)")]
@@ -100,7 +110,7 @@ enum BenchService {
     BssRpc,
 }
 
-#[derive(Clone, EnumString, PartialEq)]
+#[derive(Parser, Clone, EnumString, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum ServiceAction {
     Stop,
@@ -140,6 +150,12 @@ fn main() -> CmdResult {
     rlimit::increase_nofile_limit(1000000).unwrap();
 
     match Cmd::parse() {
+        Cmd::Build { release } => {
+            let build_mode = build_mode(release);
+            cmd_build::build_rss_api_server(build_mode)?;
+            cmd_build::build_bss_nss_server(build_mode)?;
+            cmd_build::build_rewrk_rpc()?;
+        }
         Cmd::Precheckin => cmd_precheckin::run_cmd_precheckin()?,
         Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,
         Cmd::Bench {
@@ -162,18 +178,15 @@ fn main() -> CmdResult {
                 &mut service_name,
             )
             .inspect_err(|_| {
-                cmd_service::run_cmd_service(BuildMode::Release, ServiceAction::Stop, service_name)
+                cmd_service::run_cmd_service(service_name, ServiceAction::Stop, BuildMode::Release)
                     .unwrap();
             })?;
         }
-        Cmd::Service { action, service } => {
-            if action != ServiceAction::Stop {
-                // In case they have never been built before
-                build::build_bss_nss_server(BuildMode::Debug)?;
-                build::build_rss_api_server(BuildMode::Debug)?;
-            }
-            cmd_service::run_cmd_service(BuildMode::Debug, action, service)?
-        }
+        Cmd::Service {
+            action,
+            service,
+            release,
+        } => cmd_service::run_cmd_service(service, action, build_mode(release))?,
         Cmd::Tool(tool_kind) => cmd_tool::run_cmd_tool(tool_kind)?,
         Cmd::Deploy {
             use_s3_backend,

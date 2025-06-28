@@ -1,5 +1,4 @@
-use crate::TS_FMT;
-use cmd_lib::*;
+use crate::*;
 
 pub fn run_cmd_nightly() -> CmdResult {
     run_cmd! {

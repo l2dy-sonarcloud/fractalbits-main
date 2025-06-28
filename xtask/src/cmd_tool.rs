@@ -1,5 +1,4 @@
-use crate::ToolKind;
-use cmd_lib::*;
+use crate::*;
 
 // Support GenUuids only for now
 pub fn run_cmd_tool(ToolKind::GenUuids { num, file }: ToolKind) -> CmdResult {

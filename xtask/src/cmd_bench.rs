@@ -1,7 +1,4 @@
-use super::build::*;
-use super::cmd_service::*;
-use super::{BenchService, BenchWorkload, ServiceAction, ServiceName};
-use cmd_lib::*;
+use crate::{cmd_build::*, cmd_service::*, *};
 
 pub fn prepare_bench(with_flame_graph: bool) -> CmdResult {
     if with_flame_graph && run_cmd!(bash -c "type addr2line" | grep -q .cargo).is_err() {
@@ -43,7 +40,7 @@ pub fn run_cmd_bench(
             *service_name = ServiceName::All;
             build_rss_api_server(build_mode)?;
             build_rewrk()?;
-            run_cmd_service(build_mode, ServiceAction::Restart, *service_name)?;
+            run_cmd_service(*service_name, ServiceAction::Restart, BuildMode::Release)?;
             uri = "http://mybucket.localhost:3000";
             bench_exe = "./target/release/rewrk";
             bench_opts.extend_from_slice(&[
@@ -126,7 +123,7 @@ pub fn run_cmd_bench(
     }
 
     // stop service after benchmark to save cpu power
-    run_cmd_service(BuildMode::Release, ServiceAction::Stop, *service_name)?;
+    run_cmd_service(*service_name, ServiceAction::Stop, BuildMode::Release)?;
 
     Ok(())
 }

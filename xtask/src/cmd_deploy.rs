@@ -1,4 +1,4 @@
-use cmd_lib::*;
+use crate::*;
 
 const TARGET_ACCOUNT_ID: &str = "ACCOUNT_ID_TARGET"; // TARGET_EMAIL@example.com
 const BUCKET_OWNER_ACCOUNT_ID: &str = "ACCOUNT_ID_OWNER";

@@ -1,19 +1,16 @@
-use crate::build::BuildMode;
-use crate::{ServiceAction, ServiceName};
-use crate::{NSS_SERVER_BENCH_CONFIG, TEST_BUCKET_ROOT_BLOB_NAME};
-use cmd_lib::*;
+use crate::*;
 
 pub fn run_cmd_service(
-    build_mode: BuildMode,
-    action: ServiceAction,
     service: ServiceName,
+    action: ServiceAction,
+    build_mode: BuildMode,
 ) -> CmdResult {
     match action {
         ServiceAction::Stop => stop_service(service),
-        ServiceAction::Start => start_services(build_mode, service),
+        ServiceAction::Start => start_services(service, build_mode),
         ServiceAction::Restart => {
             stop_service(service)?;
-            start_services(build_mode, service)
+            start_services(service, build_mode)
         }
     }
 }
@@ -50,7 +47,7 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
     Ok(())
 }
 
-pub fn start_services(build_mode: BuildMode, service: ServiceName) -> CmdResult {
+pub fn start_services(service: ServiceName, build_mode: BuildMode) -> CmdResult {
     match service {
         ServiceName::Bss => start_bss_service(build_mode)?,
         ServiceName::Nss => start_nss_service(build_mode, false, false)?,
@@ -320,6 +317,18 @@ fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdR
     let build = build_mode.as_ref();
     let service_name = service.as_ref();
     let mut env_settings = String::new();
+    let env_rust_log = |build_mode: BuildMode| -> &'static str {
+        match build_mode {
+            BuildMode::Debug => {
+                r##"
+Environment="RUST_LOG=debug""##
+            }
+            BuildMode::Release => {
+                r##"
+Environment="RUST_LOG=info""##
+            }
+        }
+    };
     let exec_start = match service {
         ServiceName::Bss => format!("{pwd}/zig-out/bin/bss_server"),
         ServiceName::Nss => match build_mode {
@@ -335,20 +344,11 @@ Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
 Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
 Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
                 .to_string();
-            if let BuildMode::Debug = build_mode {
-                env_settings = format!(
-                    r##"{env_settings}
-Environment="RUST_LOG=info""##
-                );
-            }
+            env_settings += env_rust_log(build_mode);
             format!("{pwd}/target/{build}/root_server")
         }
         ServiceName::ApiServer => {
-            if let BuildMode::Debug = build_mode {
-                env_settings = r##"
-Environment="RUST_LOG=debug""##
-                    .to_string();
-            }
+            env_settings += env_rust_log(build_mode);
             format!("{pwd}/target/{build}/api_server")
         }
         _ => unreachable!(),
