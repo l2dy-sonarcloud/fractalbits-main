@@ -2,8 +2,9 @@ use cmd_lib::*;
 
 pub const BIN_PATH: &str = "/opt/fractalbits/bin/";
 pub const ETC_PATH: &str = "/opt/fractalbits/etc/";
-pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const API_SERVER_CONFIG: &str = "api_server_cloud_config.toml";
+pub const BSS_SERVER_CONFIG: &str = "bss_server_cloud_config.toml";
+pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const ROOT_SERVER_CONFIG: &str = "root_server_cloud_config.toml";
 pub const CLOUD_INIT_DONE_FILE: &str = "/opt/fractalbits/.cloud_init_done";
 
@@ -49,7 +50,7 @@ Environment="RUST_LOG=info""##
         "bss_server" => {
             requires = "data-local.mount";
             working_dir = "/data/local";
-            format!("{BIN_PATH}{service_name}")
+            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{BSS_SERVER_CONFIG}")
         }
         "ebs-failover" => {
             env_settings = r##"

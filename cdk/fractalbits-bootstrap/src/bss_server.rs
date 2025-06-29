@@ -14,6 +14,7 @@ pub fn bootstrap(num_nvme_disks: usize, bench: bool) -> CmdResult {
         run_cmd!(mkdir -p /data/local/bss/dir$i)?;
     }
 
+    create_bss_config()?;
     create_systemd_unit_file("bss_server", true)?;
 
     if bench {
@@ -26,5 +27,16 @@ pub fn bootstrap(num_nvme_disks: usize, bench: bool) -> CmdResult {
         sync;
     }?;
 
+    Ok(())
+}
+
+fn create_bss_config() -> CmdResult {
+    let config_content = r##"server_port = 8088
+log_level= "info""##
+        .to_string();
+    run_cmd! {
+        mkdir -p $ETC_PATH;
+        echo $config_content > $ETC_PATH/$BSS_SERVER_CONFIG;
+    }?;
     Ok(())
 }
