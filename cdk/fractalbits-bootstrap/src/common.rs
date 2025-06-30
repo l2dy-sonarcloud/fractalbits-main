@@ -7,6 +7,7 @@ pub const BSS_SERVER_CONFIG: &str = "bss_server_cloud_config.toml";
 pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const ROOT_SERVER_CONFIG: &str = "root_server_cloud_config.toml";
 pub const BENCH_SERVER_WORKLOAD_CONFIG: &str = "bench_workload.yaml";
+pub const BENCH_SERVER_BENCH_START_SCRIPT: &str = "bench_start.sh";
 pub const CLOUD_INIT_DONE_FILE: &str = "/opt/fractalbits/.cloud_init_done";
 
 pub fn download_binaries(file_list: &[&str]) -> CmdResult {
