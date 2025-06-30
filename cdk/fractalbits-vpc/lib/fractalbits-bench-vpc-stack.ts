@@ -6,6 +6,7 @@ import { createInstance, createUserData } from './ec2-utils';
 
 interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
+  benchClientCount?: number; // Optional: Number of bench client instances, defaults to 2
 }
 
 export class FractalbitsBenchVpcStack extends cdk.Stack {
@@ -55,17 +56,38 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    // EC2 Instance
-    const instance = createInstance(this, this.vpc, 'BenchInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
+    // Allow incoming traffic on port 7761 for bench clients
+    privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(7761), 'Allow incoming on port 7761 from VPC');
+
+    // Bench Server Instance
+    const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
+
+    // Bench Client Instances
+    const benchClientCount = props.benchClientCount ?? 2; // Default to 2 if not provided
+    const benchClientInstances: ec2.Instance[] = [];
+    for (let i = 0; i < benchClientCount; i++) {
+      const clientInstance = createInstance(this, this.vpc, `BenchClientInstance${i + 1}`, ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
+      benchClientInstances.push(clientInstance);
+    }
+
+    // Get private IP addresses of bench client instances
+    const benchClientIps = cdk.Fn.join(',', benchClientInstances.map(instance => instance.instancePrivateIp));
 
     const cpuArch = "aarch64";
-    const bootstrapOptions = `bench_server --service_endpoint=${props.serviceEndpoint}`;
-    instance.addUserData(createUserData(this, cpuArch, bootstrapOptions).render());
+    const bootstrapOptions = `bench_server --service_endpoint=${props.serviceEndpoint} --client_ips=${benchClientIps}`;
+    benchServerInstance.addUserData(createUserData(this, cpuArch, bootstrapOptions).render());
 
     // Outputs
-    new cdk.CfnOutput(this, 'BenchInstanceId', {
-      value: instance.instanceId,
-      description: 'EC2 instance ID for the bench stack',
+    new cdk.CfnOutput(this, 'BenchServerInstanceId', {
+      value: benchServerInstance.instanceId,
+      description: 'EC2 instance ID for the bench server',
+    });
+
+    benchClientInstances.forEach((instance, index) => {
+      new cdk.CfnOutput(this, `BenchClientInstance${index + 1}Id`, {
+        value: instance.instanceId,
+        description: `EC2 instance ID for bench client ${index + 1}`,
+      });
     });
   }
 }

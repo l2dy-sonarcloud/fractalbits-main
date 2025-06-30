@@ -10,9 +10,12 @@ const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   env: {},
 });
 
+const benchClientCount = app.node.tryGetContext('benchClientCount') ?? 2;
+
 const benchVpcStack = new FractalbitsBenchVpcStack(app, 'FractalbitsBenchVpcStack', {
   env: {},
   serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
+  benchClientCount: benchClientCount,
 });
 
 new PeeringStack(app, 'PeeringStack', {
