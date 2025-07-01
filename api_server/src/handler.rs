@@ -58,15 +58,23 @@ pub async fn any_handler(
         Err(e) => return e.into_response_with_resource(&resource),
         Ok(endpoint) => endpoint,
     };
+    let endpoint_name = endpoint.as_str();
     let result = any_handler_inner(app, bucket_name, key, auth, request, endpoint).await;
 
     let duration = start.elapsed();
-    let histogram = histogram!("request_duration_nanos", "status" => "success");
-    histogram.record(duration.as_nanos() as f64);
-
     match result {
-        Err(e) => e.into_response_with_resource(&resource),
-        Ok(response) => response,
+        Ok(response) => {
+            let histogram =
+                histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Ok"));
+            histogram.record(duration.as_nanos() as f64);
+            response
+        }
+        Err(e) => {
+            let histogram =
+                histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Fail"));
+            histogram.record(duration.as_nanos() as f64);
+            e.into_response_with_resource(&resource)
+        }
     }
 }
 
@@ -78,6 +86,7 @@ async fn any_handler_inner(
     request: http::Request<Body>,
     endpoint: Endpoint,
 ) -> Result<Response, S3Error> {
+    let start = Instant::now();
     let VerifiedRequest {
         request, api_key, ..
     } = match verify_request(&app, request, &auth).await {
@@ -87,6 +96,9 @@ async fn any_handler_inner(
         }
         Err(_e) => return Err(S3Error::InvalidSignature),
     };
+    let duration = start.elapsed();
+    let histogram = histogram!("verify_request_duration_nanos", "endpoint" => endpoint.as_str());
+    histogram.record(duration.as_nanos() as f64);
 
     let allowed = match endpoint.authorization_type() {
         Authorization::Read => api_key.data.allow_read(&bucket_name),
@@ -99,9 +111,7 @@ async fn any_handler_inner(
     }
 
     let blob_deletion = app.blob_deletion.clone();
-    let start = Instant::now();
-    let endpoint_name = endpoint.as_str();
-    let result = match endpoint {
+    match endpoint {
         Endpoint::Bucket(bucket_endpoint) => {
             bucket_handler(app, request, api_key, bucket_name, bucket_endpoint).await
         }
@@ -134,12 +144,7 @@ async fn any_handler_inner(
             let bucket = bucket::resolve_bucket(&app, bucket_name).await?;
             delete_handler(app, request, &bucket, key, blob_deletion, delete_endpoint).await
         }
-    };
-    let duration = start.elapsed();
-    let histogram = histogram!("handler_duration_nanos", "endpoint" => endpoint_name);
-    histogram.record(duration.as_nanos() as f64);
-
-    result
+    }
 }
 
 async fn bucket_handler(

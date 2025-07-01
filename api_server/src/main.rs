@@ -31,9 +31,10 @@ async fn main() {
         .init();
 
     // Initialize StatsD metrics exporter
-    let recorder = StatsdBuilder::from("127.0.0.1", 8125).build(None).expect("Could not build StatsD recorder");
-    metrics::set_global_recorder(Box::new(recorder))
-        .expect("Could not install StatsD exporter");
+    let recorder = StatsdBuilder::from("127.0.0.1", 8125)
+        .build(None)
+        .expect("Could not build StatsD recorder");
+    metrics::set_global_recorder(Box::new(recorder)).expect("Could not install StatsD exporter");
 
     let opt = Opt::parse();
     let config = match opt.config_file {
