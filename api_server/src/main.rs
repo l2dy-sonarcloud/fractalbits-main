@@ -8,6 +8,7 @@ use api_server::{
 };
 use axum::{extract::Request, routing, serve::ListenerExt};
 use clap::Parser;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -28,6 +29,12 @@ async fn main() {
         )
         .with(tracing_subscriber::fmt::layer().without_time())
         .init();
+
+    // Initialize Prometheus metrics exporter
+    PrometheusBuilder::new()
+        .with_http_listener("0.0.0.0:8085".parse::<SocketAddr>().unwrap())
+        .install()
+        .unwrap();
 
     let opt = Opt::parse();
     let config = match opt.config_file {

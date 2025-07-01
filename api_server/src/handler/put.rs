@@ -23,4 +23,12 @@ impl PutEndpoint {
             PutEndpoint::UploadPart(..) => Authorization::Write,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PutEndpoint::CopyObject => "CopyObject",
+            PutEndpoint::PutObject => "PutObject",
+            PutEndpoint::UploadPart(..) => "UploadPart",
+        }
+    }
 }

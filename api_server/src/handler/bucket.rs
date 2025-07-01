@@ -44,4 +44,13 @@ impl BucketEndpoint {
             BucketEndpoint::ListBuckets => Authorization::None,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BucketEndpoint::CreateBucket => "CreateBucket",
+            BucketEndpoint::DeleteBucket => "DeleteBucket",
+            BucketEndpoint::HeadBucket => "HeadBucket",
+            BucketEndpoint::ListBuckets => "ListBuckets",
+        }
+    }
 }

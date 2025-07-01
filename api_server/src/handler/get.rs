@@ -37,4 +37,15 @@ impl GetEndpoint {
             GetEndpoint::ListParts => Authorization::Read,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GetEndpoint::GetObject => "GetObject",
+            GetEndpoint::GetObjectAttributes => "GetObjectAttributes",
+            GetEndpoint::ListMultipartUploads => "ListMultipartUploads",
+            GetEndpoint::ListObjects => "ListObjects",
+            GetEndpoint::ListObjectsV2 => "ListObjectsV2",
+            GetEndpoint::ListParts => "ListParts",
+        }
+    }
 }

@@ -14,4 +14,10 @@ impl HeadEndpoint {
             HeadEndpoint::HeadObject => Authorization::Read,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HeadEndpoint::HeadObject => "HeadObject",
+        }
+    }
 }

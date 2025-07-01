@@ -18,4 +18,11 @@ impl DeleteEndpoint {
             DeleteEndpoint::DeleteObject => Authorization::Write,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DeleteEndpoint::AbortMultipartUpload(_) => "AbortMultipartUpload",
+            DeleteEndpoint::DeleteObject => "DeleteObject",
+        }
+    }
 }

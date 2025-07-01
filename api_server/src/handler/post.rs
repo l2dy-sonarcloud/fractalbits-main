@@ -22,4 +22,12 @@ impl PostEndpoint {
             PostEndpoint::DeleteObjects => Authorization::Write,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PostEndpoint::CompleteMultipartUpload(_) => "CompleteMultipartUpload",
+            PostEndpoint::CreateMultipartUpload => "CreateMultipartUpload",
+            PostEndpoint::DeleteObjects => "DeleteObjects",
+        }
+    }
 }

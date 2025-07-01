@@ -7,8 +7,10 @@ mod head;
 mod post;
 mod put;
 
+use metrics::histogram;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::{AppState, BlobId};
 use axum::{
@@ -49,12 +51,20 @@ pub async fn any_handler(
 ) -> Response {
     tracing::debug!(%bucket_name, %key, %addr);
 
+    let start = Instant::now();
+
     let resource = format!("/{bucket_name}{key}");
     let endpoint = match Endpoint::from_extractors(&request, &bucket_name, &key, api_cmd, api_sig) {
         Err(e) => return e.into_response_with_resource(&resource),
         Ok(endpoint) => endpoint,
     };
-    match any_handler_inner(app, bucket_name, key, auth, request, endpoint).await {
+    let result = any_handler_inner(app, bucket_name, key, auth, request, endpoint).await;
+
+    let duration = start.elapsed();
+    let histogram = histogram!("request_duration_nanos", "status" => "success");
+    histogram.record(duration.as_nanos() as f64);
+
+    match result {
         Err(e) => e.into_response_with_resource(&resource),
         Ok(response) => response,
     }
@@ -89,7 +99,9 @@ async fn any_handler_inner(
     }
 
     let blob_deletion = app.blob_deletion.clone();
-    match endpoint {
+    let start = Instant::now();
+    let endpoint_name = endpoint.as_str();
+    let result = match endpoint {
         Endpoint::Bucket(bucket_endpoint) => {
             bucket_handler(app, request, api_key, bucket_name, bucket_endpoint).await
         }
@@ -122,7 +134,12 @@ async fn any_handler_inner(
             let bucket = bucket::resolve_bucket(&app, bucket_name).await?;
             delete_handler(app, request, &bucket, key, blob_deletion, delete_endpoint).await
         }
-    }
+    };
+    let duration = start.elapsed();
+    let histogram = histogram!("handler_duration_nanos", "endpoint" => endpoint_name);
+    histogram.record(duration.as_nanos() as f64);
+
+    result
 }
 
 async fn bucket_handler(

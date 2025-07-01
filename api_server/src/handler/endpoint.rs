@@ -147,4 +147,15 @@ impl Endpoint {
             Endpoint::Head(head_endpoint) => head_endpoint.authorization_type(),
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Endpoint::Get(get_endpoint) => get_endpoint.as_str(),
+            Endpoint::Put(put_endpoint) => put_endpoint.as_str(),
+            Endpoint::Delete(delete_endpoint) => delete_endpoint.as_str(),
+            Endpoint::Bucket(bucket_endpoint) => bucket_endpoint.as_str(),
+            Endpoint::Post(post_endpoint) => post_endpoint.as_str(),
+            Endpoint::Head(head_endpoint) => head_endpoint.as_str(),
+        }
+    }
 }
