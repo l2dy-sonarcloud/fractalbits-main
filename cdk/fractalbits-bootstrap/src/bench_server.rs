@@ -1,16 +1,21 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(service_endpoint: &str, clients_ips: Vec<String>) -> CmdResult {
+pub fn bootstrap(mut service_endpoint: String, client_ips: Vec<String>) -> CmdResult {
     download_binaries(&["warp"])?;
-    create_workload_config(service_endpoint, clients_ips)?;
-    create_bench_start_script()?;
+    create_workload_config(&service_endpoint, &client_ips)?;
+    if service_endpoint == "localhost" {
+        // We are running bench tool within api_server, so try to contact the first
+        // api_server to create benchmark bucket
+        service_endpoint = client_ips[0].clone();
+    }
+    create_bench_start_script(&service_endpoint)?;
     Ok(())
 }
 
-fn create_workload_config(service_endpoint: &str, clients_ips: Vec<String>) -> CmdResult {
+fn create_workload_config(service_endpoint: &str, client_ips: &Vec<String>) -> CmdResult {
     let mut warp_clients_str = String::new();
-    for ip in clients_ips {
+    for ip in client_ips {
         warp_clients_str.push_str(&format!("  - {}:7761\n", ip));
     }
 
@@ -53,8 +58,28 @@ fn create_workload_config(service_endpoint: &str, clients_ips: Vec<String>) -> C
     Ok(())
 }
 
-fn create_bench_start_script() -> CmdResult {
-    let script_content = include_str!("bench_start.sh");
+fn create_bench_start_script(service_endpoint: &str) -> CmdResult {
+    let script_content = format!(
+        r##"#!/bin/bash
+
+set -ex
+
+CONF=/opt/fractalbits/etc/bench_workload.yaml
+WARP=/opt/fractalbits/bin/warp
+region=$(cat $CONF | grep region: | awk '{{print $2}}')
+bucket=$(cat $CONF | grep bucket: | awk '{{print $2}}')
+export AWS_DEFAULT_REGION=$region
+export AWS_ENDPOINT_URL_S3=http://{service_endpoint}
+export AWS_ACCESS_KEY_ID=test_api_key
+export AWS_SECRET_ACCESS_KEY=test_api_secret
+
+
+if ! aws s3api head-bucket --bucket $bucket &>/dev/null; then
+  aws s3api create-bucket --bucket $bucket
+fi
+$WARP run $CONF
+"##
+    );
     run_cmd! {
         mkdir -p $BIN_PATH;
         echo $script_content > $BIN_PATH/$BENCH_SERVER_BENCH_START_SCRIPT;

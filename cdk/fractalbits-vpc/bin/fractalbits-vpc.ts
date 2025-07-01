@@ -7,23 +7,26 @@ import { PeeringStack } from '../lib/fractalbits-peering-stack';
 const app = new cdk.App();
 
 const numApiServers = app.node.tryGetContext('numApiServers') ?? 2;
+const benchType = app.node.tryGetContext('benchType') ?? null;
 
 const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   env: {},
   numApiServers: numApiServers,
+  benchType: benchType,
 });
 
-const benchClientCount = app.node.tryGetContext('benchClientCount') ?? 2;
+if (benchType === "service_endpoint") {
+  const benchClientCount = app.node.tryGetContext('benchClientCount') ?? 2;
 
-const benchVpcStack = new FractalbitsBenchVpcStack(app, 'FractalbitsBenchVpcStack', {
-  env: {},
-  serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
-  benchClientCount: benchClientCount,
-});
+  const benchVpcStack = new FractalbitsBenchVpcStack(app, 'FractalbitsBenchVpcStack', {
+    env: {},
+    serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
+    benchClientCount: benchClientCount,
+  });
 
-new PeeringStack(app, 'PeeringStack', {
-  vpcA: vpcStack.vpc,
-  vpcB: benchVpcStack.vpc,
-  env: {},
-});
-
+  new PeeringStack(app, 'PeeringStack', {
+    vpcA: vpcStack.vpc,
+    vpcB: benchVpcStack.vpc,
+    env: {},
+  });
+}

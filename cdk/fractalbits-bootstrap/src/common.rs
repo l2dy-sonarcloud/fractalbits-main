@@ -18,6 +18,11 @@ pub fn download_binaries(file_list: &[&str]) -> CmdResult {
 }
 
 fn download_binary(file_name: &str) -> CmdResult {
+    if run_cmd!(test -f $BIN_PATH/$file_name).is_ok() {
+        info!("{file_name} has already been downloaded");
+        return Ok(());
+    }
+
     let builds_bucket = format!("s3://fractalbits-builds-{}", get_current_aws_region()?);
     let cpu_arch = run_fun!(arch)?;
     run_cmd! {

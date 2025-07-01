@@ -10,6 +10,7 @@ import { createInstance, createUserData } from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
+  benchType?: "service_endpoint" | "internal" | null;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -67,6 +68,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
       allowAllOutbound: true,
     });
     publicSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'Allow HTTP access from anywhere');
+    if (props.benchType === "internal") {
+      // Allow incoming traffic on port 7761 for bench clients
+      publicSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(7761), 'Allow access to port 7761 from within VPC');
+    }
 
     const privateSg = new ec2.SecurityGroup(this, 'PrivateInstanceSG', {
       vpc: this.vpc,
@@ -118,6 +123,11 @@ export class FractalbitsVpcStack extends cdk.Stack {
       // { id: 'nss_server_secondary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type, sg: privateSg },
     ];
 
+    if (props.benchType === "internal") {
+      const benchInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.LARGE);
+      instanceConfigs.push({ id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
+    }
+
     for (let i = 1; i <= props.numApiServers; i++) {
       instanceConfigs.push({ id: `api_server_${i}`, subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: apiInstanceType, sg: publicSg });
     }
@@ -127,24 +137,27 @@ export class FractalbitsVpcStack extends cdk.Stack {
       instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role);
     });
 
-    // NLB for API servers
-    const nlb = new elbv2.NetworkLoadBalancer(this, 'ApiNLB', {
-      vpc: this.vpc,
-      internetFacing: false,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
+    let nlb: elbv2.NetworkLoadBalancer | undefined;
+    if (props.benchType !== "internal") {
+      // NLB for API servers
+      nlb = new elbv2.NetworkLoadBalancer(this, 'ApiNLB', {
+        vpc: this.vpc,
+        internetFacing: false,
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      });
 
-    const listener = nlb.addListener('ApiListener', { port: 80 });
+      const listener = nlb.addListener('ApiListener', { port: 80 });
 
-    const apiServerTargets = [];
-    for (let i = 1; i <= props.numApiServers; i++) {
-      apiServerTargets.push(new elbv2_targets.InstanceTarget(instances[`api_server_${i}`]));
+      const apiServerTargets = [];
+      for (let i = 1; i <= props.numApiServers; i++) {
+        apiServerTargets.push(new elbv2_targets.InstanceTarget(instances[`api_server_${i}`]));
+      }
+
+      listener.addTargets('ApiTargets', {
+        port: 80,
+        targets: apiServerTargets,
+      });
     }
-
-    listener.addTargets('ApiTargets', {
-      port: 80,
-      targets: apiServerTargets,
-    });
 
     // Create EBS Volume with Multi-Attach for nss_server
     const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
@@ -190,9 +203,26 @@ export class FractalbitsVpcStack extends cdk.Stack {
     ];
 
     for (let i = 1; i <= props.numApiServers; i++) {
+      let apiBootstrapOptions = `api_server --bucket=${bucketName} --bss_ip=${bssIp} --nss_ip=${nssIp} --rss_ip=${rssIp}`;
+      if (props.benchType === "internal") {
+        apiBootstrapOptions += ` --with_bench_client`;
+      }
       instanceBootstrapOptions.push({
         id: `api_server_${i}`,
-        bootstrapOptions: `api_server --bucket=${bucketName} --bss_ip=${bssIp} --nss_ip=${nssIp} --rss_ip=${rssIp}`
+        bootstrapOptions: apiBootstrapOptions
+      });
+    }
+
+    if (props.benchType === "internal") {
+      const apiServerPrivateIps: string[] = [];
+      for (let i = 1; i <= props.numApiServers; i++) {
+        apiServerPrivateIps.push(instances[`api_server_${i}`].instancePrivateIp);
+      }
+
+      const benchBootstrapOptions = `bench_server --client_ips=${apiServerPrivateIps.join(',')}`;
+      instanceBootstrapOptions.push({
+        id: 'bench_server',
+        bootstrapOptions: benchBootstrapOptions
       });
     }
 
@@ -212,12 +242,19 @@ export class FractalbitsVpcStack extends cdk.Stack {
       });
     }
 
+    if (props.benchType === "internal") {
+      new cdk.CfnOutput(this, 'BenchServerId', {
+        value: instances['bench_server'].instanceId,
+        description: 'EC2 instance bench_server ID',
+      });
+    }
+
     new cdk.CfnOutput(this, 'ApiNLBDnsName', {
-      value: nlb.loadBalancerDnsName,
+      value: nlb ? nlb.loadBalancerDnsName : 'NLB not created',
       description: 'DNS name of the API NLB',
     });
 
-    this.nlbLoadBalancerDnsName = nlb.loadBalancerDnsName;
+    this.nlbLoadBalancerDnsName = nlb ? nlb.loadBalancerDnsName : "";
 
     new cdk.CfnOutput(this, 'VolumeId', {
       value: ebsVolumeId,

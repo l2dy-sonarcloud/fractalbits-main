@@ -1,7 +1,12 @@
-use super::common::*;
-use cmd_lib::*;
+use crate::*;
 
-pub fn bootstrap(bucket_name: &str, bss_ip: &str, nss_ip: &str, rss_ip: &str) -> CmdResult {
+pub fn bootstrap(
+    bucket_name: &str,
+    bss_ip: &str,
+    nss_ip: &str,
+    rss_ip: &str,
+    with_bench_client: bool,
+) -> CmdResult {
     install_rpms(&["nmap-ncat"])?;
     download_binaries(&[
         "api_server",
@@ -14,6 +19,11 @@ pub fn bootstrap(bucket_name: &str, bss_ip: &str, nss_ip: &str, rss_ip: &str) ->
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
     }
+
+    if with_bench_client {
+        bench_client::bootstrap()?;
+    }
+
     create_systemd_unit_file("api_server", true)?;
     Ok(())
 }

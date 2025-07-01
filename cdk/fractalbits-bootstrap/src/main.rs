@@ -8,7 +8,7 @@ mod root_server;
 
 use clap::Parser;
 use cmd_lib::*;
-use common::CLOUD_INIT_DONE_FILE;
+use common::*;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Parser)]
@@ -31,6 +31,9 @@ enum Service {
 
         #[clap(long, long_help = "root_server IP address")]
         rss_ip: String,
+
+        #[clap(long, default_value = "false", long_help = "With bunch client running")]
+        with_bench_client: bool,
     },
 
     #[clap(about = "Run on bss_server instance to bootstrap fractalbits service(s)")]
@@ -71,7 +74,11 @@ enum Service {
 
     #[clap(about = "Run on bench_server instance to benchmark fractalbits service(s)")]
     BenchServer {
-        #[clap(long, long_help = "Service endpoint for benchmark")]
+        #[clap(
+            long,
+            default_value = "localhost",
+            long_help = "Service endpoint for benchmark"
+        )]
         service_endpoint: String,
 
         #[clap(
@@ -99,7 +106,8 @@ fn main() -> CmdResult {
             bss_ip,
             nss_ip,
             rss_ip,
-        } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip)?,
+            with_bench_client,
+        } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip, with_bench_client)?,
         Service::BssServer {
             num_nvme_disks,
             bench,
@@ -118,7 +126,7 @@ fn main() -> CmdResult {
         Service::BenchServer {
             service_endpoint,
             client_ips,
-        } => bench_server::bootstrap(&service_endpoint, client_ips)?,
+        } => bench_server::bootstrap(service_endpoint, client_ips)?,
         Service::BenchClient {} => bench_client::bootstrap()?,
     }
 

@@ -6,7 +6,7 @@ import { createInstance, createUserData } from './ec2-utils';
 
 interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
-  benchClientCount?: number; // Optional: Number of bench client instances, defaults to 2
+  benchClientCount: number;
 }
 
 export class FractalbitsBenchVpcStack extends cdk.Stack {
@@ -66,7 +66,7 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
     const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
 
     // Bench Client Instances
-    const benchClientCount = props.benchClientCount ?? 2; // Default to 2 if not provided
+    const benchClientCount = props.benchClientCount;
     const benchClientInstances: ec2.Instance[] = [];
     for (let i = 0; i < benchClientCount; i++) {
       const clientInstance = createInstance(this, this.vpc, `BenchClientInstance${i + 1}`, ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
