@@ -48,6 +48,8 @@ fn create_workload_config(service_endpoint: &str, client_ips: &Vec<String>) -> C
       enabled: false
       dur: 10s
       pct: 7.5
+    no-clear: true
+    keep-data: true
 "##
     );
     run_cmd! {
@@ -77,7 +79,11 @@ export AWS_SECRET_ACCESS_KEY=test_api_secret
 if ! aws s3api head-bucket --bucket $bucket &>/dev/null; then
   aws s3api create-bucket --bucket $bucket
 fi
+# clean up before benchmarking
+aws s3 rm s3://$bucket --recursive --quiet
 $WARP run $CONF
+# clean up after benchmarking
+aws s3 rm s3://$bucket --recursive --quiet
 "##
     );
     run_cmd! {
