@@ -143,6 +143,15 @@ pub fn update_builds_bucket_access_policy() -> CmdResult {
     }},
     "Action": "s3:PutObject",
     "Resource": "arn:aws:s3:::{bucket_name}/*"
+  }},
+  {{
+    "Sid": "AllowListBucketToTargetAccount",
+    "Effect": "Allow",
+    "Principal": {{
+      "AWS": "arn:aws:iam::{TARGET_ACCOUNT_ID}:root"
+    }},
+    "Action": "s3:ListBucket",
+    "Resource": "arn:aws:s3:::{bucket_name}"
   }}
 ]
 }}"##
