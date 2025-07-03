@@ -50,8 +50,8 @@ impl FromRef<Arc<AppState>> for ArcConfig {
 }
 
 impl AppState {
-    const NSS_CONNECTION_POOL_SIZE: u32 = 32;
-    const RSS_CONNECTION_POOL_SIZE: u32 = 32;
+    const NSS_CONNECTION_POOL_SIZE: u32 = 64;
+    const RSS_CONNECTION_POOL_SIZE: u32 = 64;
 
     pub async fn new(config: ArcConfig) -> Self {
         let rpc_clients_nss = Self::new_rpc_clients_pool_nss(&config.nss_addr).await;
@@ -86,7 +86,7 @@ impl AppState {
         let manager = RpcConnManagerNss::new(resolved_addrs);
         let rpc_clients_nss = Pool::builder()
             .max_size(Self::NSS_CONNECTION_POOL_SIZE)
-            .min_idle(Some(8))
+            .min_idle(Some(32))
             .max_lifetime(None)
             .build(manager)
             .await
@@ -109,7 +109,7 @@ impl AppState {
         let manager = RpcConnManagerRss::new(resolved_addrs);
         let rpc_clients_rss = Pool::builder()
             .max_size(Self::RSS_CONNECTION_POOL_SIZE)
-            .min_idle(Some(8))
+            .min_idle(Some(32))
             .max_lifetime(None)
             .build(manager)
             .await
@@ -152,7 +152,7 @@ pub struct BlobClient {
 }
 
 impl BlobClient {
-    const BSS_CONNECTION_POOL_SIZE: u32 = 32;
+    const BSS_CONNECTION_POOL_SIZE: u32 = 64;
 
     pub async fn new(
         bss_addr: &str,
@@ -169,7 +169,7 @@ impl BlobClient {
         let clients_bss = Arc::new(
             Pool::builder()
                 .max_size(Self::BSS_CONNECTION_POOL_SIZE)
-                .min_idle(Some(8))
+                .min_idle(Some(32))
                 .max_lifetime(None)
                 .build(manager)
                 .await
