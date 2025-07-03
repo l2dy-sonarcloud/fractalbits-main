@@ -7,6 +7,7 @@ use crate::{
 use bytes::BytesMut;
 use metrics::histogram;
 use prost::Message as PbMessage;
+use tracing::{error, warn};
 
 include!(concat!(env!("OUT_DIR"), "/rss_ops.rs"));
 
@@ -15,7 +16,7 @@ impl RpcClient {
         let start = Instant::now();
         let body = PutRequest {
             version,
-            key,
+            key: key.clone(),
             value,
         };
 
@@ -44,11 +45,13 @@ impl RpcClient {
             put_response::Result::ErrOthers(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "Put_ErrOthers")
                     .record(duration.as_nanos() as f64);
+                error!("rpc put for key {key} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
             put_response::Result::ErrRetry(()) => {
                 histogram!("rss_rpc_nanos", "status" => "Put_ErrRetry")
                     .record(duration.as_nanos() as f64);
+                warn!("rpc put for key {key} failed, retry needed");
                 Err(RpcError::Retry)
             }
         }
@@ -66,10 +69,10 @@ impl RpcClient {
         let start = Instant::now();
         let body = PutWithExtraRequest {
             version,
-            key,
+            key: key.clone(),
             value,
             extra_version,
-            extra_key,
+            extra_key: extra_key.clone(),
             extra_value,
         };
 
@@ -99,11 +102,13 @@ impl RpcClient {
             put_with_extra_response::Result::ErrOthers(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "PutWithExtra_ErrOthers")
                     .record(duration.as_nanos() as f64);
+                error!("rpc put for key {key} and {extra_key} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
             put_with_extra_response::Result::ErrRetry(()) => {
                 histogram!("rss_rpc_nanos", "status" => "PutWithExtra_ErrRetry")
                     .record(duration.as_nanos() as f64);
+                warn!("rpc put for key {key} and {extra_key} failed, retry needed");
                 Err(RpcError::Retry)
             }
         }
@@ -111,7 +116,7 @@ impl RpcClient {
 
     pub async fn get(&self, key: String) -> Result<(i64, String), RpcError> {
         let start = Instant::now();
-        let body = GetRequest { key };
+        let body = GetRequest { key: key.clone() };
 
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
@@ -138,11 +143,13 @@ impl RpcClient {
             get_response::Result::ErrNotFound(_resp) => {
                 histogram!("rss_rpc_nanos", "status" => "Get_ErrNotFound")
                     .record(duration.as_nanos() as f64);
+                error!("could not find entry for key: {key}");
                 Err(RpcError::NotFound)
             }
             get_response::Result::ErrOthers(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "Get_ErrOthers")
                     .record(duration.as_nanos() as f64);
+                error!("rpc get for key {key} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
         }
@@ -150,7 +157,7 @@ impl RpcClient {
 
     pub async fn delete(&self, key: String) -> Result<(), RpcError> {
         let start = Instant::now();
-        let body = DeleteRequest { key };
+        let body = DeleteRequest { key: key.clone() };
 
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
@@ -177,6 +184,7 @@ impl RpcClient {
             delete_response::Result::Err(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "Delete_Err")
                     .record(duration.as_nanos() as f64);
+                error!("rpc delete for key {key} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
         }
@@ -191,9 +199,9 @@ impl RpcClient {
     ) -> Result<(), RpcError> {
         let start = Instant::now();
         let body = DeleteWithExtraRequest {
-            key,
+            key: key.clone(),
             extra_version,
-            extra_key,
+            extra_key: extra_key.clone(),
             extra_value,
         };
 
@@ -223,11 +231,13 @@ impl RpcClient {
             delete_with_extra_response::Result::ErrOthers(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "DeleteWithExtra_ErrOthers")
                     .record(duration.as_nanos() as f64);
+                error!("rpc delete for key {key} and {extra_key} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
             delete_with_extra_response::Result::ErrRetry(()) => {
                 histogram!("rss_rpc_nanos", "status" => "DeleteWithExtra_ErrRetry")
                     .record(duration.as_nanos() as f64);
+                warn!("rpc delete key {key} and {extra_key} failed, retry needed");
                 Err(RpcError::Retry)
             }
         }
@@ -235,7 +245,9 @@ impl RpcClient {
 
     pub async fn list(&self, prefix: String) -> Result<Vec<String>, RpcError> {
         let start = Instant::now();
-        let body = ListRequest { prefix };
+        let body = ListRequest {
+            prefix: prefix.clone(),
+        };
 
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
@@ -262,6 +274,7 @@ impl RpcClient {
             list_response::Result::Err(resp) => {
                 histogram!("rss_rpc_nanos", "status" => "List_Err")
                     .record(duration.as_nanos() as f64);
+                error!("rpc list for prefix {prefix} failed: {}", &resp);
                 Err(RpcError::InternalResponseError(resp))
             }
         }

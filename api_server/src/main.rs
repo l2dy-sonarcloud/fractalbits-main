@@ -26,7 +26,12 @@ async fn main() {
                 format!("{}=warn,tower_http=warn", env!("CARGO_CRATE_NAME")).into()
             }),
         )
-        .with(tracing_subscriber::fmt::layer().without_time())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_file(true)
+                .with_line_number(true)
+                .without_time(),
+        )
         .init();
 
     #[cfg(feature = "metrics_statsd")]
