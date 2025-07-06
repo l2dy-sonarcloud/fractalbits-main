@@ -183,22 +183,23 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const nssIp = instances["nss_server_primary"].instancePrivateIp;
     const rssIp = instances["root_server"].instancePrivateIp;
     const cpuArch = "aarch64";
+    const forBenchFlag = props.benchType ? ' --for_bench' : '';
 
     const instanceBootstrapOptions = [
       {
         id: 'root_server',
-        bootstrapOptions: `root_server --primary_instance_id=${primaryNss} --secondary_instance_id=${secondaryNss} --volume_id=${ebsVolumeId}`
+        bootstrapOptions: `root_server --primary_instance_id=${primaryNss} --secondary_instance_id=${secondaryNss} --volume_id=${ebsVolumeId}${forBenchFlag}`
       },
       {
         id: 'bss_server',
-        bootstrapOptions: `bss_server --num_nvme_disks=${bssNumNvmeDisks}` },
+        bootstrapOptions: `bss_server --num_nvme_disks=${bssNumNvmeDisks}${forBenchFlag}` },
       {
         id: 'nss_server_primary',
-        bootstrapOptions: `nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --num_nvme_disks=${nssNumNvmeDisks}`
+        bootstrapOptions: `nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --num_nvme_disks=${nssNumNvmeDisks}${forBenchFlag}`
       },
       {
         id: 'nss_server_secondary',
-        bootstrapOptions: `nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --num_nvme_disks=${nssNumNvmeDisks}`
+        bootstrapOptions: `nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --num_nvme_disks=${nssNumNvmeDisks}${forBenchFlag}`
       },
     ];
 

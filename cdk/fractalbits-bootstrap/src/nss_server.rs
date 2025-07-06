@@ -6,6 +6,7 @@ pub fn bootstrap(
     volume_id: &str,
     num_nvme_disks: usize,
     meta_stack_testing: bool,
+    _for_bench: bool,
 ) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
 

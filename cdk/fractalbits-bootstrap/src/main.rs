@@ -43,6 +43,9 @@ enum Service {
 
         #[clap(long, default_value = "false", long_help = "For meta stack testing")]
         meta_stack_testing: bool,
+
+        #[clap(long, default_value = "false", long_help = "For benchmarking")]
+        for_bench: bool,
     },
 
     #[clap(about = "Run on nss_server instance to bootstrap fractalbits service(s)")]
@@ -58,6 +61,9 @@ enum Service {
 
         #[clap(long, default_value = "false", long_help = "For meta stack testing")]
         meta_stack_testing: bool,
+
+        #[clap(long, default_value = "false", long_help = "For benchmarking")]
+        for_bench: bool,
     },
 
     #[clap(about = "Run on root_server instance to bootstrap fractalbits service(s)")]
@@ -70,6 +76,9 @@ enum Service {
 
         #[clap(long, long_help = "Multi-attached EBS volume ID")]
         volume_id: String,
+
+        #[clap(long, default_value = "false", long_help = "For benchmarking")]
+        for_bench: bool,
     },
 
     #[clap(about = "Run on bench_server instance to benchmark fractalbits service(s)")]
@@ -111,18 +120,32 @@ fn main() -> CmdResult {
         Service::BssServer {
             num_nvme_disks,
             meta_stack_testing,
-        } => bss_server::bootstrap(num_nvme_disks, meta_stack_testing)?,
+            for_bench,
+        } => bss_server::bootstrap(num_nvme_disks, meta_stack_testing, for_bench)?,
         Service::NssServer {
             bucket,
             volume_id,
             num_nvme_disks,
             meta_stack_testing,
-        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, meta_stack_testing)?,
+            for_bench,
+        } => nss_server::bootstrap(
+            &bucket,
+            &volume_id,
+            num_nvme_disks,
+            meta_stack_testing,
+            for_bench,
+        )?,
         Service::RootServer {
             primary_instance_id,
             secondary_instance_id,
             volume_id,
-        } => root_server::bootstrap(&primary_instance_id, &secondary_instance_id, &volume_id)?,
+            for_bench,
+        } => root_server::bootstrap(
+            &primary_instance_id,
+            &secondary_instance_id,
+            &volume_id,
+            for_bench,
+        )?,
         Service::BenchServer {
             service_endpoint,
             client_ips,

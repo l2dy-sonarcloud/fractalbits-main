@@ -23,6 +23,16 @@ pub fn bootstrap(
     if with_bench_client {
         run_cmd!(echo "127.0.0.1   local-service-endpoint" >>/etc/hosts)?;
         bench_client::bootstrap()?;
+        // Also try to download tools for micro-benchmarking
+        download_binaries(&["rewrk_rpc", "fbs", "testing_art"])?;
+        // Testing data for bss-rpc
+        xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
+        // Testing data for bss-rpc
+        run_cmd! {
+            cd /data;
+            info "Generating random 10_000_000 keys for nss-rpc";
+            /opt/fractalbits/bin/test_art --gen --size 10000000;
+        }?;
     }
 
     create_systemd_unit_file("api_server", true)?;

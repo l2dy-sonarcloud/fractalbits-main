@@ -10,6 +10,7 @@ pub fn bootstrap(
     primary_instance_id: &str,
     secondary_instance_id: &str,
     volume_id: &str,
+    for_bench: bool,
 ) -> CmdResult {
     download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
     run_cmd!($BIN_PATH/rss_admin api-key init-test)?;
@@ -20,9 +21,10 @@ pub fn bootstrap(
     // Format EBS with SSM
     let ebs_dev = get_volume_dev(volume_id);
     wait_for_ssm_ready(primary_instance_id);
+    let extra_opt = if for_bench { "--testing_mode" } else { "" };
     run_cmd_with_ssm(
         primary_instance_id,
-        &format! {"sudo /opt/fractalbits/bin/format-nss --ebs_dev {ebs_dev}"},
+        &format! {"sudo /opt/fractalbits/bin/format-nss --ebs_dev {ebs_dev} {extra_opt}"},
     )?;
 
     if secondary_instance_id != "null" {
