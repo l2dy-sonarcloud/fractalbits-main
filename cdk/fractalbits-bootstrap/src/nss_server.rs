@@ -5,7 +5,7 @@ pub fn bootstrap(
     bucket_name: &str,
     volume_id: &str,
     num_nvme_disks: usize,
-    bench: bool,
+    meta_stack_testing: bool,
 ) -> CmdResult {
     assert_ne!(num_nvme_disks, 0);
 
@@ -16,13 +16,13 @@ pub fn bootstrap(
 
     // Note for normal deployment, the nss_server service is not started
     // until EBS/nss formatted from root_server
-    if bench {
+    if meta_stack_testing {
         download_binaries(&["fbs", "test_art", "rewrk_rpc"])?;
 
         let volume_dev = get_volume_dev(volume_id);
         run_cmd! {
             info "Formatting nss with ebs $volume_dev (see detailed logs with `journalctl _COMM=format-nss`)";
-            /opt/fractalbits/bin/format-nss --dev_mode --ebs_dev $volume_dev;
+            /opt/fractalbits/bin/format-nss --testing_mode --ebs_dev $volume_dev;
         }?;
     }
     Ok(())

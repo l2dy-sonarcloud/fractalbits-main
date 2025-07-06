@@ -41,8 +41,8 @@ enum Service {
         #[clap(long, long_help = "Number of NVME disks")]
         num_nvme_disks: usize,
 
-        #[clap(long, default_value = "false", long_help = "For benchmark testing")]
-        bench: bool,
+        #[clap(long, default_value = "false", long_help = "For meta stack testing")]
+        meta_stack_testing: bool,
     },
 
     #[clap(about = "Run on nss_server instance to bootstrap fractalbits service(s)")]
@@ -56,8 +56,8 @@ enum Service {
         #[clap(long, long_help = "Number of NVME disks")]
         num_nvme_disks: usize,
 
-        #[clap(long, default_value = "false", long_help = "For benchmark testing")]
-        bench: bool,
+        #[clap(long, default_value = "false", long_help = "For meta stack testing")]
+        meta_stack_testing: bool,
     },
 
     #[clap(about = "Run on root_server instance to bootstrap fractalbits service(s)")]
@@ -110,14 +110,14 @@ fn main() -> CmdResult {
         } => api_server::bootstrap(&bucket, &bss_ip, &nss_ip, &rss_ip, with_bench_client)?,
         Service::BssServer {
             num_nvme_disks,
-            bench,
-        } => bss_server::bootstrap(num_nvme_disks, bench)?,
+            meta_stack_testing,
+        } => bss_server::bootstrap(num_nvme_disks, meta_stack_testing)?,
         Service::NssServer {
             bucket,
             volume_id,
             num_nvme_disks,
-            bench,
-        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, bench)?,
+            meta_stack_testing,
+        } => nss_server::bootstrap(&bucket, &volume_id, num_nvme_disks, meta_stack_testing)?,
         Service::RootServer {
             primary_instance_id,
             secondary_instance_id,

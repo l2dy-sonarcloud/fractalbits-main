@@ -101,7 +101,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         autoDeleteObjects: true,                  // Empty bucket before deletion
       });
 
-      const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1 --bench`;
+      const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1 --meta_stack_testing`;
       instance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
 
       // Attach volume
@@ -111,7 +111,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         volumeId: ebsVolume.volumeId,
       });
     } else {
-      instance.addUserData(createUserData(cpuArch, "bss_server --num_nvme_disks=1 --bench").render());
+      instance.addUserData(createUserData(cpuArch, "bss_server --num_nvme_disks=1 --meta_stack_testing").render());
     }
 
     new cdk.CfnOutput(this, 'instanceId', {
