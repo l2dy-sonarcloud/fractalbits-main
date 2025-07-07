@@ -18,6 +18,12 @@ pub trait Poolable: Unpin + Send + Sized + 'static {
     fn is_open(&self) -> bool;
 }
 
+impl<T: Poolable + Sync> Poolable for Arc<T> {
+    fn is_open(&self) -> bool {
+        self.deref().is_open()
+    }
+}
+
 pub trait Key: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
 impl<T> Key for T where T: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
 
