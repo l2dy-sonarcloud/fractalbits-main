@@ -7,7 +7,7 @@ use aws_sdk_s3::{
     Client as S3Client, Config as S3Config,
 };
 use axum::extract::FromRef;
-use bb8::{Pool, PooledConnection};
+
 use bucket_tables::Versioned;
 use bytes::Bytes;
 use config::{ArcConfig, S3CacheConfig};
@@ -17,7 +17,7 @@ use moka::future::Cache;
 use object_layout::ObjectLayout;
 use rpc_client_bss::{RpcClientBss, RpcErrorBss};
 use rpc_client_nss::RpcClientNss;
-use rpc_client_rss::RpcConnManagerRss;
+
 use slotmap_conn_pool::ConnPool;
 use std::{
     net::SocketAddr,
@@ -40,7 +40,7 @@ pub struct AppState {
     pub cache: Arc<Cache<String, Versioned<String>>>,
 
     rpc_clients_nss: ConnPool<Arc<RpcClientNss>, SocketAddr>,
-    rpc_clients_rss: Pool<RpcConnManagerRss>,
+    rpc_clients_rss: ConnPool<Arc<rpc_client_rss::RpcClientRss>, SocketAddr>,
 
     blob_client: Arc<BlobClient>,
     blob_deletion: Sender<(BlobId, usize)>,
@@ -102,21 +102,23 @@ impl AppState {
         rpc_clients_nss
     }
 
-    async fn new_rpc_clients_pool_rss(rss_addr: &str) -> Pool<RpcConnManagerRss> {
+    async fn new_rpc_clients_pool_rss(
+        rss_addr: &str,
+    ) -> ConnPool<Arc<rpc_client_rss::RpcClientRss>, SocketAddr> {
         let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(rss_addr)
             .await
             .expect("Failed to resolve RSS RPC server address")
             .collect();
 
         assert!(!resolved_addrs.is_empty());
-        let manager = RpcConnManagerRss::new(resolved_addrs);
-        let rpc_clients_rss = Pool::builder()
-            .max_size(Self::RSS_CONNECTION_POOL_SIZE)
-            .min_idle(Some(32))
-            .max_lifetime(None)
-            .build(manager)
-            .await
-            .expect("Failed to build rss rpc clients pool");
+        let rpc_clients_rss = ConnPool::new(Self::RSS_CONNECTION_POOL_SIZE as usize, None);
+        for addr in resolved_addrs {
+            if let Some(connecting) = rpc_clients_rss.connecting(&addr) {
+                let stream = TcpStream::connect(addr).await.unwrap();
+                let client = Arc::new(rpc_client_rss::RpcClientRss::new(stream).await.unwrap());
+                rpc_clients_rss.pooled(connecting, client);
+            }
+        }
 
         info!(
             "RSS RPC client pool initialized with {} connections.",
@@ -149,9 +151,23 @@ impl AppState {
         self.blob_client.clone()
     }
 
-    pub async fn get_rpc_client_rss(&self) -> PooledConnection<RpcConnManagerRss> {
+    pub async fn get_rpc_client_rss(
+        &self,
+    ) -> impl Deref<Target = Arc<rpc_client_rss::RpcClientRss>> {
         let start = Instant::now();
-        let res = self.rpc_clients_rss.get().await.unwrap();
+        let res = self
+            .rpc_clients_rss
+            .checkout(
+                self.config
+                    .rss_addr
+                    .split(',')
+                    .next()
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         histogram!("get_rpc_client_nanos", "type" => "rss")
             .record(start.elapsed().as_nanos() as f64);
         res
