@@ -4058,10 +4058,8 @@ dependencies = [
 name = "slotmap_conn_pool"
 version = "0.1.0"
 dependencies = [
- "pin-project-lite",
  "slotmap",
  "tokio",
- "tracing",
 ]
 
 [[package]]

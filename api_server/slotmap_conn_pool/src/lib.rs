@@ -7,7 +7,6 @@ use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{self, Poll};
-use std::time::{Duration, Instant};
 
 use slotmap::{new_key_type, SlotMap};
 use tokio::sync::oneshot;
@@ -27,18 +26,12 @@ impl<T: Poolable + Sync> Poolable for Arc<T> {
 pub trait Key: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
 impl<T> Key for T where T: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
 
-struct Idle<T> {
-    idle_at: Instant,
-    value: T,
-}
-
 struct ConnPoolInner<T, K: Key> {
-    connections: SlotMap<ConnectionKey, Idle<T>>,
+    connections: SlotMap<ConnectionKey, T>,
     host_to_conn_keys: HashMap<K, (Vec<ConnectionKey>, usize)>,
     max_connections_per_host: usize,
     connecting: HashSet<K>,
     waiters: HashMap<K, VecDeque<oneshot::Sender<T>>>,
-    timeout: Option<Duration>,
 }
 
 pub struct ConnPool<T, K: Key> {
@@ -54,7 +47,7 @@ impl<T, K: Key> Clone for ConnPool<T, K> {
 }
 
 impl<T: Poolable, K: Key> ConnPool<T, K> {
-    pub fn new(max_connections_per_host: usize, idle_timeout: Option<Duration>) -> Self {
+    pub fn new(max_connections_per_host: usize) -> Self {
         let inner = if max_connections_per_host > 0 {
             Some(Arc::new(Mutex::new(ConnPoolInner {
                 connections: SlotMap::with_key(),
@@ -62,7 +55,6 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
                 max_connections_per_host,
                 connecting: HashSet::new(),
                 waiters: HashMap::new(),
-                timeout: idle_timeout,
             })))
         } else {
             None
@@ -86,13 +78,12 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
                 .get(key)
                 .map_or(0, |(v, _)| v.len())
                 < inner_guard.max_connections_per_host
+                && inner_guard.connecting.insert(key.clone())
             {
-                if inner_guard.connecting.insert(key.clone()) {
-                    return Some(Connecting {
-                        key: key.clone(),
-                        pool: Arc::downgrade(pool_arc),
-                    });
-                }
+                return Some(Connecting {
+                    key: key.clone(),
+                    pool: Arc::downgrade(pool_arc),
+                });
             }
         }
         None
@@ -105,10 +96,7 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
         if let Some(pool) = connecting.pool.upgrade() {
             let mut inner = pool.lock().unwrap();
             let key = connecting.key.clone();
-            let conn_key = inner.connections.insert(Idle {
-                value: value.clone(),
-                idle_at: Instant::now(),
-            });
+            let conn_key = inner.connections.insert(value.clone());
             let (keys, _) = inner.host_to_conn_keys.entry(key.clone()).or_default();
             keys.push(conn_key);
             if let Some(waiters) = inner.waiters.remove(&key) {
@@ -160,10 +148,7 @@ impl<T: Poolable, K: Key> Drop for Pooled<T, K> {
             if value.is_open() {
                 if let Some(pool) = self.pool.upgrade() {
                     let mut inner = pool.lock().unwrap();
-                    let conn_key = inner.connections.insert(Idle {
-                        value,
-                        idle_at: Instant::now(),
-                    });
+                    let conn_key = inner.connections.insert(value);
                     inner
                         .host_to_conn_keys
                         .entry(self.key.clone())
@@ -230,17 +215,13 @@ impl<T: Poolable + Clone, K: Key> Future for Checkout<T, K> {
 
             let mut inner = pool_arc.lock().unwrap();
 
-            // Phase 1: Identify closed and idle connections.
+            // Phase 1: Identify closed connections.
             let mut to_remove_keys = Vec::new();
-            let now = Instant::now();
-            let idle_timeout = inner.timeout;
 
             if let Some((keys, _)) = inner.host_to_conn_keys.get(&self.key) {
                 for &conn_key in keys {
                     if let Some(conn) = inner.connections.get(conn_key) {
-                        if !conn.value.is_open()
-                            || idle_timeout.map_or(false, |t| now.duration_since(conn.idle_at) > t)
-                        {
+                        if !conn.is_open() {
                             to_remove_keys.push(conn_key);
                         }
                     } else {
@@ -272,7 +253,7 @@ impl<T: Poolable + Clone, K: Key> Future for Checkout<T, K> {
                 }
             }
             if let Some(conn_key) = conn_key {
-                let value = inner.connections[conn_key].value.clone();
+                let value = inner.connections[conn_key].clone();
                 return Poll::Ready(Ok(Pooled {
                     value: Some(value),
                     key: self.key.clone(),
@@ -295,6 +276,7 @@ impl<T: Poolable + Clone, K: Key> Future for Checkout<T, K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[derive(Clone, Debug, PartialEq)]
     struct MockConnection {
@@ -317,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_checkout_and_pool() {
-        let pool = ConnPool::<MockConnection, MockKey>::new(1, Some(Duration::from_secs(10)));
+        let pool = ConnPool::<MockConnection, MockKey>::new(1);
 
         let key = MockKey("foo".to_string());
         let p = pool.clone();
@@ -337,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_round_robin() {
-        let pool = ConnPool::<MockConnection, MockKey>::new(2, Some(Duration::from_secs(10)));
+        let pool = ConnPool::<MockConnection, MockKey>::new(2);
 
         let key = MockKey("foo".to_string());
         let key_for_conn1 = key.clone();
@@ -360,7 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_cleanup() {
-        let pool = ConnPool::<MockConnection, MockKey>::new(2, Some(Duration::from_secs(10)));
+        let pool = ConnPool::<MockConnection, MockKey>::new(2);
 
         let key = MockKey("foo".to_string());
         let p = pool.clone();
@@ -394,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_max_connections() {
-        let pool = ConnPool::<MockConnection, MockKey>::new(1, Some(Duration::from_secs(10)));
+        let pool = ConnPool::<MockConnection, MockKey>::new(1);
 
         let key = MockKey("foo".to_string());
 
@@ -404,50 +386,6 @@ mod tests {
         assert!(
             pool.connecting(&key).is_none(),
             "Should not be able to create a new connection when at max capacity"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_idle_timeout() {
-        let pool = ConnPool::<MockConnection, MockKey>::new(1, Some(Duration::from_millis(10)));
-
-        let key = MockKey("foo".to_string());
-
-        // Pool a connection
-        let conn1 = pool.connecting(&key).unwrap();
-        pool.pooled(conn1, mock_conn(1));
-
-        // Checkout and immediately drop to return to pool
-        let _ = pool.checkout(key.clone()).await.unwrap();
-
-        // Wait longer than the idle timeout
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Try to checkout again. The old connection should have timed out.
-        // We expect a new connection to be created, so we'll simulate that.
-        let p = pool.clone();
-        let key_for_spawn = key.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                if let Some(connecting) = p.connecting(&key_for_spawn) {
-                    p.pooled(connecting, mock_conn(2));
-                    break;
-                }
-            }
-        });
-
-        let p2 = pool.checkout(key.clone()).await.unwrap();
-        assert_eq!(
-            p2.id, 2,
-            "Old connection should have timed out, new one should be created"
-        );
-
-        let inner = pool.inner.as_ref().unwrap().lock().unwrap();
-        assert_eq!(
-            inner.connections.len(),
-            1,
-            "Only one connection should be in the pool after timeout and new connection"
         );
     }
 }

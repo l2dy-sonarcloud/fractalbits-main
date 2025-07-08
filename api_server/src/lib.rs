@@ -53,8 +53,8 @@ impl FromRef<Arc<AppState>> for ArcConfig {
 }
 
 impl AppState {
-    const NSS_CONNECTION_POOL_SIZE: u32 = 64;
-    const RSS_CONNECTION_POOL_SIZE: u32 = 64;
+    const NSS_CONNECTION_POOL_SIZE: usize = 64;
+    const RSS_CONNECTION_POOL_SIZE: usize = 64;
 
     pub async fn new(config: ArcConfig) -> Self {
         let rpc_clients_nss = Self::new_rpc_clients_pool_nss(&config.nss_addr).await;
@@ -86,7 +86,7 @@ impl AppState {
             .collect();
 
         assert!(!resolved_addrs.is_empty());
-        let rpc_clients_nss = ConnPool::new(Self::NSS_CONNECTION_POOL_SIZE as usize, None);
+        let rpc_clients_nss = ConnPool::new(Self::NSS_CONNECTION_POOL_SIZE);
         for addr in resolved_addrs {
             if let Some(connecting) = rpc_clients_nss.connecting(&addr) {
                 let stream = TcpStream::connect(addr).await.unwrap();
@@ -111,7 +111,7 @@ impl AppState {
             .collect();
 
         assert!(!resolved_addrs.is_empty());
-        let rpc_clients_rss = ConnPool::new(Self::RSS_CONNECTION_POOL_SIZE as usize, None);
+        let rpc_clients_rss = ConnPool::new(Self::RSS_CONNECTION_POOL_SIZE);
         for addr in resolved_addrs {
             if let Some(connecting) = rpc_clients_rss.connecting(&addr) {
                 let stream = TcpStream::connect(addr).await.unwrap();
@@ -184,7 +184,7 @@ pub struct BlobClient {
 }
 
 impl BlobClient {
-    const BSS_CONNECTION_POOL_SIZE: u32 = 64;
+    const BSS_CONNECTION_POOL_SIZE: usize = 64;
 
     pub async fn new(
         bss_addr: &str,
@@ -197,7 +197,7 @@ impl BlobClient {
             .collect();
 
         assert!(!resolved_addrs.is_empty());
-        let clients_bss = ConnPool::new(Self::BSS_CONNECTION_POOL_SIZE as usize, None);
+        let clients_bss = ConnPool::new(Self::BSS_CONNECTION_POOL_SIZE);
         for addr in resolved_addrs {
             if let Some(connecting) = clients_bss.connecting(&addr) {
                 let stream = TcpStream::connect(addr).await.unwrap();
