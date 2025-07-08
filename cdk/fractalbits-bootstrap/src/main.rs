@@ -153,6 +153,9 @@ fn main() -> CmdResult {
         Service::BenchClient {} => bench_client::bootstrap()?,
     }
 
-    run_cmd!(touch $CLOUD_INIT_DONE_FILE)?;
+    run_cmd! {
+        touch $BOOTSTRAP_DONE_FILE;
+        info "fractalbits-bootstrap is done";
+    }?;
     Ok(())
 }

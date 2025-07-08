@@ -13,18 +13,19 @@ pub fn bootstrap(
         "warp", // for e2e benchmark testing
     ])?;
     create_config(bucket_name, bss_ip, nss_ip, rss_ip)?;
-    for ip in [bss_ip, rss_ip, nss_ip] {
-        info!("Waiting for node with ip {ip} to be ready");
+    for (role, ip) in [("bss", bss_ip), ("rss", rss_ip), ("nss", nss_ip)] {
+        info!("Waiting for {role} node with ip {ip} to be ready");
         while run_cmd!(nc -z $ip 8088).is_err() {
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
+        info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
     }
 
     if with_bench_client {
         run_cmd!(echo "127.0.0.1   local-service-endpoint" >>/etc/hosts)?;
         bench_client::bootstrap()?;
         // Also try to download tools for micro-benchmarking
-        download_binaries(&["rewrk_rpc", "fbs", "testing_art"])?;
+        download_binaries(&["rewrk_rpc", "fbs", "test_art"])?;
         // Testing data for bss-rpc
         xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
         // Testing data for bss-rpc

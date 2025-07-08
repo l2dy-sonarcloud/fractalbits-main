@@ -58,7 +58,7 @@ fn wait_for_ssm_ready(instance_id: &str) {
     let mut attempt = 0;
     loop {
         attempt += 1;
-        let result = run_cmd_with_ssm(instance_id, &format!("test -f {CLOUD_INIT_DONE_FILE}"));
+        let result = run_cmd_with_ssm(instance_id, &format!("test -f {BOOTSTRAP_DONE_FILE}"));
         match result {
             Ok(()) => break,
             _ => {
