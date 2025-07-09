@@ -1,6 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use std::collections::HashMap;
 use std::io::{self};
+use std::net::SocketAddr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use thiserror::Error;
@@ -159,6 +160,14 @@ impl RpcClient {
 }
 
 impl Poolable for RpcClient {
+    type AddrKey = SocketAddr;
+    type Error = Box<dyn std::error::Error + Send + Sync>; // Using Box<dyn Error> for simplicity
+
+    async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
+        let stream = TcpStream::connect(addr_key).await.unwrap();
+        Ok(RpcClient::new(stream).await.unwrap().into())
+    }
+
     fn is_open(&self) -> bool {
         self.tasks_running()
     }
