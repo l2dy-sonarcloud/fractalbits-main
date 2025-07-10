@@ -9,7 +9,7 @@ rpc_client_bss.workspace = true
 rpc_client_rss.workspace = true
 bucket_tables.workspace = true
 kv_client_traits.workspace = true
-slotmap_conn_pool = { path = "./slotmap_conn_pool" }
+slotmap_conn_pool.workspace = true
 
 serde.workspace = true
 axum.workspace = true
