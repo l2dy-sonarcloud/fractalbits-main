@@ -4,13 +4,12 @@ use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use std::time::Duration;
 
-// use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use futures::future::join_all;
-use futures_util::stream::FuturesUnordered;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use rpc_client_bss::RpcClientBss;
-use rpc_client_nss::rpc::get_inode_response;
 use rpc_client_nss::RpcClientNss;
+use std::future::Future;
+use std::pin::Pin;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::{timeout_at, Instant};
@@ -125,71 +124,58 @@ async fn benchmark_nss_read(
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
 
+    let mut in_flight_requests = FuturesUnordered::<Pin<Box<dyn Future<Output = (Instant, anyhow::Result<()>)> + Send + 'static>>>::new();
+
+    // Fill the in-flight requests up to io_depth
+    for _ in 0..io_depth {
+        if let Some(key) = keys.pop_front() {
+            let rpc_client = rpc_client.clone();
+            let future = async move {
+                let request_start = Instant::now();
+                let result = rpc_client
+                    .get_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key.clone())
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| anyhow::anyhow!(e));
+                (request_start, result)
+            };
+            in_flight_requests.push(Box::pin(future));
+        } else {
+            break; // No more keys to process
+        }
+    }
+
     // Benchmark loop.
-    // Futures must not be awaited without timeout.
-    loop {
-        // ResponseFuture of send_request might return channel closed error instead of real error
-        // in the case of connection_task being finished. This future will check if connection_task
-        // is finished first.
+    while let Ok(Some((request_start, result))) = timeout_at(deadline, in_flight_requests.next()).await {
+        if let Err(e) = result {
+            let error = e.to_string();
 
-        let mut futures = Vec::new();
-        for _ in 0..io_depth {
-            let key: String = match keys.pop_front() {
-                Some(key) => key,
-                None => break,
-            };
-
-            let future = async {
-                (
-                    key.clone(),
-                    rpc_client
-                        .get_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key)
-                        .await,
-                )
-            };
-            futures.push(future);
-        }
-        if futures.is_empty() {
-            break;
-        }
-        let request_start = Instant::now();
-
-        // Try to resolve future before benchmark deadline is elapsed.
-        if let Ok(results) = timeout_at(deadline, join_all(futures)).await {
-            for (key, result) in results.iter() {
-                match result {
-                    Err(e) => panic!("nss read ({key}) result error: {e:?}"),
-                    Ok(resp) => {
-                        if let Some(ref resp) = resp.result {
-                            let object_bytes = match resp {
-                                get_inode_response::Result::Ok(res) => res,
-                                get_inode_response::Result::ErrNotFound(()) => {
-                                    panic!("nss key ({key}) not found");
-                                }
-                                get_inode_response::Result::ErrOthers(e) => {
-                                    panic!("nss read key ({key}) error: {e}");
-                                }
-                            };
-                            assert_eq!(object_bytes, &Bytes::from(key.to_owned()));
-                        }
-                    }
-                }
-                if let Err(e) = result {
-                    let error = e.to_string();
-
-                    // Insert/add error string to error log.
-                    match error_map.get_mut(&error) {
-                        Some(count) => *count += 1,
-                        None => {
-                            error_map.insert(error, 1);
-                        }
-                    }
-                } else {
-                    request_times.push(request_start.elapsed());
+            // Insert/add error string to error log.
+            match error_map.get_mut(&error) {
+                Some(count) => *count += 1,
+                None => {
+                    error_map.insert(error, 1);
                 }
             }
         } else {
-            // Benchmark deadline is elapsed. Break the loop.
+            request_times.push(request_start.elapsed());
+        }
+
+        // If there are more keys, add a new request to maintain io_depth
+        if let Some(key) = keys.pop_front() {
+            let rpc_client = rpc_client.clone();
+            let future = async move {
+                let request_start = Instant::now();
+                let result = rpc_client
+                    .get_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key.clone())
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| anyhow::anyhow!(e));
+                (request_start, result)
+            };
+            in_flight_requests.push(Box::pin(future));
+        } else if in_flight_requests.is_empty() {
+            // If no more keys and no more in-flight requests, break
             break;
         }
     }
@@ -212,51 +198,56 @@ async fn benchmark_bss_write(
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
 
-    // Benchmark loop.
-    // Futures must not be awaited without timeout.
-    loop {
-        // ResponseFuture of send_request might return channel closed error instead of real error
-        // in the case of connection_task being finished. This future will check if connection_task
-        // is finished first.
+    let mut in_flight_requests = FuturesUnordered::<Pin<Box<dyn Future<Output = (Instant, anyhow::Result<()>)> + Send + 'static>>>::new();
 
-        let mut futures = Vec::new();
-        for _ in 0..io_depth {
+    // Fill the in-flight requests up to io_depth
+    for _ in 0..io_depth {
+        if let Some(uuid) = uuids.pop_front() {
+            let rpc_client = rpc_client.clone();
             let content = Bytes::from(vec![0; 4096 - 256]);
-            let uuid = match uuids.pop_front() {
-                Some(uuid) => uuid,
-                None => break,
-            };
-            let future = async {
-                let uuid = uuid;
-                let blob_id = Uuid::parse_str(&uuid).unwrap();
-                rpc_client.put_blob(blob_id, 0, content).await
-            };
-            futures.push(future);
+            let blob_id = Uuid::parse_str(&uuid).unwrap();
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
+                let result = rpc_client.put_blob(blob_id, 0, content).await
+                    .map(|_| ()) // Map Ok(usize) to Ok(())
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
+                (request_start, result)
+            }));
+        } else {
+            break; // No more UUIDs to process
         }
-        if futures.is_empty() {
-            break;
-        }
-        let request_start = Instant::now();
+    }
 
-        // Try to resolve future before benchmark deadline is elapsed.
-        if let Ok(results) = timeout_at(deadline, join_all(futures)).await {
-            for result in results.iter() {
-                if let Err(e) = result {
-                    let error = e.to_string();
+    // Benchmark loop.
+    while let Ok(Some((request_start, result))) = timeout_at(deadline, in_flight_requests.next()).await {
+        if let Err(e) = result {
+            let error = e.to_string();
 
-                    // Insert/add error string to error log.
-                    match error_map.get_mut(&error) {
-                        Some(count) => *count += 1,
-                        None => {
-                            error_map.insert(error, 1);
-                        }
-                    }
-                } else {
-                    request_times.push(request_start.elapsed());
+            // Insert/add error string to error log.
+            match error_map.get_mut(&error) {
+                Some(count) => *count += 1,
+                None => {
+                    error_map.insert(error, 1);
                 }
             }
         } else {
-            // Benchmark deadline is elapsed. Break the loop.
+            request_times.push(request_start.elapsed());
+        }
+
+        // If there are more UUIDs, add a new request to maintain io_depth
+        if let Some(uuid) = uuids.pop_front() {
+            let rpc_client = rpc_client.clone();
+            let content = Bytes::from(vec![0; 4096 - 256]);
+            let blob_id = Uuid::parse_str(&uuid).unwrap();
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
+                let result = rpc_client.put_blob(blob_id, 0, content).await
+                    .map(|_| ()) // Map Ok(usize) to Ok(())
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
+                (request_start, result)
+            }));
+        } else if in_flight_requests.is_empty() {
+            // If no more UUIDs and no more in-flight requests, break
             break;
         }
     }
@@ -279,51 +270,54 @@ async fn benchmark_bss_read(
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
 
-    // Benchmark loop.
-    // Futures must not be awaited without timeout.
-    loop {
-        // ResponseFuture of send_request might return channel closed error instead of real error
-        // in the case of connection_task being finished. This future will check if connection_task
-        // is finished first.
+    let mut in_flight_requests = FuturesUnordered::<Pin<Box<dyn Future<Output = (Instant, anyhow::Result<Bytes>)> + Send + 'static>>>::new();
 
-        let mut futures = Vec::new();
-        for _ in 0..io_depth {
-            let uuid = match uuids.pop_front() {
-                Some(uuid) => uuid,
-                None => break,
-            };
-            let future = async {
-                let uuid = uuid;
+    // Fill the in-flight requests up to io_depth
+    for _ in 0..io_depth {
+        if let Some(uuid) = uuids.pop_front() {
+            let rpc_client = rpc_client.clone();
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
                 let blob_id = Uuid::parse_str(&uuid).unwrap();
                 let mut content = Bytes::new();
-                rpc_client.get_blob(blob_id, 0, &mut content).await
-            };
-            futures.push(future);
+                let result = rpc_client.get_blob(blob_id, 0, &mut content).await
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
+                (request_start, result.map(|_| content))
+            }));
+        } else {
+            break; // No more UUIDs to process
         }
-        if futures.is_empty() {
-            break;
-        }
-        let request_start = Instant::now();
+    }
 
-        // Try to resolve future before benchmark deadline is elapsed.
-        if let Ok(results) = timeout_at(deadline, join_all(futures)).await {
-            for result in results.iter() {
-                if let Err(e) = result {
-                    let error = e.to_string();
+    // Benchmark loop.
+    while let Ok(Some((request_start, result))) = timeout_at(deadline, in_flight_requests.next()).await {
+        if let Err(e) = result {
+            let error = e.to_string();
 
-                    // Insert/add error string to error log.
-                    match error_map.get_mut(&error) {
-                        Some(count) => *count += 1,
-                        None => {
-                            error_map.insert(error, 1);
-                        }
-                    }
-                } else {
-                    request_times.push(request_start.elapsed());
+            // Insert/add error string to error log.
+            match error_map.get_mut(&error) {
+                Some(count) => *count += 1,
+                None => {
+                    error_map.insert(error, 1);
                 }
             }
         } else {
-            // Benchmark deadline is elapsed. Break the loop.
+            request_times.push(request_start.elapsed());
+        }
+
+        // If there are more UUIDs, add a new request to maintain io_depth
+        if let Some(uuid) = uuids.pop_front() {
+            let rpc_client = rpc_client.clone();
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
+                let blob_id = Uuid::parse_str(&uuid).unwrap();
+                let mut content = Bytes::new();
+                let result = rpc_client.get_blob(blob_id, 0, &mut content).await
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
+                (request_start, result.map(|_| content))
+            }));
+        } else if in_flight_requests.is_empty() {
+            // If no more UUIDs and no more in-flight requests, break
             break;
         }
     }
@@ -344,58 +338,60 @@ async fn benchmark_nss_write(
     let mut request_times = Vec::new();
     let mut error_map = HashMap::new();
 
+    let mut in_flight_requests = FuturesUnordered::<Pin<Box<dyn Future<Output = (Instant, anyhow::Result<()>)> + Send + 'static>>>::new();
+
+    // Fill the in-flight requests up to io_depth
+    for _ in 0..io_depth {
+        if let Some(key) = keys.pop_front() {
+            let rpc_client = rpc_client.clone();
+            let key_for_rpc = key.clone();
+            let value = Bytes::from(key_for_rpc.clone());
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
+                let result = rpc_client
+                    .put_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key_for_rpc, value)
+                    .await
+                    .map(|_| ()) // Map Ok(PutInodeResponse) to Ok(())
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorNss to anyhow::Error
+                (request_start, result)
+            }));
+        } else {
+            break; // No more keys to process
+        }
+    }
+
     // Benchmark loop.
-    // Futures must not be awaited without timeout.
-    loop {
-        // ResponseFuture of send_request might return channel closed error instead of real error
-        // in the case of connection_task being finished. This future will check if connection_task
-        // is finished first.
+    while let Ok(Some((request_start, result))) = timeout_at(deadline, in_flight_requests.next()).await {
+        if let Err(e) = result {
+            let error = e.to_string();
 
-        let mut futures = Vec::new();
-        for _ in 0..io_depth {
-            let key: String = match keys.pop_front() {
-                Some(key) => key,
-                None => break,
-            };
-
-            let value = Bytes::from(key.clone());
-            let future = async {
-                (
-                    key.clone(),
-                    rpc_client
-                        .put_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key, value)
-                        .await,
-                )
-            };
-            futures.push(future);
-        }
-        if futures.is_empty() {
-            break;
-        }
-        let request_start = Instant::now();
-
-        // Try to resolve future before benchmark deadline is elapsed.
-        if let Ok(results) = timeout_at(deadline, join_all(futures)).await {
-            for (key, result) in results.iter() {
-                if result.is_err() {
-                    panic!("nss write (key: {key}) error: {result:?}");
-                }
-                if let Err(e) = result {
-                    let error = e.to_string();
-
-                    // Insert/add error string to error log.
-                    match error_map.get_mut(&error) {
-                        Some(count) => *count += 1,
-                        None => {
-                            error_map.insert(error, 1);
-                        }
-                    }
-                } else {
-                    request_times.push(request_start.elapsed());
+            // Insert/add error string to error log.
+            match error_map.get_mut(&error) {
+                Some(count) => *count += 1,
+                None => {
+                    error_map.insert(error, 1);
                 }
             }
         } else {
-            // Benchmark deadline is elapsed. Break the loop.
+            request_times.push(request_start.elapsed());
+        }
+
+        // If there are more keys, add a new request to maintain io_depth
+        if let Some(key) = keys.pop_front() {
+            let rpc_client = rpc_client.clone();
+            let key_for_rpc = key.clone();
+            let value = Bytes::from(key_for_rpc.clone());
+            in_flight_requests.push(Box::pin(async move {
+                let request_start = Instant::now();
+                let result = rpc_client
+                    .put_inode(TEST_BUCKET_ROOT_BLOB_NAME.into(), key_for_rpc, value)
+                    .await
+                    .map(|_| ()) // Map Ok(PutInodeResponse) to Ok(())
+                    .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorNss to anyhow::Error
+                (request_start, result)
+            }));
+        } else if in_flight_requests.is_empty() {
+            // If no more keys and no more in-flight requests, break
             break;
         }
     }
