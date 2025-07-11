@@ -58,6 +58,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
       ],
     });
 

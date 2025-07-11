@@ -7,7 +7,7 @@ pub fn bootstrap(
     rss_ip: &str,
     with_bench_client: bool,
 ) -> CmdResult {
-    install_rpms(&["nmap-ncat", "perf"])?;
+    install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&[
         "api_server",
         "warp", // for e2e benchmark testing

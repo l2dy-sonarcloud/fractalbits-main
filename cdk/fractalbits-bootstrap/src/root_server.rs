@@ -12,6 +12,7 @@ pub fn bootstrap(
     volume_id: &str,
     for_bench: bool,
 ) -> CmdResult {
+    install_rpms(&["amazon-cloudwatch-agent", "perf"])?;
     download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
     run_cmd!($BIN_PATH/rss_admin api-key init-test)?;
 
