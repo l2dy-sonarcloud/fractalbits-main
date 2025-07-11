@@ -11,14 +11,8 @@ pub struct MessageHeader {
     /// This checksum is enough to uniquely identify a network message or prepare.
     checksum: u128,
 
-    // TODO(zig): When Zig supports u256 in extern-structs, merge this into `checksum`.
-    checksum_padding: u128,
-
     /// A checksum covering only the associated body after this header.
     checksum_body: u128,
-
-    // TODO(zig): When Zig supports u256 in extern-structs, merge this into `checksum_body`.
-    checksum_body_padding: u128,
 
     /// The cluster number binds intention into the header, so that a nss or api_server can indicate
     /// the cluster it believes it is speaking to, instead of accidentally talking to the wrong
@@ -50,17 +44,23 @@ pub struct MessageHeader {
     /// Blob Id
     pub blob_id: [u8; 16],
 
+    /// 4k aligned size (header included), to use for direct-io
+    pub align_size: u32,
+
     /// The version of the protocol implementation that originated this message.
     pub protocol: u16,
+
+    pub checksum_algo: u8,
 
     /// Reserved parts for padding
     // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
     // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
     // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
-    reserved0: [u8; 18],
+    reserved0: [u8; 13],
     reserved1: [u8; 32],
     reserved2: [u8; 32],
     reserved3: [u8; 32],
+    reserved4: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
