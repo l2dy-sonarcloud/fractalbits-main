@@ -52,7 +52,10 @@ enum Cmd {
     Nightly,
 
     #[clap(about = "Run precheckin tests")]
-    Precheckin,
+    Precheckin {
+        #[clap(long, long_help = "Run s3 api tests only")]
+        api_only: bool,
+    },
 
     #[clap(about = "Build the whole project")]
     Build {
@@ -159,7 +162,7 @@ fn main() -> CmdResult {
             cmd_build::build_bss_nss_server(build_mode)?;
             cmd_build::build_rewrk_rpc()?;
         }
-        Cmd::Precheckin => cmd_precheckin::run_cmd_precheckin()?,
+        Cmd::Precheckin { api_only } => cmd_precheckin::run_cmd_precheckin(api_only)?,
         Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,
         Cmd::Bench {
             service,

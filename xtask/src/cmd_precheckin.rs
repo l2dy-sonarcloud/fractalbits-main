@@ -1,6 +1,6 @@
 use crate::*;
 
-pub fn run_cmd_precheckin() -> CmdResult {
+pub fn run_cmd_precheckin(api_only: bool) -> CmdResult {
     cmd_service::stop_service(ServiceName::All)?;
 
     run_cmd! {
@@ -11,6 +11,10 @@ pub fn run_cmd_precheckin() -> CmdResult {
 
     cmd_service::create_dirs_for_bss_server()?;
     cmd_service::create_dirs_for_nss_server()?;
+    if api_only {
+        return run_s3_api_tests();
+    }
+
     cmd_service::start_minio_service()?;
     run_cmd! {
         cd data;

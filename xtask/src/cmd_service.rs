@@ -281,7 +281,7 @@ WorkingDirectory={pwd}/data
         sleep $minio_wait_secs;
         info "Creating s3 bucket (\"$bucket_name\") in minio ...";
         ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb $my_bucket >/dev/null;
+            aws s3 mb $my_bucket &>/dev/null;
     }?;
 
     let mut wait_new_buckets_secs = 0;
