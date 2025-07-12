@@ -7,6 +7,7 @@ import { createInstance, createUserData } from './ec2-utils';
 interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
   benchClientCount: number;
+  benchType?: "service_endpoint" | "internal" | "external" | null;
 }
 
 export class FractalbitsBenchVpcStack extends cdk.Stack {

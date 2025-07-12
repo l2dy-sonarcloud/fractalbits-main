@@ -23,7 +23,7 @@ pub fn bootstrap(
 
     if with_bench_client {
         run_cmd!(echo "127.0.0.1   local-service-endpoint" >>/etc/hosts)?;
-        bench_client::bootstrap()?;
+        bench_client::bootstrap(None)?;
         // Also try to download tools for micro-benchmarking
         download_binaries(&["rewrk_rpc", "fbs", "test_art"])?;
         // Testing data for bss-rpc

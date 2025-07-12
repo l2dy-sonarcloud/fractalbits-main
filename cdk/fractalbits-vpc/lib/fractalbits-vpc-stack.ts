@@ -10,7 +10,7 @@ import { createInstance, createUserData } from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
-  benchType?: "service_endpoint" | "internal" | null;
+  benchType?: "service_endpoint" | "internal" | "external" | null;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -81,6 +81,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
       allowAllOutbound: true,
     });
     privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(8088), 'Allow access to port 8088 from within VPC');
+    if (props.benchType == "external") {
+      // Allow incoming traffic on port 7761 for bench clients
+      privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(7761), 'Allow access to port 7761 from within VPC');
+    }
 
     const bucket = new s3.Bucket(this, 'Bucket', {
       // No bucketName provided – name will be auto-generated
@@ -124,9 +128,18 @@ export class FractalbitsVpcStack extends cdk.Stack {
       // { id: 'nss_server_secondary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type, sg: privateSg },
     ];
 
-    if (props.benchType === "internal") {
+    if (props.benchType === "internal" || props.benchType === "external") {
+      // Create bench_server instance
       const benchInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.LARGE);
       instanceConfigs.push({ id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
+
+      if (props.benchType === "external") {
+        // Create bench_client instance(s)
+        const benchInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.LARGE);
+        for (let i = 1; i <= props.numApiServers; i++) {
+          instanceConfigs.push({ id: `bench_client_${i}`, subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
+        }
+      }
     }
 
     for (let i = 1; i <= props.numApiServers; i++) {
@@ -139,7 +152,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     let nlb: elbv2.NetworkLoadBalancer | undefined;
-    if (props.benchType !== "internal") {
+    if (props.benchType !== "internal" && props.benchType !== "external") {
       // NLB for API servers
       nlb = new elbv2.NetworkLoadBalancer(this, 'ApiNLB', {
         vpc: this.vpc,
@@ -215,16 +228,36 @@ export class FractalbitsVpcStack extends cdk.Stack {
       });
     }
 
-    if (props.benchType === "internal") {
+    if (props.benchType === "internal" || props.benchType === "external") {
       const apiServerPrivateIps: string[] = [];
       for (let i = 1; i <= props.numApiServers; i++) {
         apiServerPrivateIps.push(instances[`api_server_${i}`].instancePrivateIp);
       }
 
-      const benchBootstrapOptions = `bench_server --client_ips=${apiServerPrivateIps.join(',')}`;
+      let benchServerBootstrapOptions: string;
+      if (props.benchType === "external") {
+        const benchClientPrivateIps: string[] = [];
+        for (let i = 1; i <= props.numApiServers; i++) {
+          benchClientPrivateIps.push(instances[`bench_client_${i}`].instancePrivateIp);
+        }
+        benchServerBootstrapOptions = `bench_server --client_ips=${benchClientPrivateIps.join(',')} --api_server_ips=${apiServerPrivateIps.join(',')}`;
+
+        for (let i = 1; i <= props.numApiServers; i++) {
+          const apiServerPrivateIp = apiServerPrivateIps[i - 1];
+          const benchClientBootstrapOptions = `bench_client --api_server_pair_ip=${apiServerPrivateIp}`;
+          instanceBootstrapOptions.push({
+            id: `bench_client_${i}`,
+            bootstrapOptions: benchClientBootstrapOptions
+          });
+        }
+      } else { // internal
+        let ips = apiServerPrivateIps.join(',');
+        benchServerBootstrapOptions = `bench_server --client_ips=${ips} --api_server_ips=${ips}`;
+      }
+
       instanceBootstrapOptions.push({
         id: 'bench_server',
-        bootstrapOptions: benchBootstrapOptions
+        bootstrapOptions: benchServerBootstrapOptions
       });
     }
 
@@ -249,6 +282,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
         value: instances['bench_server'].instanceId,
         description: 'EC2 instance bench_server ID',
       });
+    } else if (props.benchType === "external") {
+      for (let i = 1; i <= props.numApiServers; i++) {
+        new cdk.CfnOutput(this, `BenchClient_${i}_Id`, {
+          value: instances[`bench_client_${i}`].instanceId,
+          description: `EC2 instance bench_client_${i} ID`,
+        });
+      }
     }
 
     new cdk.CfnOutput(this, 'ApiNLBDnsName', {

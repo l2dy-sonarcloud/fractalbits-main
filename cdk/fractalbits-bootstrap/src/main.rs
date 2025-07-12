@@ -96,10 +96,20 @@ enum Service {
             long_help = "Comma separated list of client IPs"
         )]
         client_ips: Vec<String>,
+
+        #[clap(
+            long,
+            value_delimiter = ',',
+            long_help = "Comma separated list of api_server IPs"
+        )]
+        api_server_ips: Vec<String>,
     },
 
     #[clap(about = "Run on bench_client instance to benchmark fractalbits service(s)")]
-    BenchClient {},
+    BenchClient {
+        #[clap(long, long_help = "Api server pair ip address")]
+        api_server_pair_ip: Option<String>,
+    },
 }
 
 #[cmd_lib::main]
@@ -149,8 +159,9 @@ fn main() -> CmdResult {
         Service::BenchServer {
             service_endpoint,
             client_ips,
-        } => bench_server::bootstrap(service_endpoint, client_ips)?,
-        Service::BenchClient {} => bench_client::bootstrap()?,
+            api_server_ips,
+        } => bench_server::bootstrap(service_endpoint, client_ips, api_server_ips)?,
+        Service::BenchClient { api_server_pair_ip } => bench_client::bootstrap(api_server_pair_ip)?,
     }
 
     run_cmd! {

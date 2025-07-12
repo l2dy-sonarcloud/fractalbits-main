@@ -22,6 +22,7 @@ if (benchType === "service_endpoint") {
     env: {},
     serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
     benchClientCount: benchClientCount,
+    benchType: benchType,
   });
 
   new PeeringStack(app, 'PeeringStack', {
