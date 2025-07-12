@@ -4,7 +4,7 @@ use crate::Versioned;
 use kv_client_traits::KvClient;
 use metrics::counter;
 use moka::future::Cache;
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 pub trait Entry: serde::Serialize {
     fn key(&self) -> String;
@@ -16,16 +16,33 @@ pub trait TableSchema {
     type E: Entry;
 }
 
-pub struct Table<'a, C: KvClient, F: TableSchema> {
-    kv_client: &'a C,
+#[allow(async_fn_in_trait)]
+pub trait KvClientProvider {
+    type Error: std::error::Error;
+    async fn get_client(&self) -> impl KvClient<Error = Self::Error>;
+}
+
+impl<T: KvClientProvider + Sync> KvClientProvider for Arc<T> {
+    type Error = T::Error;
+
+    async fn get_client(&self) -> impl KvClient<Error = Self::Error> {
+        self.deref().get_client().await
+    }
+}
+
+pub struct Table<C: KvClientProvider, F: TableSchema> {
+    kv_client_provider: C,
     phantom: PhantomData<F>,
     cache: Option<Arc<Cache<String, Versioned<String>>>>,
 }
 
-impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
-    pub fn new(kv_client: &'a C, cache: Option<Arc<Cache<String, Versioned<String>>>>) -> Self {
+impl<C: KvClientProvider, F: TableSchema> Table<C, F> {
+    pub fn new(
+        kv_client_provider: C,
+        cache: Option<Arc<Cache<String, Versioned<String>>>>,
+    ) -> Self {
         Self {
-            kv_client,
+            kv_client_provider,
             cache,
             phantom: PhantomData,
         }
@@ -36,7 +53,9 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
         let data: String = serde_json::to_string(&e.data).unwrap();
         let versioned_data: Versioned<String> = (e.version, data).into();
         match self
-            .kv_client
+            .kv_client_provider
+            .get_client()
+            .await
             .put(full_key.clone(), versioned_data.clone())
             .await
         {
@@ -66,7 +85,9 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
         let extra_data: String = serde_json::to_string(&extra.data).unwrap();
         let extra_versioned_data: Versioned<String> = (extra.version, extra_data.clone()).into();
         match self
-            .kv_client
+            .kv_client_provider
+            .get_client()
+            .await
             .put_with_extra(
                 full_key.clone(),
                 versioned_data.clone(),
@@ -107,7 +128,12 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
             }
         }
 
-        let json = self.kv_client.get(full_key).await?;
+        let json = self
+            .kv_client_provider
+            .get_client()
+            .await
+            .get(full_key)
+            .await?;
         Ok((
             json.version,
             serde_json::from_slice(json.data.as_bytes()).unwrap(),
@@ -120,7 +146,12 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
         <F as TableSchema>::E: for<'s> serde::Deserialize<'s>,
     {
         let prefix = Self::get_prefix(F::TABLE_NAME);
-        let kvs = self.kv_client.list(prefix).await?;
+        let kvs = self
+            .kv_client_provider
+            .get_client()
+            .await
+            .list(prefix)
+            .await?;
         Ok(kvs
             .iter()
             .map(|x| serde_json::from_slice(x.as_bytes()).unwrap())
@@ -129,7 +160,13 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
 
     pub async fn delete(&self, e: &F::E) -> Result<(), C::Error> {
         let full_key = Self::get_full_key(F::TABLE_NAME, &e.key());
-        match self.kv_client.delete(full_key.clone()).await {
+        match self
+            .kv_client_provider
+            .get_client()
+            .await
+            .delete(full_key.clone())
+            .await
+        {
             Ok(()) => {
                 if let Some(ref cache) = self.cache {
                     cache.invalidate(&full_key).await;
@@ -153,7 +190,9 @@ impl<'a, C: KvClient, F: TableSchema> Table<'a, C, F> {
         let extra_data: String = serde_json::to_string(&extra.data).unwrap();
         let extra_versioned_data: Versioned<String> = (extra.version, extra_data.clone()).into();
         match self
-            .kv_client
+            .kv_client_provider
+            .get_client()
+            .await
             .delete_with_extra(
                 full_key.clone(),
                 extra_full_key.clone(),

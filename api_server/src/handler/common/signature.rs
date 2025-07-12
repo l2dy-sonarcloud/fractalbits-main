@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use body::ReqBody;
 use bucket_tables::{api_key_table::ApiKey, Versioned};
 use chrono::{DateTime, Utc};
@@ -56,11 +58,11 @@ pub struct VerifiedRequest {
 }
 
 pub async fn verify_request(
-    app: &AppState,
+    app: Arc<AppState>,
     mut req: Request<Body>,
     auth: &Authentication,
 ) -> Result<VerifiedRequest, Error> {
-    let checked_signature = payload::check_payload_signature(app, auth, &mut req).await?;
+    let checked_signature = payload::check_payload_signature(app.clone(), auth, &mut req).await?;
 
     let request =
         streaming::parse_streaming_body(req, &checked_signature, &app.config.region, "s3")?;

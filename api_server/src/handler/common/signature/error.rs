@@ -39,3 +39,9 @@ pub enum Error {
     #[error("Other: {0}")]
     Other(String),
 }
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for Error {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Error::Other(err.to_string())
+    }
+}

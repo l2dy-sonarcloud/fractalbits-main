@@ -872,3 +872,10 @@ impl From<axum::http::Error> for S3Error {
         Self::InternalError
     }
 }
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for S3Error {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        tracing::error!("box error: {}", err);
+        S3Error::InternalError
+    }
+}

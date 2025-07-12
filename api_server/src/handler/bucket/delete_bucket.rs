@@ -8,7 +8,7 @@ use bucket_tables::{
     Versioned,
 };
 use rpc_client_nss::rpc::delete_root_inode_response;
-use rpc_client_rss::{RpcClientRss, RpcErrorRss};
+use rpc_client_rss::RpcErrorRss;
 
 use crate::handler::{common::s3_error::S3Error, Request};
 use crate::AppState;
@@ -47,12 +47,10 @@ pub async fn delete_bucket_handler(
 
     let retry_times = 10;
     for i in 0..retry_times {
-        let rpc_client_rss = app.checkout_rpc_client_rss().await;
-        let bucket_table: Table<RpcClientRss, BucketTable> =
-            Table::new(&rpc_client_rss, Some(app.cache.clone()));
-
-        let api_key_table: Table<RpcClientRss, ApiKeyTable> =
-            Table::new(&rpc_client_rss, Some(app.cache.clone()));
+        let bucket_table: Table<Arc<AppState>, BucketTable> =
+            Table::new(app.clone(), Some(app.cache.clone()));
+        let api_key_table: Table<Arc<AppState>, ApiKeyTable> =
+            Table::new(app.clone(), Some(app.cache.clone()));
         let mut api_key = api_key_table.get(api_key_id.clone(), false).await?;
         api_key.data.authorized_buckets.remove(&bucket.bucket_name);
         tracing::debug!(

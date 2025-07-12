@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::Query;
@@ -13,7 +14,6 @@ use bucket_tables::{
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use itertools::Itertools;
-use rpc_client_rss::RpcClientRss;
 use sha2::{Digest, Sha256};
 
 use crate::handler::common::{request::extract::Authentication, xheader};
@@ -31,7 +31,7 @@ pub struct CheckedSignature {
 }
 
 pub async fn check_payload_signature(
-    app: &AppState,
+    app: Arc<AppState>,
     auth: &Authentication,
     request: &mut Request<Body>,
 ) -> Result<CheckedSignature, Error> {
@@ -92,7 +92,7 @@ fn parse_x_amz_content_sha256(header: Option<&str>) -> Result<ContentSha256Heade
 }
 
 pub async fn check_standard_signature(
-    app: &AppState,
+    app: Arc<AppState>,
     authentication: &Authentication,
     request: &mut Request<Body>,
 ) -> Result<CheckedSignature, Error> {
@@ -126,7 +126,7 @@ pub async fn check_standard_signature(
 }
 
 async fn check_presigned_signature(
-    app: &AppState,
+    app: Arc<AppState>,
     authentication: &Authentication,
     request: &mut Request<Body>,
     query: &mut BTreeMap<String, String>,
@@ -271,15 +271,13 @@ pub fn canonical_request(
 }
 
 pub async fn verify_v4(
-    app: &AppState,
+    app: Arc<AppState>,
     auth: &Authentication,
     payload: &[u8],
 ) -> Result<Option<Versioned<ApiKey>>, Error> {
-    let rpc_client_rss = app.checkout_rpc_client_rss().await;
-    let api_key_table: Table<RpcClientRss, ApiKeyTable> =
-        Table::new(&rpc_client_rss, Some(app.cache.clone()));
+    let api_key_table: Table<Arc<AppState>, ApiKeyTable> =
+        Table::new(app.clone(), Some(app.cache.clone()));
     let key = api_key_table.get(auth.key_id.clone(), true).await?;
-    drop(rpc_client_rss);
 
     let mut hmac = signing_hmac(&auth.date, &key.data.secret_key, &app.config.region)
         .map_err(|_| Error::Other("Unable to build signing HMAC".into()))?;

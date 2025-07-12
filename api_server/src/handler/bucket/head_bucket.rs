@@ -32,7 +32,7 @@ pub async fn head_bucket_handler(
         }
     }
 
-    resolve_bucket(&app, bucket_name).await.map_err(|e| {
+    resolve_bucket(app, bucket_name).await.map_err(|e| {
         error!("head_bucket failed due to bucket resolving: {e}");
         e
     })?;

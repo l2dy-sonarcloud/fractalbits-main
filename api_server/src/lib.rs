@@ -8,7 +8,7 @@ use aws_sdk_s3::{
 };
 use axum::extract::FromRef;
 
-use bucket_tables::Versioned;
+use bucket_tables::{table::KvClientProvider, Versioned};
 use bytes::Bytes;
 use config::{ArcConfig, S3CacheConfig};
 use futures::stream::{self, StreamExt};
@@ -48,6 +48,14 @@ pub struct AppState {
 impl FromRef<Arc<AppState>> for ArcConfig {
     fn from_ref(state: &Arc<AppState>) -> Self {
         Self(state.config.0.clone())
+    }
+}
+
+impl KvClientProvider for AppState {
+    type Error = rpc_client_rss::RpcErrorRss;
+
+    async fn get_client(&self) -> impl kv_client_traits::KvClient<Error = Self::Error> {
+        self.checkout_rpc_client_rss().await
     }
 }
 

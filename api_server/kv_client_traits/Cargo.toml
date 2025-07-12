@@ -9,3 +9,4 @@ tracing.workspace = true
 tokio.workspace = true
 bytes.workspace = true
 rpc_client_rss.workspace = true
+async-trait = "0.1.80"

@@ -10,7 +10,7 @@ use bucket_tables::{
 };
 use bytes::Buf;
 use rpc_client_nss::rpc::create_root_inode_response;
-use rpc_client_rss::{RpcClientRss, RpcErrorRss};
+use rpc_client_rss::RpcErrorRss;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -89,9 +89,8 @@ pub async fn create_bucket_handler(
 
     let retry_times = 10;
     for i in 0..retry_times {
-        let rpc_client_rss = app.checkout_rpc_client_rss().await;
-        let bucket_table: Table<RpcClientRss, BucketTable> =
-            Table::new(&rpc_client_rss, Some(app.cache.clone()));
+        let bucket_table: Table<Arc<AppState>, BucketTable> =
+            Table::new(app.clone(), Some(app.cache.clone()));
         if bucket_table.get(bucket_name.clone(), false).await.is_ok() {
             return Err(S3Error::BucketAlreadyExists);
         }
@@ -104,8 +103,8 @@ pub async fn create_bucket_handler(
             .authorized_keys
             .insert(api_key_id.clone(), bucket_key_perm);
 
-        let api_key_table: Table<RpcClientRss, ApiKeyTable> =
-            Table::new(&rpc_client_rss, Some(app.cache.clone()));
+        let api_key_table: Table<Arc<AppState>, ApiKeyTable> =
+            Table::new(app.clone(), Some(app.cache.clone()));
         let mut api_key = api_key_table.get(api_key_id.clone(), false).await?;
         api_key
             .data
@@ -122,8 +121,12 @@ pub async fn create_bucket_handler(
             .put_with_extra::<ApiKeyTable>(&bucket, &api_key)
             .await
         {
-            Err(RpcErrorRss::Retry) => continue,
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                if matches!(e, RpcErrorRss::Retry) {
+                    continue;
+                }
+                return Err(e.into());
+            }
             Ok(()) => {
                 return Ok(Response::builder()
                     .header(header::LOCATION, format!("/{bucket_name}"))

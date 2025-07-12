@@ -15,14 +15,13 @@ use bucket_tables::{
     table::Table,
 };
 use metrics::histogram;
-use rpc_client_rss::{RpcClientRss, RpcErrorRss};
-use std::time::Instant;
+use rpc_client_rss::RpcErrorRss;
+use std::{sync::Arc, time::Instant};
 
-pub async fn resolve_bucket(app: &AppState, bucket_name: String) -> Result<Bucket, S3Error> {
+pub async fn resolve_bucket(app: Arc<AppState>, bucket_name: String) -> Result<Bucket, S3Error> {
     let start = Instant::now();
-    let rpc_client_rss = app.checkout_rpc_client_rss().await;
-    let bucket_table: Table<RpcClientRss, BucketTable> =
-        Table::new(&rpc_client_rss, Some(app.cache.clone()));
+    let cache = app.cache.clone();
+    let bucket_table: Table<Arc<AppState>, BucketTable> = Table::new(app, Some(cache));
     let duration = start.elapsed();
     match bucket_table.get(bucket_name, true).await {
         Ok(bucket) => {

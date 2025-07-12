@@ -2519,6 +2519,7 @@ dependencies = [
 name = "kv_client_traits"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes",
  "rpc_client_rss",
  "serde",
@@ -3604,6 +3605,7 @@ dependencies = [
 name = "rss_admin"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-sdk-dynamodb",
  "bucket_tables",

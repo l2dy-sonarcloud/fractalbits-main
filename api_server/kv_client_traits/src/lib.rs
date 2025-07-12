@@ -1,3 +1,6 @@
+use std::{ops::Deref, sync::Arc};
+
+use async_trait::async_trait;
 use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 
 #[derive(Clone)]
@@ -21,7 +24,7 @@ impl<T: Sized> From<(i64, T)> for Versioned<T> {
     }
 }
 
-#[allow(async_fn_in_trait)]
+#[async_trait]
 pub trait KvClient {
     type Error: std::error::Error;
     async fn put(&self, key: String, value: Versioned<String>) -> Result<(), Self::Error>;
@@ -43,6 +46,51 @@ pub trait KvClient {
     async fn list(&self, prefix: String) -> Result<Vec<String>, Self::Error>;
 }
 
+#[async_trait]
+impl<T: KvClient + Sync + Send> KvClient for Arc<T> {
+    type Error = T::Error;
+
+    async fn put(&self, key: String, value: Versioned<String>) -> Result<(), Self::Error> {
+        self.deref().put(key, value).await
+    }
+
+    async fn put_with_extra(
+        &self,
+        key: String,
+        value: Versioned<String>,
+        extra_key: String,
+        extra_value: Versioned<String>,
+    ) -> Result<(), Self::Error> {
+        self.deref()
+            .put_with_extra(key, value, extra_key, extra_value)
+            .await
+    }
+
+    async fn get(&self, key: String) -> Result<Versioned<String>, Self::Error> {
+        self.deref().get(key).await
+    }
+
+    async fn delete(&self, key: String) -> Result<(), Self::Error> {
+        self.deref().delete(key).await
+    }
+
+    async fn delete_with_extra(
+        &self,
+        key: String,
+        extra_key: String,
+        extra_value: Versioned<String>,
+    ) -> Result<(), Self::Error> {
+        self.deref()
+            .delete_with_extra(key, extra_key, extra_value)
+            .await
+    }
+
+    async fn list(&self, prefix: String) -> Result<Vec<String>, Self::Error> {
+        self.deref().list(prefix).await
+    }
+}
+
+#[async_trait]
 impl KvClient for RpcClientRss {
     type Error = RpcErrorRss;
     async fn put(&self, key: String, value: Versioned<String>) -> Result<(), Self::Error> {
