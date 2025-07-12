@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 slotmap.workspace = true
 tokio.workspace = true
+rand.workspace = true
