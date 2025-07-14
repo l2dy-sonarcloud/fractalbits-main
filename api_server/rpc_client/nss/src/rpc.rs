@@ -4,6 +4,7 @@ use crate::{
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message as PbMessage;
+use tracing::error;
 
 include!(concat!(env!("OUT_DIR"), "/nss_ops.rs"));
 
@@ -11,14 +12,15 @@ impl RpcClient {
     pub async fn put_inode(
         &self,
         root_blob_name: String,
-        mut key: String,
+        key: String,
         value: Bytes,
     ) -> Result<PutInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "put_inode");
-        key.push('\0');
+        let mut nss_key = key.clone();
+        nss_key.push('\0');
         let body = PutInodeRequest {
-            root_blob_name,
-            key,
+            root_blob_name: root_blob_name.clone(),
+            key: nss_key,
             value,
         };
 
@@ -34,7 +36,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="put_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: PutInodeResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -44,13 +50,14 @@ impl RpcClient {
     pub async fn get_inode(
         &self,
         root_blob_name: String,
-        mut key: String,
+        key: String,
     ) -> Result<GetInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "get_inode");
-        key.push('\0');
+        let mut nss_key = key.clone();
+        nss_key.push('\0');
         let body = GetInodeRequest {
-            root_blob_name,
-            key,
+            root_blob_name: root_blob_name.clone(),
+            key: nss_key,
         };
 
         let mut header = MessageHeader::default();
@@ -65,7 +72,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="get_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: GetInodeResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -86,9 +97,9 @@ impl RpcClient {
             start_after.push('\0');
         }
         let body = ListInodesRequest {
-            root_blob_name,
+            root_blob_name: root_blob_name.clone(),
             max_keys,
-            prefix,
+            prefix: prefix.clone(),
             delimiter,
             start_after,
             skip_mpu_parts,
@@ -106,7 +117,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="list_inodes", %root_blob_name, %prefix, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: ListInodesResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -116,13 +131,14 @@ impl RpcClient {
     pub async fn delete_inode(
         &self,
         root_blob_name: String,
-        mut key: String,
+        key: String,
     ) -> Result<DeleteInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "delete_inode");
-        key.push('\0');
+        let mut nss_key = key.clone();
+        nss_key.push('\0');
         let body = DeleteInodeRequest {
-            root_blob_name,
-            key,
+            root_blob_name: root_blob_name.clone(),
+            key: nss_key,
         };
 
         let mut header = MessageHeader::default();
@@ -137,7 +153,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="delete_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: DeleteInodeResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -149,7 +169,9 @@ impl RpcClient {
         bucket: String,
     ) -> Result<CreateRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "create_root_inode");
-        let body = CreateRootInodeRequest { bucket };
+        let body = CreateRootInodeRequest {
+            bucket: bucket.clone(),
+        };
 
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
@@ -163,7 +185,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="create_root_inode", %bucket, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: CreateRootInodeResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -175,7 +201,9 @@ impl RpcClient {
         root_blob_name: String,
     ) -> Result<DeleteRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "delete_root_inode");
-        let body = DeleteRootInodeRequest { root_blob_name };
+        let body = DeleteRootInodeRequest {
+            root_blob_name: root_blob_name.clone(),
+        };
 
         let mut header = MessageHeader::default();
         header.id = self.gen_request_id();
@@ -189,7 +217,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="delete_root_inode", %root_blob_name, error=?e, "nss rpc failed");
+                e
+            })?
             .body;
         let resp: DeleteRootInodeResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;

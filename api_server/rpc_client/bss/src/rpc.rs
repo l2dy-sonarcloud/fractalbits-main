@@ -4,6 +4,7 @@ use crate::{
     rpc_client::{InflightRpcGuard, Message, RpcClient, RpcError},
 };
 use bytes::Bytes;
+use tracing::error;
 use uuid::Uuid;
 
 impl RpcClient {
@@ -24,7 +25,11 @@ impl RpcClient {
         let msg_frame = MessageFrame::new(header, body);
         let resp = self
             .send_request(header.id, Message::Frame(msg_frame))
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(rpc="put_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                e
+            })?;
         Ok(resp.header.result as usize)
     }
 
@@ -45,7 +50,11 @@ impl RpcClient {
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp = self
             .send_request(header.id, Message::Frame(msg_frame))
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(rpc="get_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                e
+            })?;
         let size = resp.header.result;
         *body = resp.body;
         Ok(size as usize)
@@ -63,7 +72,11 @@ impl RpcClient {
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let _resp = self
             .send_request(header.id, Message::Frame(msg_frame))
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(rpc="delete_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                e
+            })?;
         Ok(())
     }
 }

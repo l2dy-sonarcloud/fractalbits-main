@@ -7,7 +7,7 @@ mod head;
 mod post;
 mod put;
 
-use metrics::{counter, gauge, histogram};
+use metrics::{counter, gauge, histogram, Gauge};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,8 +58,6 @@ pub async fn any_handler(
     request: http::Request<Body>,
 ) -> Response {
     let start = Instant::now();
-    gauge!("inflight_request").increment(1);
-
     let (mut parts, body) = request.into_parts();
     let ApiCommandFromQuery(api_cmd) = extract_or_return!(&mut parts, &app, ApiCommandFromQuery);
     let auth = extract_or_return!(&mut parts, &app, Authentication);
@@ -83,20 +81,20 @@ pub async fn any_handler(
                     error = ?e,
                     "failed to create endpoint"
                 );
-                gauge!("inflight_request").decrement(1);
                 return e.into_response_with_resource(&resource);
             }
             Ok(endpoint) => endpoint,
         };
 
     let endpoint_name = endpoint.as_str();
+    let gauge_guard = InflightRequestGuard::new(endpoint_name);
     let result = tokio::time::timeout(
         Duration::from_secs(app.config.request_timeout_seconds),
         any_handler_inner(app, bucket.clone(), key.clone(), auth, request, endpoint),
     )
     .await;
     let duration = start.elapsed();
-    gauge!("inflight_request").decrement(1);
+    drop(gauge_guard);
 
     let result = match result {
         Ok(result) => result,
@@ -109,7 +107,7 @@ pub async fn any_handler(
                 "request timed out"
             );
             counter!("request_timeout", "endpoint" => endpoint_name).increment(1);
-            return S3Error::RequestTimeout.into_response_with_resource(&resource);
+            return S3Error::InternalError.into_response_with_resource(&resource);
         }
     };
 
@@ -331,5 +329,23 @@ async fn delete_handler(
         DeleteEndpoint::DeleteObject => {
             delete::delete_object_handler(app, bucket, key, blob_deletion).await
         }
+    }
+}
+
+struct InflightRequestGuard {
+    gauge: Gauge,
+}
+
+impl InflightRequestGuard {
+    fn new(endpoint_name: &'static str) -> Self {
+        let gauge = gauge!("inflight_request", "endpoint" => endpoint_name);
+        gauge.increment(1.0);
+        Self { gauge }
+    }
+}
+
+impl Drop for InflightRequestGuard {
+    fn drop(&mut self) {
+        self.gauge.decrement(1.0);
     }
 }

@@ -33,7 +33,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="put", %key, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: PutResponse = PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
         let duration = start.elapsed();
@@ -90,7 +94,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="put", %key, %extra_key, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: PutWithExtraResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -133,7 +141,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="get", %key, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: GetResponse = PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
         let duration = start.elapsed();
@@ -175,7 +187,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="delete", %key, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: DeleteResponse = PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
         let duration = start.elapsed();
@@ -222,7 +238,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="delete_with_extra", %key, %extra_key, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: DeleteWithExtraResponse =
             PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
@@ -267,7 +287,11 @@ impl RpcClient {
 
         let resp_bytes = self
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
-            .await?
+            .await
+            .map_err(|e| {
+                error!(rpc="list", %prefix, error=?e, "rss rpc failed");
+                e
+            })?
             .body;
         let resp: ListResponse = PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
         let duration = start.elapsed();

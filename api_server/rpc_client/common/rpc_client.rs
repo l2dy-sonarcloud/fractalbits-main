@@ -146,11 +146,13 @@ impl RpcClient {
 
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(id, tx);
-        let res = rx.await.map_err(RpcError::OneshotRecvError);
-        if res.is_err() {
-            tracing::error!("oneshot error for id={id}");
-        }
-        res
+        let timeout_val = std::time::Duration::from_secs(5);
+        let result = tokio::time::timeout(timeout_val, rx).await;
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => return Err(RpcError::InternalResponseError("timeout".into())),
+        };
+        result.map_err(RpcError::OneshotRecvError)
     }
 
     pub fn gen_request_id(&self) -> u32 {
