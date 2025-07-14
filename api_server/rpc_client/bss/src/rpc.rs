@@ -16,7 +16,8 @@ impl RpcClient {
     ) -> Result<usize, RpcError> {
         let _guard = InflightRpcGuard::new("bss", "put_blob");
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.command = Command::PutBlob;
@@ -27,7 +28,7 @@ impl RpcClient {
             .send_request(header.id, Message::Frame(msg_frame))
             .await
             .map_err(|e| {
-                error!(rpc="put_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                error!(rpc="put_blob", %request_id, %blob_id, %block_number, error=?e, "bss rpc failed");
                 e
             })?;
         Ok(resp.header.result as usize)
@@ -41,7 +42,8 @@ impl RpcClient {
     ) -> Result<usize, RpcError> {
         let _guard = InflightRpcGuard::new("bss", "get_blob");
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.command = Command::GetBlob;
@@ -52,7 +54,7 @@ impl RpcClient {
             .send_request(header.id, Message::Frame(msg_frame))
             .await
             .map_err(|e| {
-                error!(rpc="get_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                error!(rpc="get_blob", %request_id, %blob_id, %block_number, error=?e, "bss rpc failed");
                 e
             })?;
         let size = resp.header.result;
@@ -63,7 +65,8 @@ impl RpcClient {
     pub async fn delete_blob(&self, blob_id: Uuid, block_number: u32) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("bss", "delete_blob");
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.command = Command::DeleteBlob;
@@ -74,7 +77,7 @@ impl RpcClient {
             .send_request(header.id, Message::Frame(msg_frame))
             .await
             .map_err(|e| {
-                error!(rpc="delete_blob", %blob_id, %block_number, error=?e, "bss rpc failed");
+                error!(rpc="delete_blob", %request_id, %blob_id, %block_number, error=?e, "bss rpc failed");
                 e
             })?;
         Ok(())

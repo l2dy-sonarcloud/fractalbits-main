@@ -25,7 +25,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::PutInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -38,7 +39,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="put_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                error!(rpc="put_inode", %request_id, %root_blob_name, %key, error=?e, "nss rpc failed");
                 e
             })?
             .body;
@@ -61,7 +62,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::GetInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -74,7 +76,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="get_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                error!(rpc="get_inode", %request_id, %root_blob_name, %key, error=?e, "nss rpc failed");
                 e
             })?
             .body;
@@ -106,7 +108,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::ListInodes;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -119,7 +122,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="list_inodes", %root_blob_name, %prefix, error=?e, "nss rpc failed");
+                error!(rpc="list_inodes", %request_id, %root_blob_name, %prefix, error=?e, "nss rpc failed");
                 e
             })?
             .body;
@@ -142,7 +145,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::DeleteInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -155,7 +159,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="delete_inode", %root_blob_name, %key, error=?e, "nss rpc failed");
+                error!(rpc="delete_inode", %request_id, %root_blob_name, %key, error=?e, "nss rpc failed");
                 e
             })?
             .body;
@@ -174,7 +178,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::CreateRootInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -187,7 +192,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="create_root_inode", %bucket, error=?e, "nss rpc failed");
+                error!(rpc="create_root_inode", %request_id, %bucket, error=?e, "nss rpc failed");
                 e
             })?
             .body;
@@ -206,7 +211,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::DeleteRootInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -219,7 +225,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="delete_root_inode", %root_blob_name, error=?e, "nss rpc failed");
+                error!(rpc="delete_root_inode", %request_id, %root_blob_name, error=?e, "nss rpc failed");
                 e
             })?
             .body;

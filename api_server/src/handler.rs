@@ -78,7 +78,7 @@ pub async fn any_handler(
                     %api_cmd,
                     %api_sig,
                     %client_addr,
-                    error = ?e,
+                    error=?e,
                     "failed to create endpoint"
                 );
                 return e.into_response_with_resource(&resource);
@@ -121,11 +121,11 @@ pub async fn any_handler(
             histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Err"))
                 .record(duration.as_nanos() as f64);
             tracing::error!(
+                endpoint=%endpoint_name,
                 %bucket,
                 %key,
                 %client_addr,
-                endpoint = %endpoint_name,
-                error = ?e,
+                error=?e,
                 "failed to handle request"
             );
             e.into_response_with_resource(&resource)

@@ -22,7 +22,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::Put;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -35,7 +36,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="put", %key, error=?e, "rss rpc failed");
+                error!(rpc="put", %request_id, %key, error=?e, "rss rpc failed");
                 e
             })?
             .body;
@@ -83,7 +84,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::PutWithExtra;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -96,7 +98,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="put", %key, %extra_key, error=?e, "rss rpc failed");
+                error!(rpc="put", %request_id, %key, %extra_key, error=?e, "rss rpc failed");
                 e
             })?
             .body;
@@ -130,7 +132,8 @@ impl RpcClient {
         let body = GetRequest { key: key.clone() };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::Get;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -143,7 +146,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="get", %key, error=?e, "rss rpc failed");
+                error!(rpc="get", %request_id, %key, error=?e, "rss rpc failed");
                 e
             })?
             .body;
@@ -176,7 +179,8 @@ impl RpcClient {
         let body = DeleteRequest { key: key.clone() };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::Delete;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -189,7 +193,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="delete", %key, error=?e, "rss rpc failed");
+                error!(rpc="delete", %request_id, %key, error=?e, "rss rpc failed");
                 e
             })?
             .body;
@@ -227,7 +231,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::DeleteWithExtra;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -240,7 +245,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="delete_with_extra", %key, %extra_key, error=?e, "rss rpc failed");
+                error!(rpc="delete_with_extra", %request_id, %key, %extra_key, error=?e, "rss rpc failed");
                 e
             })?
             .body;
@@ -276,7 +281,8 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        header.id = self.gen_request_id();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
         header.command = Command::List;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
@@ -289,7 +295,7 @@ impl RpcClient {
             .send_request(header.id, Message::Bytes(request_bytes.freeze()))
             .await
             .map_err(|e| {
-                error!(rpc="list", %prefix, error=?e, "rss rpc failed");
+                error!(rpc="list", %request_id, %prefix, error=?e, "rss rpc failed");
                 e
             })?
             .body;
