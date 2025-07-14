@@ -7,10 +7,10 @@ mod head;
 mod post;
 mod put;
 
-use metrics::histogram;
+use metrics::{counter, gauge, histogram};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::{AppState, BlobId};
 use axum::{
@@ -58,6 +58,7 @@ pub async fn any_handler(
     request: http::Request<Body>,
 ) -> Response {
     let start = Instant::now();
+    gauge!("inflight_request").increment(1);
 
     let (mut parts, body) = request.into_parts();
     let ApiCommandFromQuery(api_cmd) = extract_or_return!(&mut parts, &app, ApiCommandFromQuery);
@@ -82,29 +83,50 @@ pub async fn any_handler(
                     error = ?e,
                     "failed to create endpoint"
                 );
+                gauge!("inflight_request").decrement(1);
                 return e.into_response_with_resource(&resource);
             }
             Ok(endpoint) => endpoint,
         };
-    let endpoint_name = endpoint.as_str();
-    let result = any_handler_inner(app, bucket.clone(), key.clone(), auth, request, endpoint).await;
 
+    let endpoint_name = endpoint.as_str();
+    let result = tokio::time::timeout(
+        Duration::from_secs(app.config.request_timeout_seconds),
+        any_handler_inner(app, bucket.clone(), key.clone(), auth, request, endpoint),
+    )
+    .await;
     let duration = start.elapsed();
-    let endpoint = endpoint_name;
+    gauge!("inflight_request").decrement(1);
+
+    let result = match result {
+        Ok(result) => result,
+        Err(_) => {
+            tracing::error!(
+                %bucket,
+                %key,
+                %client_addr,
+                endpoint = %endpoint_name,
+                "request timed out"
+            );
+            counter!("request_timeout", "endpoint" => endpoint_name).increment(1);
+            return S3Error::RequestTimeout.into_response_with_resource(&resource);
+        }
+    };
+
     match result {
         Ok(response) => {
-            histogram!("request_duration_nanos", "status" => format!("{endpoint}_Ok"))
+            histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Ok"))
                 .record(duration.as_nanos() as f64);
             response
         }
         Err(e) => {
-            histogram!("request_duration_nanos", "status" => format!("{endpoint}_Err"))
+            histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Err"))
                 .record(duration.as_nanos() as f64);
             tracing::error!(
                 %bucket,
                 %key,
-                %endpoint,
                 %client_addr,
+                endpoint = %endpoint_name,
                 error = ?e,
                 "failed to handle request"
             );

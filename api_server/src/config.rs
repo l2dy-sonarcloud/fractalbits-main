@@ -17,6 +17,7 @@ pub struct Config {
     pub region: String,
     pub root_domain: String,
     pub with_metrics: bool,
+    pub request_timeout_seconds: u64,
 
     pub s3_cache: S3CacheConfig,
 }
@@ -51,7 +52,8 @@ impl Default for Config {
             region: "us-west-1".into(),
             root_domain: ".localhost".into(),
             s3_cache: S3CacheConfig::default(),
-            with_metrics: false,
+            with_metrics: true,
+            request_timeout_seconds: 5,
         }
     }
 }
