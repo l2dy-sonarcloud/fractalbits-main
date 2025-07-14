@@ -60,8 +60,8 @@ impl KvClientProvider for AppState {
 }
 
 impl AppState {
-    const NSS_CONNECTION_POOL_SIZE: usize = 64;
-    const RSS_CONNECTION_POOL_SIZE: usize = 64;
+    const NSS_CONNECTION_POOL_SIZE: usize = 4;
+    const RSS_CONNECTION_POOL_SIZE: usize = 4;
 
     pub async fn new(config: ArcConfig) -> Self {
         let rpc_clients_nss = Self::new_rpc_clients_pool_nss(config.nss_addr).await;
@@ -159,7 +159,7 @@ pub struct BlobClient {
 }
 
 impl BlobClient {
-    const BSS_CONNECTION_POOL_SIZE: usize = 64;
+    const BSS_CONNECTION_POOL_SIZE: usize = 4;
 
     pub async fn new(
         bss_addr: SocketAddr,
