@@ -331,7 +331,10 @@ async fn get_full_blob_stream(
     blob_client
         .get_blob(blob_id, 0, &mut first_block)
         .await
-        .map_err(S3Error::from)?;
+        .map_err(|e| {
+            tracing::error!(%blob_id, block_number=0, error=?e, "failed to get blob");
+            S3Error::from(e)
+        })?;
 
     if num_blocks == 1 {
         return Ok(Body::from(first_block));
@@ -443,4 +446,3 @@ fn parse_range_header(
     };
     Ok(range)
 }
-

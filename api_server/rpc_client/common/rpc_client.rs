@@ -175,7 +175,7 @@ impl RpcClient {
         let (tx, rx) = oneshot::channel();
         self.requests.write().await.insert(request_id, tx);
         gauge!("rpc_request_pending_in_resp_map", "type" => RPC_TYPE).increment(1.0);
-        let timeout_val = std::time::Duration::from_secs(5);
+        let timeout_val = std::time::Duration::from_secs(4); // TODO: align with s3 handler setting
         let result = tokio::time::timeout(timeout_val, rx).await;
         let result = match result {
             Ok(result) => result,
