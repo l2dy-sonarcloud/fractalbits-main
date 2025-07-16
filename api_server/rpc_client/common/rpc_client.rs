@@ -5,7 +5,7 @@ use std::io::{self};
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::io::AsRawFd;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
@@ -18,7 +18,7 @@ use tokio::{
         mpsc::{self, Receiver, Sender},
         oneshot, RwLock,
     },
-    task::JoinHandle,
+    task::JoinSet,
 };
 use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;
@@ -78,9 +78,10 @@ pub struct RpcClient {
     requests: Arc<RwLock<HashMap<u32, oneshot::Sender<MessageFrame>>>>,
     sender: Sender<Message>,
     next_id: AtomicU32,
-    send_task: JoinHandle<()>,
-    recv_task: JoinHandle<()>,
+    #[allow(unused)]
+    tasks: JoinSet<()>, // Use JoinSet to manage background tasks
     socket_fd: RawFd,
+    active_task_count: Arc<AtomicUsize>,
 }
 
 impl RpcClient {
@@ -89,37 +90,47 @@ impl RpcClient {
         let socket_fd = stream.as_raw_fd();
         let (receiver, sender) = stream.into_split();
 
-        // Start message receiver task, for rpc responses
         let requests = Arc::new(RwLock::new(HashMap::new()));
-        let recv_task = {
+        let active_task_count = Arc::new(AtomicUsize::new(0));
+
+        let mut tasks = JoinSet::new();
+
+        // Start message receiver task, for rpc responses
+        tasks.spawn({
             let requests_clone = requests.clone();
-            tokio::spawn(async move {
+            let active_task_count_clone = active_task_count.clone();
+            async move {
+                active_task_count_clone.fetch_add(1, Ordering::SeqCst);
                 if let Err(e) =
                     Self::receive_message_task(socket_fd, receiver, requests_clone).await
                 {
                     error!(%socket_fd, "FATAL: receive message task error: {e}");
                 }
-            })
-        };
+                active_task_count_clone.fetch_sub(1, Ordering::SeqCst);
+            }
+        });
 
         // Start message sender task, to send rpc requests. We are launching a dedicated task here
         // to reduce lock contention on the sender socket itself.
         let (tx, rx) = mpsc::channel(1024 * 1024);
-        let send_task = {
-            tokio::spawn(async move {
+        tasks.spawn({
+            let active_task_count_clone = active_task_count.clone();
+            async move {
+                active_task_count_clone.fetch_add(1, Ordering::SeqCst);
                 if let Err(e) = Self::send_message_task(socket_fd, sender, rx).await {
                     error!(%socket_fd, "FATAL: send message task error: {e}");
                 }
-            })
-        };
+                active_task_count_clone.fetch_sub(1, Ordering::SeqCst);
+            }
+        });
 
         Ok(Self {
             requests,
             sender: tx,
             next_id: AtomicU32::new(1),
-            send_task,
-            recv_task,
+            tasks,
             socket_fd,
+            active_task_count,
         })
     }
 
@@ -211,7 +222,7 @@ impl RpcClient {
     }
 
     pub fn tasks_running(&self) -> bool {
-        !self.send_task.is_finished() && !self.recv_task.is_finished()
+        self.active_task_count.load(Ordering::SeqCst) == 2
     }
 }
 
