@@ -1,11 +1,14 @@
 use crate::*;
 
 pub fn run_cmd_precheckin(api_only: bool) -> CmdResult {
+    let working_dir = run_fun!(pwd)?;
     cmd_service::stop_service(ServiceName::All)?;
 
     run_cmd! {
-        info "Building ...";
+        info "Building rust binaries";
         cargo build;
+
+        info "Building zig binaries";
         zig build 2>&1;
     }?;
 
@@ -19,7 +22,9 @@ pub fn run_cmd_precheckin(api_only: bool) -> CmdResult {
     run_cmd! {
         cd data;
         info "Formatting nss_server";
-        ../zig-out/bin/nss_server format;
+        $working_dir/zig-out/bin/nss_server format;
+    }?;
+    run_cmd! {
         info "Running zig unit tests";
         zig build test --summary all 2>&1;
     }?;
@@ -41,13 +46,14 @@ fn run_art_tests() -> CmdResult {
     let format_log = "data/format.log";
     let fbs_log = "data/fbs.log";
     let ts = ["ts", "-m", TS_FMT];
+    let working_dir = run_fun!(pwd)?;
 
     cmd_service::start_minio_service()?;
     run_cmd! {
         info "Running art tests (random) with log $rand_log";
         cd data;
-        ../zig-out/bin/nss_server format |& $[ts] >$format_log;
-        ../zig-out/bin/test_art --tests random
+        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
+        $working_dir/zig-out/bin/test_art --tests random
             --size 400000 --ops 1000000 --threads 20 |& $[ts] >$rand_log;
     }?;
 
@@ -55,17 +61,17 @@ fn run_art_tests() -> CmdResult {
     run_cmd! {
         info "Running art tests (fat) with log $fat_log";
         cd data;
-        ../zig-out/bin/nss_server format |& $[ts] >$format_log;
-        ../zig-out/bin/test_art --tests fat --ops 1000000 |& $[ts] >$fat_log;
+        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
+        $working_dir/zig-out/bin/test_art --tests fat --ops 1000000 |& $[ts] >$fat_log;
     }?;
 
     let async_art_log = "data/test_async_art_rename.log";
     run_cmd! {
         info "Running async art rename tests with log $async_art_log";
         cd data;
-        ../zig-out/bin/nss_server format |& $[ts] >$format_log;
-        ../zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
-        ../zig-out/bin/test_async_art --prefill 100000 --tests rename
+        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
+        $working_dir/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
+        $working_dir/zig-out/bin/test_async_art --prefill 100000 --tests rename
             --ops 10000 --parallelism 1000 --debug |& $[ts] >$async_art_log;
     }?;
 
@@ -73,11 +79,11 @@ fn run_art_tests() -> CmdResult {
     run_cmd! {
         info "Running async art tests with log $async_art_log";
         cd data;
-        ../zig-out/bin/nss_server format |& $[ts] >$format_log;
-        ../zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
-        ../zig-out/bin/test_async_art -p 20 |& $[ts] >$async_art_log;
-        ../zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
-        ../zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
+        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
+        $working_dir/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
+        $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >$async_art_log;
+        $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
+        $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
     }?;
 
     Ok(())
