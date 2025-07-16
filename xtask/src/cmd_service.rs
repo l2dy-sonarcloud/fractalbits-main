@@ -110,10 +110,10 @@ pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool, keep_data: 
             BuildMode::Release => run_cmd! {
                 cd data;
                 info "formatting nss_server for benchmarking";
-                ${pwd}/zig-out/bin/nss_server format -c ../$NSS_SERVER_BENCH_CONFIG
+                ${pwd}/zig-out/bin/nss_server format -c ${pwd}/etc/$NSS_SERVER_BENCH_CONFIG
                     |& ts -m $TS_FMT >$format_log;
                 ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME
-                    -c ../$NSS_SERVER_BENCH_CONFIG |& ts -m $TS_FMT >$fbs_log;
+                    -c ${pwd}/etc/$NSS_SERVER_BENCH_CONFIG |& ts -m $TS_FMT >$fbs_log;
             }?,
         }
     }
@@ -342,7 +342,7 @@ Environment="RUST_LOG=info""##
         ServiceName::Nss => match build_mode {
             BuildMode::Debug => format!("{pwd}/zig-out/bin/nss_server serve"),
             BuildMode::Release => {
-                format!("{pwd}/zig-out/bin/nss_server serve -c {pwd}/{NSS_SERVER_BENCH_CONFIG}")
+                format!("{pwd}/zig-out/bin/nss_server serve -c {pwd}/etc/{NSS_SERVER_BENCH_CONFIG}")
             }
         },
         ServiceName::Rss => {
@@ -361,6 +361,7 @@ Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
         }
         _ => unreachable!(),
     };
+    let working_dir = run_fun!(realpath $pwd/data)?;
     let systemd_unit_content = format!(
         r##"[Unit]
 Description={service_name} Service
@@ -368,7 +369,7 @@ Description={service_name} Service
 [Service]
 LimitNOFILE=1000000
 LimitCORE=infinity
-WorkingDirectory={pwd}/data{env_settings}
+WorkingDirectory={working_dir}{env_settings}
 ExecStart={exec_start}
 
 [Install]
