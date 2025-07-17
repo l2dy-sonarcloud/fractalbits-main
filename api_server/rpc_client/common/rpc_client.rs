@@ -1,5 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use metrics::{counter, gauge, histogram, Gauge};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::{self};
 use std::net::SocketAddr;
@@ -16,7 +17,7 @@ use tokio::{
     net::TcpStream,
     sync::{
         mpsc::{self, Receiver, Sender},
-        oneshot, RwLock,
+        oneshot,
     },
     task::JoinSet,
 };
@@ -75,7 +76,7 @@ pub enum Message {
 }
 
 pub struct RpcClient {
-    requests: Arc<RwLock<HashMap<u32, oneshot::Sender<MessageFrame>>>>,
+    requests: Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame>>>>,
     sender: Sender<Message>,
     next_id: AtomicU32,
     #[allow(unused)]
@@ -90,7 +91,7 @@ impl RpcClient {
         let socket_fd = stream.as_raw_fd();
         let (receiver, sender) = stream.into_split();
 
-        let requests = Arc::new(RwLock::new(HashMap::new()));
+        let requests = Arc::new(Mutex::new(HashMap::new()));
         let active_task_count = Arc::new(AtomicUsize::new(0));
 
         let mut tasks = JoinSet::new();
@@ -137,7 +138,7 @@ impl RpcClient {
     async fn receive_message_task(
         socket_fd: RawFd,
         receiver: OwnedReadHalf,
-        requests: Arc<RwLock<HashMap<u32, oneshot::Sender<MessageFrame>>>>,
+        requests: Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame>>>>,
     ) -> Result<(), RpcError> {
         let decoder = MesssageCodec::default();
         let mut reader = FramedRead::new(receiver, decoder);
@@ -146,15 +147,14 @@ impl RpcClient {
             let request_id = frame.header.id;
             debug!(%socket_fd, %request_id, "receiving response:");
             counter!("rpc_response_received", "type" => RPC_TYPE, "name" => "all").increment(1);
-            let tx: oneshot::Sender<MessageFrame> =
-                match requests.write().await.remove(&frame.header.id) {
-                    Some(tx) => tx,
-                    None => {
-                        warn!(%socket_fd, request_id=frame.header.id,
+            let tx: oneshot::Sender<MessageFrame> = match requests.lock().remove(&frame.header.id) {
+                Some(tx) => tx,
+                None => {
+                    warn!(%socket_fd, request_id=frame.header.id,
                             "received {RPC_TYPE} rpc message with id not in the resp_map");
-                        continue;
-                    }
-                };
+                    continue;
+                }
+            };
             gauge!("rpc_request_pending_in_resp_map", "type" => RPC_TYPE).decrement(1.0);
             if tx.send(frame).is_err() {
                 warn!(%socket_fd, %request_id, "oneshot response send failed");
@@ -197,7 +197,7 @@ impl RpcClient {
         msg: Message,
     ) -> Result<MessageFrame, RpcError> {
         let (tx, rx) = oneshot::channel();
-        assert!(self.requests.write().await.insert(request_id, tx).is_none());
+        assert!(self.requests.lock().insert(request_id, tx).is_none());
         gauge!("rpc_request_pending_in_resp_map", "type" => RPC_TYPE).increment(1.0);
 
         self.sender.send(msg).await?;

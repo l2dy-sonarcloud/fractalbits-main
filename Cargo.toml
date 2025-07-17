@@ -89,6 +89,7 @@ tokio-retry = "0.3"
 moka = { version = "0.12", features = ["future"] }
 slotmap = "1.0"
 mimalloc = "0.1.47"
+parking_lot = "0.12"
 
 # Dev dependencies
 aws-sdk-s3 = "1.65.0"
