@@ -6,7 +6,7 @@ use std::io::{self};
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::io::AsRawFd;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
@@ -82,7 +82,7 @@ pub struct RpcClient {
     #[allow(unused)]
     tasks: JoinSet<()>, // Use JoinSet to manage background tasks
     socket_fd: RawFd,
-    active_task_count: Arc<AtomicUsize>,
+    is_closed: Arc<AtomicBool>,
 }
 
 impl RpcClient {
@@ -92,22 +92,21 @@ impl RpcClient {
         let (receiver, sender) = stream.into_split();
 
         let requests = Arc::new(Mutex::new(HashMap::new()));
-        let active_task_count = Arc::new(AtomicUsize::new(0));
+        let is_closed = Arc::new(AtomicBool::new(false));
 
         let mut tasks = JoinSet::new();
 
         // Start message receiver task, for rpc responses
         tasks.spawn({
             let requests_clone = requests.clone();
-            let active_task_count_clone = active_task_count.clone();
+            let is_closed_clone = is_closed.clone();
             async move {
-                active_task_count_clone.fetch_add(1, Ordering::SeqCst);
                 if let Err(e) =
                     Self::receive_message_task(socket_fd, receiver, requests_clone).await
                 {
                     error!(%socket_fd, "FATAL: receive message task error: {e}");
                 }
-                active_task_count_clone.fetch_sub(1, Ordering::SeqCst);
+                is_closed_clone.store(true, Ordering::SeqCst);
             }
         });
 
@@ -115,13 +114,12 @@ impl RpcClient {
         // to reduce lock contention on the sender socket itself.
         let (tx, rx) = mpsc::channel(1024 * 1024);
         tasks.spawn({
-            let active_task_count_clone = active_task_count.clone();
+            let is_closed_clone = is_closed.clone();
             async move {
-                active_task_count_clone.fetch_add(1, Ordering::SeqCst);
                 if let Err(e) = Self::send_message_task(socket_fd, sender, rx).await {
                     error!(%socket_fd, "FATAL: send message task error: {e}");
                 }
-                active_task_count_clone.fetch_sub(1, Ordering::SeqCst);
+                is_closed_clone.store(true, Ordering::SeqCst);
             }
         });
 
@@ -131,7 +129,7 @@ impl RpcClient {
             next_id: AtomicU32::new(1),
             tasks,
             socket_fd,
-            active_task_count,
+            is_closed,
         })
     }
 
@@ -196,6 +194,11 @@ impl RpcClient {
         request_id: u32,
         msg: Message,
     ) -> Result<MessageFrame, RpcError> {
+        // if self.is_closed.load(Ordering::SeqCst) {
+        //     return Err(RpcError::InternalRequestError(
+        //         "Connection is closed".to_string(),
+        //     ));
+        // }
         let (tx, rx) = oneshot::channel();
         assert!(self.requests.lock().insert(request_id, tx).is_none());
         gauge!("rpc_request_pending_in_resp_map", "type" => RPC_TYPE).increment(1.0);
@@ -219,10 +222,6 @@ impl RpcClient {
     pub fn gen_request_id(&self) -> u32 {
         self.next_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-    }
-
-    pub fn tasks_running(&self) -> bool {
-        self.active_task_count.load(Ordering::SeqCst) == 2
     }
 }
 
@@ -249,8 +248,8 @@ impl Poolable for RpcClient {
             .map_err(|e| Box::new(e) as Self::Error)
     }
 
-    fn is_open(&self) -> bool {
-        self.tasks_running()
+    fn is_closed(&self) -> bool {
+        self.is_closed.load(Ordering::SeqCst)
     }
 }
 

@@ -18,15 +18,15 @@ pub trait Poolable: Unpin + Send + Sized + 'static {
 
     fn new(addr_key: Self::AddrKey) -> impl Future<Output = Result<Self, Self::Error>> + Send;
 
-    fn is_open(&self) -> bool;
+    fn is_closed(&self) -> bool;
 }
 
 impl<T: Poolable + Sync> Poolable for Arc<T> {
     type AddrKey = T::AddrKey;
     type Error = T::Error;
 
-    fn is_open(&self) -> bool {
-        self.deref().is_open()
+    fn is_closed(&self) -> bool {
+        self.deref().is_closed()
     }
 
     async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
@@ -162,17 +162,17 @@ where
         }
 
         loop {
-            let (is_open, conn_clone) = {
+            let (is_closed, conn_clone) = {
                 let inner = this.pool.inner.read().unwrap();
                 if let Some(conn) = inner.connections.get(this.conn_key) {
-                    (conn.is_open(), Some(conn.clone()))
+                    (conn.is_closed(), Some(conn.clone()))
                 } else {
-                    (false, None)
+                    (true, None)
                 }
             };
 
             if let Some(conn) = conn_clone {
-                if is_open {
+                if !is_closed {
                     return Poll::Ready(Ok(conn));
                 } else {
                     // Connection is broken, replace it with newly created one
@@ -180,7 +180,7 @@ where
                         let mut inner = this.pool.inner.write().unwrap();
                         // Check if the connection is still broken, it might have been replaced by another thread
                         if let Some(c) = inner.connections.get(this.conn_key) {
-                            if !c.is_open() {
+                            if c.is_closed() {
                                 inner.connections.remove(this.conn_key);
                             }
                         }
@@ -215,12 +215,12 @@ mod tests {
     #[derive(Clone, Debug, PartialEq)]
     struct MockConnection {
         id: usize,
-        is_open: bool,
+        is_closed: bool,
     }
 
     impl Poolable for MockConnection {
-        fn is_open(&self) -> bool {
-            self.is_open
+        fn is_closed(&self) -> bool {
+            self.is_closed
         }
 
         type Error = std::io::Error;
@@ -236,7 +236,10 @@ mod tests {
     struct MockKey(String);
 
     fn mock_conn(id: usize) -> MockConnection {
-        MockConnection { id, is_open: true }
+        MockConnection {
+            id,
+            is_closed: false,
+        }
     }
 
     #[tokio::test]
@@ -287,7 +290,7 @@ mod tests {
         pool.pooled(key.clone(), mock_conn(1));
 
         let mut closed_conn = mock_conn(2);
-        closed_conn.is_open = false;
+        closed_conn.is_closed = true;
         pool.pooled(key.clone(), closed_conn);
 
         let p1 = pool.checkout(key.clone()).await.unwrap();
