@@ -21,6 +21,7 @@ use tokio::{
     },
     task::JoinSet,
 };
+use tokio_retry::strategy::jitter;
 use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;
 
@@ -176,7 +177,7 @@ impl RpcClient {
                 warn!(%socket_fd, %request_id, "oneshot response send failed");
             }
         }
-        warn!(%socket_fd, "receive_message_task quit");
+        warn!(%socket_fd, "connection closed, receive_message_task quit");
         Ok(())
     }
 
@@ -203,7 +204,7 @@ impl RpcClient {
             sender.flush().await?;
             counter!("rpc_request_sent", "type" => RPC_TYPE, "name" => "all").increment(1);
         }
-        warn!(%socket_fd, "send_message_task quit");
+        warn!(%socket_fd, "connection closed, send_message_task quit");
         Ok(())
     }
 
@@ -270,7 +271,9 @@ impl Poolable for RpcClient {
     type Error = Box<dyn std::error::Error + Send + Sync>; // Using Box<dyn Error> for simplicity
 
     async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
-        let retry_strategy = FixedInterval::from_millis(10).take(Self::MAX_CONNECTION_RETRIES);
+        let retry_strategy = FixedInterval::from_millis(10)
+            .map(jitter)
+            .take(Self::MAX_CONNECTION_RETRIES);
 
         let stream = Retry::spawn(retry_strategy, || async {
             TcpStream::connect(addr_key).await
