@@ -74,12 +74,12 @@ export class FractalbitsMetaStack extends cdk.Stack {
 
       return instance;
     };
-    const createUserData = (cpuArch: string, bootstrapOptions: string): ec2.UserData => {
+    const createUserData = (bootstrapOptions: string): ec2.UserData => {
       const region = cdk.Stack.of(this).region;
       const userData = ec2.UserData.forLinux();
       userData.addCommands(
         'set -ex',
-        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/${cpuArch}/fractalbits-bootstrap /opt/fractalbits/bin/`,
+        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/$(arch)/fractalbits-bootstrap /opt/fractalbits/bin/`,
         'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
         `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
       );
@@ -87,7 +87,6 @@ export class FractalbitsMetaStack extends cdk.Stack {
     };
     let instance = undefined;
     if (props.serviceName == "nss") {
-      const cpuArch = "aarch64";
       const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
       instance = createInstance(`${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType, ec2.AmazonLinuxCpuType.ARM_64);
       // Create EBS Volume with Multi-Attach capabilities
@@ -106,7 +105,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
       });
 
       const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --num_nvme_disks=1 --meta_stack_testing`;
-      instance.addUserData(createUserData(cpuArch, nssBootstrapOptions).render());
+      instance.addUserData(createUserData(nssBootstrapOptions).render());
 
       // Attach volume
       new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
@@ -115,10 +114,9 @@ export class FractalbitsMetaStack extends cdk.Stack {
         volumeId: ebsVolume.volumeId,
       });
     } else {
-      const cpuArch = "x86_64"; // based on instance type
       const bssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.I3, ec2.InstanceSize.METAL);
       instance = createInstance(`${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, bssInstanceType, ec2.AmazonLinuxCpuType.X86_64);
-      instance.addUserData(createUserData(cpuArch, "bss_server --num_nvme_disks=1 --meta_stack_testing").render());
+      instance.addUserData(createUserData("bss_server --num_nvme_disks=1 --meta_stack_testing").render());
     }
 
     new cdk.CfnOutput(this, 'instanceId', {

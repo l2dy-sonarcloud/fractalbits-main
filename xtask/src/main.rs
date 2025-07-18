@@ -95,6 +95,9 @@ enum Cmd {
 
         #[clap(long)]
         enable_dev_mode: bool,
+
+        #[clap(long)]
+        bss_use_i3: bool,
     },
 
     #[clap(about = "Grant S3 build bucket policy")]
@@ -199,7 +202,14 @@ fn main() -> CmdResult {
             enable_dev_mode,
             release,
             target_arm,
-        } => cmd_deploy::run_cmd_deploy(use_s3_backend, enable_dev_mode, release, target_arm)?,
+            bss_use_i3,
+        } => cmd_deploy::run_cmd_deploy(
+            use_s3_backend,
+            enable_dev_mode,
+            release,
+            target_arm,
+            bss_use_i3,
+        )?,
         Cmd::GrantBuildBucket => cmd_deploy::update_builds_bucket_access_policy()?,
     }
     Ok(())

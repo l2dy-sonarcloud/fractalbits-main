@@ -12,6 +12,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
   benchType?: "service_endpoint" | "internal" | "external" | null;
   availabilityZone?: string;
+  bssUseI3?: boolean;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -116,11 +117,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     // Define instance metadata
     const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
-    const bssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.IS4GEN, ec2.InstanceSize.XLARGE);
+    const bssInstanceType = props.bssUseI3
+        ? ec2.InstanceType.of(ec2.InstanceClass.I3, ec2.InstanceSize.METAL)
+        : ec2.InstanceType.of(ec2.InstanceClass.IS4GEN, ec2.InstanceSize.XLARGE);
     const rssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM);
     const apiInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.LARGE);
     const nssNumNvmeDisks = 1;
-    const bssNumNvmeDisks = 1;
+    const bssNumNvmeDisks = props.bssUseI3 ? 8 : 1;
     const bucketName = bucket.bucketName;
 
     const instanceConfigs = [
@@ -198,7 +201,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const bssIp = instances["bss_server"].instancePrivateIp;
     const nssIp = instances["nss_server_primary"].instancePrivateIp;
     const rssIp = instances["root_server"].instancePrivateIp;
-    const cpuArch = "aarch64";
     const forBenchFlag = props.benchType ? ' --for_bench' : '';
 
     const instanceBootstrapOptions = [
@@ -264,7 +266,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     }
 
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
-      instances[id]?.addUserData(createUserData(this, cpuArch, bootstrapOptions).render())
+      instances[id]?.addUserData(createUserData(this, bootstrapOptions).render())
     })
 
     // Outputs

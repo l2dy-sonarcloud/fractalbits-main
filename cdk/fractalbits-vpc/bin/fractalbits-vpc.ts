@@ -9,12 +9,14 @@ const app = new cdk.App();
 const numApiServers = app.node.tryGetContext('numApiServers') ?? 1;
 const benchType = app.node.tryGetContext('benchType') ?? null;
 const availabilityZone = app.node.tryGetContext('availabilityZone') ?? app.node.tryGetContext('az') ?? undefined;
+const bssUseI3 = app.node.tryGetContext('bssUseI3') ?? false;
 
 const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   env: {},
   numApiServers: numApiServers,
   benchType: benchType,
   availabilityZone: availabilityZone,
+  bssUseI3: bssUseI3,
 });
 
 if (benchType === "service_endpoint") {

@@ -16,7 +16,9 @@ export const createInstance = (
     vpc: vpc,
     instanceType: instanceType,
     machineImage: ec2.MachineImage.latestAmazonLinux2023({
-      cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+      cpuType: instanceType.architecture === ec2.InstanceArchitecture.ARM_64
+        ? ec2.AmazonLinuxCpuType.ARM_64
+        : ec2.AmazonLinuxCpuType.X86_64
     }),
     vpcSubnets: { subnetType },
     securityGroup: sg,
@@ -24,12 +26,12 @@ export const createInstance = (
   });
 };
 
-export const createUserData = (scope: Construct, cpuArch: string, bootstrapOptions: string): ec2.UserData => {
+export const createUserData = (scope: Construct, bootstrapOptions: string): ec2.UserData => {
   const region = cdk.Stack.of(scope).region;
   const userData = ec2.UserData.forLinux();
   userData.addCommands(
     'set -ex',
-    `aws s3 cp --no-progress s3://fractalbits-builds-${region}/${cpuArch}/fractalbits-bootstrap /opt/fractalbits/bin/`,
+    `aws s3 cp --no-progress s3://fractalbits-builds-${region}/$(arch)/fractalbits-bootstrap /opt/fractalbits/bin/`,
     'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
     `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
   );

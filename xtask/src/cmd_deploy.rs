@@ -8,6 +8,7 @@ pub fn run_cmd_deploy(
     enable_dev_mode: bool,
     release_mode: bool,
     target_arm: bool,
+    bss_use_i3: bool,
 ) -> CmdResult {
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
@@ -38,16 +39,18 @@ pub fn run_cmd_deploy(
     }?;
 
     if target_arm {
-        // Build fractalbits-bootstrap separately with neoverse_n1
-        run_cmd! {
-            info "Building fractalbits-bootstrap for Graviton2 (neoverse-n1)";
-            RUSTFLAGS="-C target-cpu=neoverse-n1" cargo zigbuild
-                -p fractalbits-bootstrap --target $rust_build_target $rust_build_opt;
-        }?;
+        if !bss_use_i3 {
+            // Build fractalbits-bootstrap separately with neoverse_n1
+            run_cmd! {
+                info "Building fractalbits-bootstrap for Graviton2 (neoverse-n1)";
+                RUSTFLAGS="-C target-cpu=neoverse-n1" cargo zigbuild
+                    -p fractalbits-bootstrap --target $rust_build_target $rust_build_opt;
+            }?;
+        }
 
         // Build the rest of the workspace
         run_cmd! {
-            info "Building other Rust projects for Graviton3 (neoverse-v1)";
+            info "Building Rust projects for Graviton3 (neoverse-v1)";
             RUSTFLAGS="-C target-cpu=neoverse-v1" cargo zigbuild
                 --workspace --exclude fractalbits-bootstrap
                 --target $rust_build_target $rust_build_opt;
@@ -66,6 +69,21 @@ pub fn run_cmd_deploy(
             -Denable_dev_mode=$enable_dev_mode $[zig_build_target] $zig_build_opt 2>&1;
     }?;
 
+    if bss_use_i3 {
+        run_cmd! {
+            info "Building bss fractalbits-bootstrap for x86_64";
+            cargo zigbuild
+                -p fractalbits-bootstrap --target x86_64-unknown-linux-gnu $rust_build_opt;
+        }?;
+
+        let zig_build_target = ["-Dtarget=x86_64-linux-gnu", "-Dcpu=cascadelake", ""];
+        run_cmd! {
+            info "Building bss_server for x86_64";
+            zig build -Duse_s3_backend=$use_s3_backend
+                -Denable_dev_mode=$enable_dev_mode $[zig_build_target] $zig_build_opt bss_server 2>&1;
+        }?;
+    }
+
     info!("Uploading Rust-built binaries");
     let rust_bins = [
         "api_server",
@@ -76,23 +94,30 @@ pub fn run_cmd_deploy(
         "rewrk_rpc",
         "xtask",
     ];
-    let prefix = if target_arm { "aarch64" } else { "x86_64" };
+    let arch = if target_arm { "aarch64" } else { "x86_64" };
     let build_dir = if release_mode { "release" } else { "debug" };
     for bin in &rust_bins {
-        run_cmd!(aws s3 cp target/$rust_build_target/$build_dir/$bin $bucket/$prefix/$bin)?;
+        run_cmd!(aws s3 cp target/$rust_build_target/$build_dir/$bin $bucket/$arch/$bin)?;
     }
 
     info!("Uploading Zig-built binaries");
     let zig_bins = [
-        "bss_server",
         "nss_server",
         "fbs",      // to create test art tree for benchmarking nss_rpc
         "test_art", // to create test.data for benchmarking nss_rpc
         "s3_blob_client",
     ];
     for bin in &zig_bins {
-        run_cmd!(aws s3 cp zig-out/bin/$bin $bucket/$prefix/$bin)?;
+        run_cmd!(aws s3 cp zig-out/bin/$bin $bucket/$arch/$bin)?;
     }
+
+    // Upload bss_server separately
+    if bss_use_i3 {
+        run_cmd!(aws s3 cp zig-out/bin/bss_server $bucket/x86_64/bss_server)?;
+        run_cmd!(aws s3 cp target/x86_64-unknown-linux-gnu/$build_dir/fractalbits-bootstrap $bucket/x86_64/fractalbits-bootstrap)?;
+    } else {
+        run_cmd!(aws s3 cp zig-out/bin/bss_server $bucket/$arch/bss_server)?;
+    };
 
     Ok(())
 }
