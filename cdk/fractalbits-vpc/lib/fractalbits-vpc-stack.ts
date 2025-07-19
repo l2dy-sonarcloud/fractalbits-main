@@ -121,7 +121,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         ? ec2.InstanceType.of(ec2.InstanceClass.I3, ec2.InstanceSize.XLARGE2)
         : ec2.InstanceType.of(ec2.InstanceClass.IS4GEN, ec2.InstanceSize.XLARGE);
     const rssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM);
-    const apiInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.LARGE);
+    const apiInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C8G, ec2.InstanceSize.LARGE);
     const bucketName = bucket.bucketName;
 
     const instanceConfigs = [

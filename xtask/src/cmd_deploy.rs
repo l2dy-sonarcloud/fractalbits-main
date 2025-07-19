@@ -40,12 +40,21 @@ pub fn run_cmd_deploy(
     }?;
 
     if target_arm {
-        // Build the rest of the workspace
+        // Build for all workspaces, and the same workspace may get built again with other targets
         run_cmd! {
             info "Building Rust projects for Graviton3 (neoverse-v1)";
             RUSTFLAGS="-C target-cpu=neoverse-v1"
             BUILD_INFO=$build_info
-            cargo zigbuild --target $rust_build_target $rust_build_opt;
+            cargo zigbuild
+                --workspace --exclude api_server
+                --target $rust_build_target $rust_build_opt;
+
+            info "Building api_server for Graviton4 (neoverse-v2)";
+            RUSTFLAGS="-C target-cpu=neoverse-v2"
+            BUILD_INFO=$build_info
+            cargo zigbuild
+                -p api_server
+                --target $rust_build_target $rust_build_opt;
         }?;
 
         if !bss_use_i3 {
@@ -61,6 +70,7 @@ pub fn run_cmd_deploy(
         // Original behavior for x86
         run_cmd! {
             info "Building all Rust projects for x86_64";
+            RUSTFLAGS="-C target-cpu=cascadelake"
             BUILD_INFO=$build_info
             cargo zigbuild --target $rust_build_target $rust_build_opt;
         }?;
@@ -78,9 +88,11 @@ pub fn run_cmd_deploy(
     if bss_use_i3 {
         run_cmd! {
             info "Building bss fractalbits-bootstrap & rewrk_rpc for x86_64";
+            RUSTFLAGS="-C target-cpu=broadwell"
             BUILD_INFO=$build_info
             cargo zigbuild -p fractalbits-bootstrap
                 --target x86_64-unknown-linux-gnu $rust_build_opt;
+            RUSTFLAGS="-C target-cpu=broadwell"
             BUILD_INFO=$build_info
             cargo zigbuild -p rewrk_rpc
                 --target x86_64-unknown-linux-gnu $rust_build_opt;
