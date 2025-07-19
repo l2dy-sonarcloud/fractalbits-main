@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import { createInstance, createUserData } from './ec2-utils';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
   serviceName: string;
@@ -11,11 +12,13 @@ interface FractalbitsMetaStackProps extends cdk.StackProps {
 }
 
 export class FractalbitsMetaStack extends cdk.Stack {
+  public readonly vpc: ec2.Vpc;
+
   constructor(scope: Construct, id: string, props: FractalbitsMetaStackProps) {
     super(scope, id, props);
 
     const az = props.availabilityZone ?? this.availabilityZones[this.availabilityZones.length - 1];
-    const vpc = new ec2.Vpc(this, 'FractalbitsMetaStackVpc', {
+    this.vpc = new ec2.Vpc(this, 'FractalbitsMetaStackVpc', {
       vpcName: 'fractalbits-meta-stack-vpc',
       availabilityZones: [az],
       natGateways: 0,
@@ -26,13 +29,13 @@ export class FractalbitsMetaStack extends cdk.Stack {
     });
 
     // Add Gateway Endpoint for S3
-    vpc.addGatewayEndpoint('S3Endpoint', {
+    this.vpc.addGatewayEndpoint('S3Endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
 
     // Add Interface Endpoint for EC2 and SSM
     ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES'].forEach(service => {
-      vpc.addInterfaceEndpoint(`${service}Endpoint`, {
+      this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
@@ -50,49 +53,16 @@ export class FractalbitsMetaStack extends cdk.Stack {
 
     // Security Group
     const sg = new ec2.SecurityGroup(this, 'InstanceSG', {
-      vpc,
+      vpc: this.vpc,
       securityGroupName: 'FractalbitsInstanceSG',
       description: 'Allow outbound only for SSM and S3 access',
       allowAllOutbound: true,
     });
 
-
-    // Reusable functions to create instances
-    const createInstance = (
-      id: string,
-      subnetType: ec2.SubnetType,
-      instanceType: ec2.InstanceType,
-    ): ec2.Instance => {
-      const instance = new ec2.Instance(this, id, {
-        vpc,
-        instanceType: instanceType,
-        machineImage: ec2.MachineImage.latestAmazonLinux2023({
-          cpuType: instanceType.architecture === ec2.InstanceArchitecture.ARM_64
-            ? ec2.AmazonLinuxCpuType.ARM_64
-            : ec2.AmazonLinuxCpuType.X86_64
-        }),
-        vpcSubnets: { subnetType },
-        securityGroup: sg,
-        role: ec2Role,
-      });
-
-      return instance;
-    };
-    const createUserData = (bootstrapOptions: string): ec2.UserData => {
-      const region = cdk.Stack.of(this).region;
-      const userData = ec2.UserData.forLinux();
-      userData.addCommands(
-        'set -ex',
-        `aws s3 cp --no-progress s3://fractalbits-builds-${region}/$(arch)/fractalbits-bootstrap /opt/fractalbits/bin/`,
-        'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
-        `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
-      );
-      return userData;
-    };
     let instance = undefined;
     if (props.serviceName == "nss") {
       const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
-      instance = createInstance(`${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType);
+      instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType, sg, ec2Role);
       // Create EBS Volume with Multi-Attach capabilities
       const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -109,7 +79,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
       });
 
       const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --meta_stack_testing`;
-      instance.addUserData(createUserData(nssBootstrapOptions).render());
+      instance.addUserData(createUserData(this, nssBootstrapOptions).render());
 
       // Attach volume
       new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
@@ -121,8 +91,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
       const bssInstanceType = props.bssUseI3
           ? ec2.InstanceType.of(ec2.InstanceClass.I3, ec2.InstanceSize.XLARGE2)
           : ec2.InstanceType.of(ec2.InstanceClass.IS4GEN, ec2.InstanceSize.XLARGE);
-      instance = createInstance(`${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, bssInstanceType);
-      instance.addUserData(createUserData(`bss_server --meta_stack_testing`).render());
+      instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, bssInstanceType, sg, ec2Role);
+      instance.addUserData(createUserData(this, `bss_server --meta_stack_testing`).render());
     }
 
     new cdk.CfnOutput(this, 'instanceId', {
