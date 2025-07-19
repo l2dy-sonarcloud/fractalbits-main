@@ -1,5 +1,4 @@
 use parking_lot::RwLock;
-use rand::Rng;
 use slotmap::{new_key_type, SlotMap};
 use std::collections::HashMap;
 use std::error::Error as StdError;
@@ -7,6 +6,7 @@ use std::fmt::{self, Debug};
 use std::future::Future;
 use std::hash::Hash;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -39,7 +39,7 @@ impl<T> Key for T where T: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
 
 struct ConnPoolInner<T, K: Key> {
     connections: SlotMap<ConnectionKey, (T, Arc<Semaphore>)>,
-    host_to_conn_keys: HashMap<K, Vec<ConnectionKey>>,
+    host_to_conn_keys: HashMap<K, (Vec<ConnectionKey>, AtomicUsize)>,
 }
 
 pub struct ConnPool<T, K: Key> {
@@ -72,7 +72,10 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
         let conn_key = inner
             .connections
             .insert((value.clone(), Arc::new(Semaphore::new(1))));
-        let keys = inner.host_to_conn_keys.entry(key.clone()).or_default();
+        let (keys, _counter) = inner
+            .host_to_conn_keys
+            .entry(key.clone())
+            .or_insert_with(|| (Vec::new(), AtomicUsize::new(0)));
         keys.push(conn_key);
     }
 
@@ -141,7 +144,7 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
                         .insert((new_conn.clone(), Arc::new(Semaphore::new(1))));
 
                     // Update the host_to_conn_keys mapping.
-                    if let Some(keys) = inner.host_to_conn_keys.get_mut(&addr_key) {
+                    if let Some((keys, _)) = inner.host_to_conn_keys.get_mut(&addr_key) {
                         if let Some(key_ref) = keys.iter_mut().find(|k| **k == current_conn_key) {
                             *key_ref = new_conn_key;
                         } else {
@@ -169,11 +172,11 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
         let inner_locked = self.inner.read();
         match inner_locked.host_to_conn_keys.get(key) {
             None => Err(Error::NoConnectionAvailable),
-            Some(keys) => {
+            Some((keys, counter)) => {
                 if keys.is_empty() {
                     Err(Error::NoConnectionAvailable)
                 } else {
-                    let idx = rand::thread_rng().gen_range(0..keys.len());
+                    let idx = counter.fetch_add(1, Ordering::Relaxed) % keys.len();
                     Ok(keys[idx])
                 }
             }
@@ -251,24 +254,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_random_checkout() {
+    async fn test_round_robin_checkout() {
         let pool = ConnPool::<MockConnection, MockKey>::new();
 
         let key = MockKey("foo".to_string());
-        let key_for_conn1 = key.clone();
-        let key_for_conn2 = key.clone();
 
-        pool.pooled(key_for_conn1, mock_conn(1));
-        pool.pooled(key_for_conn2, mock_conn(2));
+        pool.pooled(key.clone(), mock_conn(1));
+        pool.pooled(key.clone(), mock_conn(2));
 
         let p1 = pool.checkout(key.clone()).await.unwrap();
+        assert_eq!(p1.id, 1);
         let p2 = pool.checkout(key.clone()).await.unwrap();
+        assert_eq!(p2.id, 2);
         let p3 = pool.checkout(key.clone()).await.unwrap();
-
-        let possible_ids = vec![1, 2];
-        assert!(possible_ids.contains(&p1.id));
-        assert!(possible_ids.contains(&p2.id));
-        assert!(possible_ids.contains(&p3.id));
+        assert_eq!(p3.id, 1);
+        let p4 = pool.checkout(key.clone()).await.unwrap();
+        assert_eq!(p4.id, 2);
     }
 
     #[tokio::test]
