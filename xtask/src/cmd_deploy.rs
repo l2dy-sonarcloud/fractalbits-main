@@ -10,6 +10,7 @@ pub fn run_cmd_deploy(
     target_arm: bool,
     bss_use_i3: bool,
 ) -> CmdResult {
+    let build_info = BUILD_INFO.get().unwrap();
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
 
@@ -42,44 +43,57 @@ pub fn run_cmd_deploy(
         // Build the rest of the workspace
         run_cmd! {
             info "Building Rust projects for Graviton3 (neoverse-v1)";
-            RUSTFLAGS="-C target-cpu=neoverse-v1" cargo zigbuild
-                --target $rust_build_target $rust_build_opt;
+            RUSTFLAGS="-C target-cpu=neoverse-v1"
+            BUILD_INFO=$build_info
+            cargo zigbuild --target $rust_build_target $rust_build_opt;
         }?;
 
         if !bss_use_i3 {
             // Build fractalbits-bootstrap separately with neoverse_n1
             run_cmd! {
                 info "Building fractalbits-bootstrap for Graviton2 (neoverse-n1)";
-                RUSTFLAGS="-C target-cpu=neoverse-n1" cargo zigbuild
-                    -p fractalbits-bootstrap --target $rust_build_target $rust_build_opt;
+                RUSTFLAGS="-C target-cpu=neoverse-n1"
+                BUILD_INFO=$build_info
+                cargo zigbuild -p fractalbits-bootstrap --target $rust_build_target $rust_build_opt;
             }?;
         }
     } else {
         // Original behavior for x86
         run_cmd! {
             info "Building all Rust projects for x86_64";
+            BUILD_INFO=$build_info
             cargo zigbuild --target $rust_build_target $rust_build_opt;
         }?;
     }
 
     run_cmd! {
         info "Building Zig projects";
-        zig build -Duse_s3_backend=$use_s3_backend
-            -Denable_dev_mode=$enable_dev_mode $[zig_build_target] $zig_build_opt 2>&1;
+        zig build
+            -Duse_s3_backend=$use_s3_backend
+            -Denable_dev_mode=$enable_dev_mode
+            -Dbuild_info=$build_info
+            $[zig_build_target] $zig_build_opt 2>&1;
     }?;
 
     if bss_use_i3 {
         run_cmd! {
             info "Building bss fractalbits-bootstrap & rewrk_rpc for x86_64";
-            cargo zigbuild -p fractalbits-bootstrap --target x86_64-unknown-linux-gnu $rust_build_opt;
-            cargo zigbuild -p rewrk_rpc --target x86_64-unknown-linux-gnu $rust_build_opt;
+            BUILD_INFO=$build_info
+            cargo zigbuild -p fractalbits-bootstrap
+                --target x86_64-unknown-linux-gnu $rust_build_opt;
+            BUILD_INFO=$build_info
+            cargo zigbuild -p rewrk_rpc
+                --target x86_64-unknown-linux-gnu $rust_build_opt;
         }?;
 
         let zig_build_target = ["-Dtarget=x86_64-linux-gnu", "-Dcpu=broadwell", ""];
         run_cmd! {
             info "Building bss_server for x86_64";
-            zig build -Duse_s3_backend=$use_s3_backend
-                -Denable_dev_mode=$enable_dev_mode $[zig_build_target] $zig_build_opt bss_server 2>&1;
+            zig build
+                -Duse_s3_backend=$use_s3_backend
+                -Denable_dev_mode=$enable_dev_mode
+                -Dbuild_info=$build_info
+                $[zig_build_target] $zig_build_opt bss_server 2>&1;
         }?;
     }
 

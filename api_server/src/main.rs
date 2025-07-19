@@ -42,6 +42,8 @@ async fn main() {
         ))
         .init();
 
+    eprintln!("build info: {}", env!("BUILD_INFO"));
+
     let opt = Opt::parse();
     let config = match opt.config_file {
         Some(config_file) => config::read_config(config_file),

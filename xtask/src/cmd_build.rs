@@ -1,5 +1,8 @@
 use crate::*;
+use std::sync::OnceLock;
 use strum::{AsRefStr, EnumString};
+
+pub static BUILD_INFO: OnceLock<String> = OnceLock::new();
 
 #[derive(Copy, Clone, AsRefStr, EnumString)]
 #[strum(serialize_all = "snake_case")]
@@ -15,49 +18,52 @@ pub fn build_mode(release: bool) -> BuildMode {
     }
 }
 
+pub fn build_info() -> String {
+    let git_branch = run_fun!(git branch --show-current).unwrap();
+    let git_rev = run_fun!(git rev-parse --short HEAD).unwrap();
+    let build_timestamp = run_fun!(date "+%s").unwrap();
+    format!("{git_branch}:{git_rev}, build time: {build_timestamp}")
+}
+
 pub fn build_rewrk() -> CmdResult {
+    let build_info = BUILD_INFO.get().unwrap();
     run_cmd! {
         info "Building benchmark tool `rewrk` ...";
         cd ./api_server/benches/rewrk;
-        cargo build --release;
+        BUILD_INFO=$build_info cargo build --release;
     }
 }
 
 pub fn build_rewrk_rpc() -> CmdResult {
+    let build_info = BUILD_INFO.get().unwrap();
     run_cmd! {
         info "Building benchmark tool `rewrk_rpc` ...";
         cd ./api_server/benches/rewrk_rpc;
-        cargo build --release;
+        BUILD_INFO=$build_info cargo build --release;
     }
 }
 
-#[rustfmt::skip]
 pub fn build_bss_nss_server(mode: BuildMode) -> CmdResult {
-    if run_cmd!(test -f /usr/bin/protoc).is_err() {
-        run_cmd! {
-            info "Could not find protoc, installing at first ...";
-            sudo apt install -y protobuf-compiler;
-        }?;
-    }
-
+    let build_info = BUILD_INFO.get().unwrap();
     let opts = match mode {
         BuildMode::Debug => "",
         BuildMode::Release => "--release=safe",
     };
     run_cmd! {
         info "Building bss and nss server ...";
-        zig build $opts 2>&1;
+        zig build -Dbuild_info=$build_info $opts 2>&1;
         info "Building bss and nss server done";
     }
 }
 
 pub fn build_rss_api_server(mode: BuildMode) -> CmdResult {
+    let build_info = BUILD_INFO.get().unwrap();
     let opts = match mode {
         BuildMode::Debug => "",
         BuildMode::Release => "--release",
     };
     run_cmd! {
         info "Building rss & api_server ...";
-        cargo build $opts;
+        BUILD_INFO=$build_info cargo build $opts;
     }
 }
