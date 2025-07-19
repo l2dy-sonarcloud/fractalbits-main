@@ -42,7 +42,10 @@ async fn main() {
         ))
         .init();
 
-    eprintln!("build info: {}", env!("BUILD_INFO"));
+    eprintln!(
+        "build info: {}",
+        option_env!("BUILD_INFO").unwrap_or_default()
+    );
 
     let opt = Opt::parse();
     let config = match opt.config_file {
