@@ -71,15 +71,16 @@ impl KvClientProvider for AppState {
 }
 
 impl AppState {
-    const NSS_CONNECTION_POOL_SIZE: usize = 4;
-    const RSS_CONNECTION_POOL_SIZE: usize = 4;
-
     pub async fn new(config: ArcConfig) -> Self {
-        let rpc_clients_nss = Self::new_rpc_clients_pool_nss(config.nss_addr).await;
-        let rpc_clients_rss = Self::new_rpc_clients_pool_rss(config.rss_addr).await;
+        let rpc_clients_rss =
+            Self::new_rpc_clients_pool_rss(config.rss_addr, config.rss_conn_num).await;
+        let rpc_clients_nss =
+            Self::new_rpc_clients_pool_nss(config.nss_addr, config.nss_conn_num).await;
 
         let (tx, rx) = mpsc::channel(1024 * 1024);
-        let blob_client = Arc::new(BlobClient::new(config.bss_addr, &config.s3_cache, rx).await);
+        let blob_client = Arc::new(
+            BlobClient::new(config.bss_addr, config.bss_conn_num, &config.s3_cache, rx).await,
+        );
 
         let cache = Arc::new(
             Cache::builder()
@@ -99,35 +100,31 @@ impl AppState {
 
     async fn new_rpc_clients_pool_nss(
         nss_addr: SocketAddr,
+        nss_conn_num: u16,
     ) -> ConnPool<Arc<RpcClientNss>, SocketAddr> {
         let rpc_clients_nss = ConnPool::new();
-        for _ in 0..Self::NSS_CONNECTION_POOL_SIZE {
+        for _ in 0..nss_conn_num as usize {
             let stream = TcpStream::connect(nss_addr).await.unwrap();
             let client = Arc::new(RpcClientNss::new(stream).await.unwrap());
             rpc_clients_nss.pooled(nss_addr, client);
         }
 
-        info!(
-            "NSS RPC client pool initialized with {} connections.",
-            Self::NSS_CONNECTION_POOL_SIZE
-        );
+        info!("NSS RPC client pool initialized with {nss_conn_num} connections.");
         rpc_clients_nss
     }
 
     async fn new_rpc_clients_pool_rss(
         rss_addr: SocketAddr,
+        rss_conn_num: u16,
     ) -> ConnPool<Arc<RpcClientRss>, SocketAddr> {
         let rpc_clients_rss = ConnPool::new();
-        for _ in 0..Self::RSS_CONNECTION_POOL_SIZE {
+        for _ in 0..rss_conn_num as usize {
             let stream = TcpStream::connect(rss_addr).await.unwrap();
             let client = Arc::new(RpcClientRss::new(stream).await.unwrap());
             rpc_clients_rss.pooled(rss_addr, client);
         }
 
-        info!(
-            "RSS RPC client pool initialized with {} connections.",
-            Self::RSS_CONNECTION_POOL_SIZE
-        );
+        info!("RSS RPC client pool initialized with {rss_conn_num} connections.");
         rpc_clients_rss
     }
 
@@ -156,24 +153,20 @@ pub struct BlobClient {
 }
 
 impl BlobClient {
-    const BSS_CONNECTION_POOL_SIZE: usize = 4;
-
     pub async fn new(
         bss_addr: SocketAddr,
+        bss_conn_num: u16,
         config: &S3CacheConfig,
         rx: Receiver<(BlobId, usize)>,
     ) -> Self {
         let clients_bss = ConnPool::new();
-        for _ in 0..Self::BSS_CONNECTION_POOL_SIZE {
+        for _ in 0..bss_conn_num as usize {
             let stream = TcpStream::connect(bss_addr).await.unwrap();
             let client = Arc::new(RpcClientBss::new(stream).await.unwrap());
             clients_bss.pooled(bss_addr, client);
         }
 
-        info!(
-            "BSS RPC client pool initialized with {} connections.",
-            Self::BSS_CONNECTION_POOL_SIZE
-        );
+        info!("BSS RPC client pool initialized with {bss_conn_num} connections.");
 
         let client_s3 = if config.s3_host.ends_with("amazonaws.com") {
             let aws_config = aws_config::defaults(BehaviorVersion::latest())
