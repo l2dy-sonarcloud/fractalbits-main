@@ -43,7 +43,6 @@ export class FractalbitsMetaStack extends cdk.Stack {
 
     // IAM Role for EC2
     const ec2Role = new iam.Role(this, 'InstanceRole', {
-      roleName: 'FractalbitsInstanceRole',
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
@@ -78,7 +77,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         autoDeleteObjects: true,                  // Empty bucket before deletion
       });
 
-      const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --meta_stack_testing`;
+      const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --iam_role=${ec2Role.roleName} --meta_stack_testing`;
       instance.addUserData(createUserData(this, nssBootstrapOptions).render());
 
       // Attach volume
