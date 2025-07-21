@@ -3,12 +3,13 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import { createInstance, createUserData } from './ec2-utils';
+import { createEbsVolume, createEc2Asg, createInstance, createUserData } from './ec2-utils';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
   serviceName: string;
-  bssUseI3?: boolean;
   availabilityZone?: string;
+  nssInstanceType?: string;
+  bssInstanceType?: string;
 }
 
 export class FractalbitsMetaStack extends cdk.Stack {
@@ -23,7 +24,6 @@ export class FractalbitsMetaStack extends cdk.Stack {
       availabilityZones: [az],
       natGateways: 0,
       subnetConfiguration: [
-        { name: 'PublicSubnet', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
         { name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
     });
@@ -58,45 +58,44 @@ export class FractalbitsMetaStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    let instance = undefined;
+    let targetIdOutput: cdk.CfnOutput;
+
     if (props.serviceName == "nss") {
-      const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
-      instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType, sg, ec2Role);
-      // Create EBS Volume with Multi-Attach capabilities
-      const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-        availabilityZone: az,
-        size: cdk.Size.gibibytes(20),
-        volumeType: ec2.EbsDeviceVolumeType.IO2,
-        iops: 10000,
-        enableMultiAttach: true,
-      });
       const bucket = new s3.Bucket(this, 'Bucket', {
-        // No bucketName provided – name will be auto-generated
         removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
         autoDeleteObjects: true,                  // Empty bucket before deletion
       });
-
+      const nssInstanceType = new ec2.InstanceType(props.nssInstanceType ?? 'm7gd.4xlarge');
+      const instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType, sg, ec2Role);
+      const ebsVolume = createEbsVolume(this, 'MultiAttachVolume', az, instance.instanceId);
       const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --iam_role=${ec2Role.roleName} --meta_stack_testing`;
       instance.addUserData(createUserData(this, nssBootstrapOptions).render());
 
-      // Attach volume
-      new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
-        instanceId: instance.instanceId,
-        device: '/dev/xvdf',
-        volumeId: ebsVolume.volumeId,
+      targetIdOutput = new cdk.CfnOutput(this, 'instanceId', {
+        value: instance.instanceId,
+        description: `EC2 instance ID`,
       });
+
     } else {
-      const bssInstanceType = props.bssUseI3
-          ? ec2.InstanceType.of(ec2.InstanceClass.I3EN, ec2.InstanceSize.XLARGE2)
-          : ec2.InstanceType.of(ec2.InstanceClass.I8G, ec2.InstanceSize.XLARGE2);
-      instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, bssInstanceType, sg, ec2Role);
-      instance.addUserData(createUserData(this, `bss_server --meta_stack_testing`).render());
+      const bssInstanceTypes = props.bssInstanceType ? [props.bssInstanceType] : ['i3.2xlarge', 'i3en.xlarge', 'i8g.xlarge2', 'is4gn.xlarge'];
+      const bssBootstrapOptions = `--for_bench bss_server --meta_stack_testing`;
+      const asg = createEc2Asg(
+        this,
+        'BssAsg',
+        this.vpc,
+        sg,
+        ec2Role,
+        bssInstanceTypes,
+        bssBootstrapOptions,
+      );
+
+      targetIdOutput = new cdk.CfnOutput(this, 'AsgName', {
+        value: asg.autoScalingGroupName,
+        description: `Bss Auto Scaling Group Name`,
+      });
     }
 
-    new cdk.CfnOutput(this, 'instanceId', {
-      value: instance.instanceId,
-      description: `EC2 instance ID`,
-    });
+    // Output the relevant ID (instance ID or ASG name)
+    targetIdOutput;
   }
 }

@@ -134,6 +134,9 @@ pub fn format_local_nvme_disks(support_storage_twp: bool) -> CmdResult {
     }?;
     let nvme_disks: &Vec<&str> = &nvme_disks.split("\n").collect();
     let num_nvme_disks = nvme_disks.len();
+    if num_nvme_disks == 0 {
+        cmd_die!("Could not find any nvme disks");
+    }
     if support_storage_twp {
         assert_eq!(1, num_nvme_disks);
     }

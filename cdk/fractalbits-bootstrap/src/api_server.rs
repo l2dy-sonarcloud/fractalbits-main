@@ -13,14 +13,17 @@ pub fn bootstrap(
         "api_server",
         "warp", // for e2e benchmark testing
     ])?;
-    create_config(bucket_name, bss_ip, nss_ip, rss_ip)?;
+
     for (role, ip) in [("bss", bss_ip), ("rss", rss_ip), ("nss", nss_ip)] {
         info!("Waiting for {role} node with ip {ip} to be ready");
-        while run_cmd!(nc -z $ip 8088).is_err() {
+        while run_cmd!(nc -z $ip 8088 &>/dev/null).is_err() {
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
         info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
     }
+
+    let bss_ip = run_fun!(dig +short $bss_ip)?;
+    create_config(bucket_name, &bss_ip, nss_ip, rss_ip)?;
 
     if with_bench_client {
         run_cmd!(echo "127.0.0.1   local-service-endpoint" >>/etc/hosts)?;

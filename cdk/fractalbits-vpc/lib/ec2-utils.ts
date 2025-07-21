@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
 
 export const createInstance = (
@@ -36,4 +38,103 @@ export const createUserData = (scope: Construct, bootstrapOptions: string): ec2.
     `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
   );
   return userData;
+};
+
+export const createEc2Asg = (
+    scope: Construct,
+    id: string,
+    vpc: ec2.Vpc,
+    sg: ec2.SecurityGroup,
+    role: iam.Role,
+    instanceTypeNames: string[],
+    bootstrapOptions: string,
+): autoscaling.AutoScalingGroup => {
+    const x86InstanceTypes: string[] = [];
+    const armInstanceTypes: string[] = [];
+
+    instanceTypeNames.forEach(typeName => {
+        if (typeName.includes('g')) { // Simple heuristic for Graviton (ARM) instances
+            armInstanceTypes.push(typeName);
+        } else {
+            x86InstanceTypes.push(typeName);
+        }
+    });
+
+    const launchTemplateOverrides: autoscaling.LaunchTemplateOverrides[] = [];
+
+    let x86LaunchTemplate: ec2.LaunchTemplate | undefined;
+    if (x86InstanceTypes.length > 0) {
+        x86LaunchTemplate = new ec2.LaunchTemplate(scope, `${id}X86LaunchTemplate`, {
+            machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: ec2.AmazonLinuxCpuType.X86_64 }),
+            securityGroup: sg,
+            role: role,
+            userData: createUserData(scope, bootstrapOptions),
+        });
+        x86InstanceTypes.forEach(typeName => {
+            launchTemplateOverrides.push({
+                instanceType: new ec2.InstanceType(typeName),
+                launchTemplate: x86LaunchTemplate,
+            });
+        });
+    }
+
+    let armLaunchTemplate: ec2.LaunchTemplate | undefined;
+    if (armInstanceTypes.length > 0) {
+        armLaunchTemplate = new ec2.LaunchTemplate(scope, `${id}ArmLaunchTemplate`, {
+            machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: ec2.AmazonLinuxCpuType.ARM_64 }),
+            securityGroup: sg,
+            role: role,
+            userData: createUserData(scope, bootstrapOptions),
+        });
+        armInstanceTypes.forEach(typeName => {
+            launchTemplateOverrides.push({
+                instanceType: new ec2.InstanceType(typeName),
+                launchTemplate: armLaunchTemplate,
+            });
+        });
+    }
+
+    const defaultLaunchTemplate = x86LaunchTemplate || armLaunchTemplate;
+
+    if (!defaultLaunchTemplate) {
+        throw new Error("No valid launch template could be created. Ensure instanceTypeNames are valid.");
+    }
+
+    return new autoscaling.AutoScalingGroup(scope, id, {
+        vpc: vpc,
+        minCapacity: 1,
+        maxCapacity: 1,
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        mixedInstancesPolicy: {
+            instancesDistribution: {
+                onDemandPercentageAboveBaseCapacity: 100,
+            },
+            launchTemplate: defaultLaunchTemplate,
+            launchTemplateOverrides: launchTemplateOverrides,
+        },
+    });
+};
+
+export const createEbsVolume = (
+    scope: Construct,
+    id: string,
+    az: string,
+    instanceId: string,
+): ec2.Volume => {
+    const ebsVolume = new ec2.Volume(scope, id, {
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        availabilityZone: az,
+        size: cdk.Size.gibibytes(20),
+        volumeType: ec2.EbsDeviceVolumeType.IO2,
+        iops: 10000,
+        enableMultiAttach: true,
+    });
+
+    new ec2.CfnVolumeAttachment(scope, `${id}Attachment`, {
+        instanceId: instanceId,
+        device: '/dev/xvdf',
+        volumeId: ebsVolume.volumeId,
+    });
+
+    return ebsVolume;
 };

@@ -6,13 +6,13 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
-import { createInstance, createUserData } from './ec2-utils';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
+import { createInstance, createUserData, createEc2Asg, createEbsVolume } from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
   benchType?: "service_endpoint" | "internal" | "external" | null;
   availabilityZone?: string;
-  bssUseI3?: boolean;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -29,9 +29,23 @@ export class FractalbitsVpcStack extends cdk.Stack {
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
       availabilityZones: [az],
       natGateways: 0,
+      enableDnsHostnames: true,
+      enableDnsSupport: true,
       subnetConfiguration: [
         { name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
+    });
+
+    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
+        name: 'fractalbits.local',
+        vpc: this.vpc,
+    });
+
+    const bssService = privateDnsNamespace.createService('BssService', {
+        name: 'bss-server',
+        dnsRecordType: servicediscovery.DnsRecordType.A,
+        dnsTtl: cdk.Duration.seconds(60),
+        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
 
     // Add Gateway Endpoint for S3
@@ -44,11 +58,12 @@ export class FractalbitsVpcStack extends cdk.Stack {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
     });
 
-    // Add Interface Endpoint for EC2, SSM, and CloudWatch
-    ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS'].forEach(service => {
+    // Add Interface Endpoint for EC2, SSM, CloudWatch and CloudMap
+    ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
       this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        privateDnsEnabled: true,
       });
     });
 
@@ -61,6 +76,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
       ],
     });
 
@@ -116,16 +132,12 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     // Define instance metadata
     const nssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.M7GD, ec2.InstanceSize.XLARGE4);
-    const bssInstanceType = props.bssUseI3
-        ? ec2.InstanceType.of(ec2.InstanceClass.I3EN, ec2.InstanceSize.XLARGE2)
-        : ec2.InstanceType.of(ec2.InstanceClass.I8G, ec2.InstanceSize.XLARGE2);
     const rssInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM);
     const apiInstanceType = ec2.InstanceType.of(ec2.InstanceClass.C8G, ec2.InstanceSize.LARGE);
     const bucketName = bucket.bucketName;
 
     const instanceConfigs = [
       { id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg },
-      { id: 'bss_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: bssInstanceType, sg: privateSg },
       { id: 'nss_server_primary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg },
       // { id: 'nss_server_secondary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type, sg: privateSg },
     ];
@@ -153,6 +165,20 @@ export class FractalbitsVpcStack extends cdk.Stack {
       instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role);
     });
 
+    // Create bss_server separately in a ASG group
+    const forBenchFlag = props.benchType ? ' --for_bench' : '';
+    const bssBootstrapOptions = `${forBenchFlag} bss_server --bss_service_id=${bssService.serviceId}`;
+    let bssAsg = createEc2Asg(
+        this,
+        'BssAsg',
+        this.vpc,
+        privateSg,
+        ec2Role,
+        ['i8g.xlarge', 'i8g.2xlarge', 'i8g.4xlarge', 'i8g.8xlarge'],
+        // ['i3.2xlarge', 'i3en.xlarge', 'i8g.xlarge2', 'is4gn.xlarge'],
+        bssBootstrapOptions
+    );
+
     let nlb: elbv2.NetworkLoadBalancer | undefined;
     if (props.benchType !== "internal" && props.benchType !== "external") {
       // NLB for API servers
@@ -176,38 +202,21 @@ export class FractalbitsVpcStack extends cdk.Stack {
     }
 
     // Create EBS Volume with Multi-Attach for nss_server
-    const ebsVolume = new ec2.Volume(this, 'MultiAttachVolume', {
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      availabilityZone: az,
-      size: cdk.Size.gibibytes(20),
-      volumeType: ec2.EbsDeviceVolumeType.IO2,
-      iops: 10000,
-      enableMultiAttach: true,
-    });
-    // Attach volume to primary nss_server instance
-    new ec2.CfnVolumeAttachment(this, 'AttachVolumeToActive', {
-      instanceId: instances['nss_server_primary'].instanceId,
-      device: '/dev/xvdf',
-      volumeId: ebsVolume.volumeId,
-    });
+    const ebsVolume = createEbsVolume(this, 'MultiAttachVolume', az, instances['nss_server_primary'].instanceId);
 
     // Create UserData: we need to make it a separate step since we want to get the instance/volume ids
     const primaryNss = instances['nss_server_primary'].instanceId;
     const secondaryNss = instances['nss_server_secondary']?.instanceId ?? null;
     const ebsVolumeId = ebsVolume.volumeId;
-    const bssIp = instances["bss_server"].instancePrivateIp;
+    const bssIp = bssService.serviceName + '.' + privateDnsNamespace.namespaceName;
     const nssIp = instances["nss_server_primary"].instancePrivateIp;
     const rssIp = instances["root_server"].instancePrivateIp;
-    const forBenchFlag = props.benchType ? ' --for_bench' : '';
 
     const instanceBootstrapOptions = [
       {
         id: 'root_server',
         bootstrapOptions: `${forBenchFlag} root_server --primary_instance_id=${primaryNss} --secondary_instance_id=${secondaryNss} --volume_id=${ebsVolumeId}`
       },
-      {
-        id: 'bss_server',
-        bootstrapOptions: `${forBenchFlag} bss_server` },
       {
         id: 'nss_server_primary',
         bootstrapOptions: `${forBenchFlag} nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --iam_role=${ec2Role.roleName}`
@@ -302,6 +311,11 @@ export class FractalbitsVpcStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'VolumeId', {
       value: ebsVolumeId,
       description: 'EBS volume ID',
+    });
+
+    new cdk.CfnOutput(this, 'AsgName', {
+      value: bssAsg.autoScalingGroupName,
+      description: `Bss Auto Scaling Group Name`,
     });
   }
 }

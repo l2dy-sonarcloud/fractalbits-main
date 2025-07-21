@@ -1,7 +1,11 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(meta_stack_testing: bool, _for_bench: bool) -> CmdResult {
+pub fn bootstrap(
+    bss_service_id: Option<String>,
+    meta_stack_testing: bool,
+    for_bench: bool,
+) -> CmdResult {
     install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
     // no twp support since experiment done
     format_local_nvme_disks(false)?;
@@ -17,7 +21,7 @@ pub fn bootstrap(meta_stack_testing: bool, _for_bench: bool) -> CmdResult {
     create_bss_config()?;
     create_systemd_unit_file("bss_server", true)?;
 
-    if meta_stack_testing {
+    if meta_stack_testing || for_bench {
         download_binaries(&["rewrk_rpc"])?;
         xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
     }
@@ -26,6 +30,10 @@ pub fn bootstrap(meta_stack_testing: bool, _for_bench: bool) -> CmdResult {
         info "Syncing file system changes";
         sync;
     }?;
+
+    if let Some(bss_service_id) = bss_service_id {
+        register_service(&bss_service_id)?;
+    }
 
     Ok(())
 }
@@ -43,5 +51,20 @@ use_direct_io = true
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/$BSS_SERVER_CONFIG;
     }?;
+
+    Ok(())
+}
+
+fn register_service(bss_service_id: &str) -> CmdResult {
+    let instance_id = run_fun!(ec2-metadata -i | awk r"{print $2}")?;
+    let private_ip = run_fun!(ec2-metadata -o | awk r"{print $2}")?;
+    run_cmd! {
+        info "registering bss_server service";
+        aws servicediscovery register-instance
+            --service-id ${bss_service_id}
+            --instance-id $instance_id
+            --attributes AWS_INSTANCE_IPV4=$private_ip
+    }?;
+
     Ok(())
 }
