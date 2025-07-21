@@ -25,7 +25,7 @@ pub fn run_cmd_deploy(
             [
                 "-Dtarget=aarch64-linux-gnu",
                 "-Dcpu=neoverse_v1",
-                "-Dbss_cpu=neoverse_n1",
+                "-Dbss_cpu=neoverse_v2",
             ],
         )
     } else {

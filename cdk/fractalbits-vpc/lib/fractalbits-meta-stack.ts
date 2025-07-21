@@ -88,8 +88,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
       });
     } else {
       const bssInstanceType = props.bssUseI3
-          ? ec2.InstanceType.of(ec2.InstanceClass.I3, ec2.InstanceSize.XLARGE2)
-          : ec2.InstanceType.of(ec2.InstanceClass.IS4GEN, ec2.InstanceSize.XLARGE);
+          ? ec2.InstanceType.of(ec2.InstanceClass.I3EN, ec2.InstanceSize.XLARGE2)
+          : ec2.InstanceType.of(ec2.InstanceClass.I8G, ec2.InstanceSize.XLARGE2);
       instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, bssInstanceType, sg, ec2Role);
       instance.addUserData(createUserData(this, `bss_server --meta_stack_testing`).render());
     }

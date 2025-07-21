@@ -99,7 +99,7 @@ fn create_workload_config(service_endpoint: &str, client_ips: &Vec<String>) -> C
     concurrent: 48
 
     # Use POST Object operations for upload.
-    post: false
+    # post: false
 
     # Properties of uploaded objects.
     obj:
