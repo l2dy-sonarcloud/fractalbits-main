@@ -256,6 +256,7 @@ impl BlobClient {
         block_number: u32,
         body: Bytes,
     ) -> Result<usize, RpcErrorBss> {
+        histogram!("blob_size", "operation" => "put").record(body.len() as f64);
         let start = Instant::now();
         if block_number == 0 && body.len() < ObjectLayout::DEFAULT_BLOCK_SIZE as usize {
             let res = bss_rpc_retry!(self, put_blob(blob_id, block_number, body.clone())).await;
@@ -284,7 +285,11 @@ impl BlobClient {
         block_number: u32,
         body: &mut Bytes,
     ) -> Result<usize, RpcErrorBss> {
-        bss_rpc_retry!(self, get_blob(blob_id, block_number, body)).await
+        let res = bss_rpc_retry!(self, get_blob(blob_id, block_number, body)).await;
+        if let Ok(size) = res {
+            histogram!("blob_size", "operation" => "get").record(size as f64);
+        }
+        res
     }
 
     pub async fn delete_blob(&self, blob_id: Uuid, block_number: u32) -> Result<(), RpcErrorBss> {

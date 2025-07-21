@@ -80,6 +80,7 @@ pub async fn put_object_handler(
         .await
         .map_err(|_e| S3Error::InternalError)?;
 
+    histogram!("object_size", "operation" => "put").record(size as f64);
     histogram!("put_object_handler", "stage" => "put_blob")
         .record(start.elapsed().as_nanos() as f64);
 
@@ -137,16 +138,18 @@ pub async fn put_object_handler(
     };
     if !old_object_bytes.is_empty() {
         let old_object = rkyv::from_bytes::<ObjectLayout, Error>(&old_object_bytes)?;
+        if let Ok(size) = old_object.size() {
+            histogram!("object_size", "operation" => "delete_old_blob").record(size as f64);
+        }
         let blob_id = old_object.blob_id()?;
         let num_blocks = old_object.num_blocks()?;
         if let Err(e) = blob_deletion.send((blob_id, num_blocks)).await {
             tracing::warn!(
             "Failed to send blob {blob_id} num_blocks={num_blocks} for background deletion: {e}");
         }
+        histogram!("put_object_handler", "stage" => "send_old_blob_for_deletion")
+            .record(start.elapsed().as_nanos() as f64);
     }
-
-    histogram!("put_object_handler", "stage" => "delete_old_blob")
-        .record(start.elapsed().as_nanos() as f64);
 
     let mut resp = Response::new(Body::empty());
     resp.headers_mut()

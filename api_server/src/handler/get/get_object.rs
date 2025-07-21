@@ -9,6 +9,7 @@ use axum::{
 };
 use bytes::Bytes;
 use futures::{stream, StreamExt, TryStreamExt};
+use metrics::histogram;
 use serde::Deserialize;
 
 use crate::{
@@ -95,6 +96,7 @@ pub async fn get_object_handler(
     let header_opts = HeaderOpts::from_headers(&parts.headers)?;
     let object = get_raw_object(&app, &bucket.root_blob_name, &key).await?;
     let total_size = object.size()?;
+    histogram!("object_size", "operation" => "get").record(total_size as f64);
     let range = parse_range_header(header_opts.range, total_size)?;
     let checksum_mode_enabled = header_opts.x_amz_checksum_mode_enabled;
     match (query_opts.part_number, range) {

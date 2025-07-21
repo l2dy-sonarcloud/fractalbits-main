@@ -1,3 +1,4 @@
+use metrics::histogram;
 use rpc_client_common::{nss_rpc_retry, rpc_retry};
 use std::sync::Arc;
 
@@ -43,6 +44,9 @@ pub async fn delete_object_handler(
     };
 
     let object = rkyv::from_bytes::<ObjectLayout, Error>(&object_bytes)?;
+    if let Ok(size) = object.size() {
+        histogram!("object_size", "operation" => "delete").record(size as f64);
+    }
     match object.state {
         ObjectState::Normal(..) => {
             delete_blob(&object, blob_deletion).await?;
