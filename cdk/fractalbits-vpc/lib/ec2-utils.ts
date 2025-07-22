@@ -66,15 +66,15 @@ export const createEc2Asg = (
     let x86LaunchTemplate: ec2.LaunchTemplate | undefined;
     if (x86InstanceTypes.length > 0) {
         x86LaunchTemplate = new ec2.LaunchTemplate(scope, `${id}X86LaunchTemplate`, {
+            instanceType: new ec2.InstanceType(x86InstanceTypes[0]),
             machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: ec2.AmazonLinuxCpuType.X86_64 }),
             securityGroup: sg,
             role: role,
             userData: createUserData(scope, bootstrapOptions),
         });
-        x86InstanceTypes.forEach(typeName => {
+        x86InstanceTypes.slice(1).forEach(typeName => {
             launchTemplateOverrides.push({
                 instanceType: new ec2.InstanceType(typeName),
-                launchTemplate: x86LaunchTemplate,
             });
         });
     }
@@ -82,15 +82,15 @@ export const createEc2Asg = (
     let armLaunchTemplate: ec2.LaunchTemplate | undefined;
     if (armInstanceTypes.length > 0) {
         armLaunchTemplate = new ec2.LaunchTemplate(scope, `${id}ArmLaunchTemplate`, {
+            instanceType: new ec2.InstanceType(armInstanceTypes[0]),
             machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: ec2.AmazonLinuxCpuType.ARM_64 }),
             securityGroup: sg,
             role: role,
             userData: createUserData(scope, bootstrapOptions),
         });
-        armInstanceTypes.forEach(typeName => {
+        armInstanceTypes.slice(1).forEach(typeName => {
             launchTemplateOverrides.push({
                 instanceType: new ec2.InstanceType(typeName),
-                launchTemplate: armLaunchTemplate,
             });
         });
     }
