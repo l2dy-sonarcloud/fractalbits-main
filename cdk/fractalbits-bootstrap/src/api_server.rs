@@ -1,9 +1,8 @@
 use crate::*;
 
 pub fn bootstrap(
-    api_server_service_id: &str,
+    service_id: &str,
     bucket_name: &str,
-    bss_ip: &str,
     nss_ip: &str,
     rss_ip: &str,
     for_bench: bool,
@@ -14,7 +13,15 @@ pub fn bootstrap(
         "warp", // for e2e benchmark testing
     ])?;
 
-    for (role, ip) in [("bss", bss_ip), ("rss", rss_ip), ("nss", nss_ip)] {
+    let bss_service_name = "bss-server.fractalbits.local";
+    info!("Waiting for bss with dns name: {bss_service_name}");
+    let bss_ip = loop {
+        match run_fun!(dig +short $bss_service_name) {
+            Ok(ip) if !ip.is_empty() => break ip,
+            _ => std::thread::sleep(std::time::Duration::from_secs(1)),
+        }
+    };
+    for (role, ip) in [("bss", bss_ip.as_str()), ("rss", rss_ip), ("nss", nss_ip)] {
         info!("Waiting for {role} node with ip {ip} to be ready");
         while run_cmd!(nc -z $ip 8088 &>/dev/null).is_err() {
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -22,7 +29,6 @@ pub fn bootstrap(
         info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
     }
 
-    let bss_ip = run_fun!(dig +short $bss_ip)?;
     create_config(bucket_name, &bss_ip, nss_ip, rss_ip)?;
 
     if for_bench {
@@ -40,7 +46,7 @@ pub fn bootstrap(
 
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("api_server", true)?;
-    register_service(api_server_service_id)?;
+    create_cloudmap_register_and_deregister_service(service_id)?;
 
     Ok(())
 }

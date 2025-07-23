@@ -41,15 +41,12 @@ enum Command {
     ApiServer {
         #[clap(
             long,
-            long_help = "Api server service id, used for service registering"
+            long_help = "Api server service ID, used for service registering"
         )]
-        api_server_service_id: String,
+        service_id: String,
 
         #[clap(long, long_help = "S3 bucket name for fractalbits service")]
         bucket: String,
-
-        #[clap(long, long_help = "bss_server IP address")]
-        bss_ip: String,
 
         #[clap(long, long_help = "primary nss_server IP address")]
         nss_ip: String,
@@ -60,8 +57,8 @@ enum Command {
 
     #[clap(about = "Run on bss_server instance to bootstrap fractalbits service(s)")]
     BssServer {
-        #[clap(long, long_help = "Bss service id, used for service registering")]
-        bss_service_id: Option<String>,
+        #[clap(long, long_help = "Bss service ID, used for service registering")]
+        service_id: String,
 
         #[clap(long, default_value = "false", long_help = "For meta stack testing")]
         meta_stack_testing: bool,
@@ -116,18 +113,23 @@ enum Command {
             default_value = "api-server.fractalbits.local",
             long_help = "Service endpoint for benchmark"
         )]
-        service_endpoint: String,
+        api_server_service_endpoint: String,
 
-        #[clap(
-            long,
-            value_delimiter = ',',
-            long_help = "Comma separated list of client IPs"
-        )]
-        client_ips: Vec<String>,
+        #[clap(long, long_help = "Bench client service ID")]
+        bench_client_service_id: String,
+
+        #[clap(long, long_help = "Number of bench clients")]
+        bench_client_num: usize,
     },
 
     #[clap(about = "Run on bench_client instance to benchmark fractalbits service(s)")]
-    BenchClient,
+    BenchClient {
+        #[clap(
+            long,
+            long_help = "Bench client service ID, used for service registering"
+        )]
+        service_id: String,
+    },
 }
 
 #[cmd_lib::main]
@@ -166,23 +168,15 @@ fn main() -> CmdResult {
     let command = opts.command.as_ref().to_owned();
     match opts.command {
         Command::ApiServer {
-            api_server_service_id,
+            service_id,
             bucket,
-            bss_ip,
             nss_ip,
             rss_ip,
-        } => api_server::bootstrap(
-            &api_server_service_id,
-            &bucket,
-            &bss_ip,
-            &nss_ip,
-            &rss_ip,
-            for_bench,
-        )?,
+        } => api_server::bootstrap(&service_id, &bucket, &nss_ip, &rss_ip, for_bench)?,
         Command::BssServer {
-            bss_service_id,
+            service_id,
             meta_stack_testing,
-        } => bss_server::bootstrap(bss_service_id, meta_stack_testing, for_bench)?,
+        } => bss_server::bootstrap(&service_id, meta_stack_testing, for_bench)?,
         Command::NssServer {
             bucket,
             volume_id,
@@ -210,10 +204,15 @@ fn main() -> CmdResult {
             ebs_dev,
         } => nss_server::format_nss(ebs_dev, testing_mode)?,
         Command::BenchServer {
-            service_endpoint,
-            client_ips,
-        } => bench_server::bootstrap(service_endpoint, client_ips)?,
-        Command::BenchClient => bench_client::bootstrap()?,
+            api_server_service_endpoint,
+            bench_client_service_id,
+            bench_client_num,
+        } => bench_server::bootstrap(
+            api_server_service_endpoint,
+            bench_client_service_id,
+            bench_client_num,
+        )?,
+        Command::BenchClient { service_id } => bench_client::bootstrap(&service_id)?,
     }
 
     run_cmd! {

@@ -1,9 +1,31 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(service_endpoint: String, client_ips: Vec<String>) -> CmdResult {
+pub fn bootstrap(
+    api_server_service_endpoint: String,
+    bench_client_service_id: String,
+    bench_client_num: usize,
+) -> CmdResult {
     download_binaries(&["warp"])?;
-    create_workload_config(&service_endpoint, &client_ips)?;
+
+    info!("Waiting for {bench_client_num} bench client service");
+    let client_ips: Vec<String> = loop {
+        let res = run_fun! {
+             aws servicediscovery list-instances
+                 --service-id $bench_client_service_id
+                 --query "Instances[].Attributes.AWS_INSTANCE_IPV4"
+                 --output text
+        };
+        if let Ok(output) = res {
+            let ips: Vec<String> = output.split_whitespace().map(String::from).collect();
+            if ips.len() == bench_client_num {
+                info!("Found a list of bench clients: {ips:?}");
+                break ips;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    };
+    create_workload_config(&api_server_service_endpoint, &client_ips)?;
     create_bench_start_script()?;
     Ok(())
 }

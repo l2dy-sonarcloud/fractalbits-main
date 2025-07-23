@@ -2,7 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { createInstance, createUserData } from './ec2-utils';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
+import { createInstance, createUserData, createEc2Asg} from './ec2-utils';
 
 interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
@@ -49,7 +50,20 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
       ],
+    });
+
+    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsBenchNamespace', {
+        name: 'fractalbits-bench.local',
+        vpc: this.vpc,
+    });
+
+    const benchClientService = privateDnsNamespace.createService('BenchClientService', {
+        name: 'bench-client',
+        dnsRecordType: servicediscovery.DnsRecordType.A,
+        dnsTtl: cdk.Duration.seconds(60),
+        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
 
     const privateSg = new ec2.SecurityGroup(this, 'BenchPrivateInstanceSG', {
@@ -65,19 +79,21 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
     // Bench Server Instance
     const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
 
-    // Bench Client Instances
-    const benchClientCount = props.benchClientCount;
-    const benchClientInstances: ec2.Instance[] = [];
-    for (let i = 0; i < benchClientCount; i++) {
-      const clientInstance = createInstance(this, this.vpc, `BenchClientInstance${i + 1}`, ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
-      clientInstance.addUserData(createUserData(this, 'bench_client').render());
-      benchClientInstances.push(clientInstance);
-    }
+    // Bench Client ASG
+    const benchClientBootstrapOptions = `bench_client --service_id=${benchClientService.serviceId}`;
+    const benchClientAsg = createEc2Asg(
+        this,
+        'BenchClientAsg',
+        this.vpc,
+        privateSg,
+        ec2Role,
+        ['c7g.medium'],
+        benchClientBootstrapOptions,
+        props.benchClientCount,
+        props.benchClientCount
+    );
 
-    // Get private IP addresses of bench client instances
-    const benchClientIps = cdk.Fn.join(',', benchClientInstances.map(instance => instance.instancePrivateIp));
-
-    const bootstrapOptions = `bench_server --service_endpoint=${props.serviceEndpoint} --client_ips=${benchClientIps}`;
+    const bootstrapOptions = `bench_server --api_server_service_endpoint=${props.serviceEndpoint} --bench_client_service_id=${benchClientService.serviceId} --bench_client_num=${props.benchClientCount}`;
     benchServerInstance.addUserData(createUserData(this, bootstrapOptions).render());
 
     // Outputs
@@ -86,11 +102,9 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       description: 'EC2 instance ID for the bench server',
     });
 
-    benchClientInstances.forEach((instance, index) => {
-      new cdk.CfnOutput(this, `BenchClientInstance${index + 1}Id`, {
-        value: instance.instanceId,
-        description: `EC2 instance ID for bench client ${index + 1}`,
-      });
+    new cdk.CfnOutput(this, 'BenchClientAsgName', {
+      value: benchClientAsg.autoScalingGroupName,
+      description: 'Auto Scaling Group Name for bench clients',
     });
   }
 }

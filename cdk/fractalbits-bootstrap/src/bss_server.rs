@@ -1,11 +1,7 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(
-    bss_service_id: Option<String>,
-    meta_stack_testing: bool,
-    for_bench: bool,
-) -> CmdResult {
+pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) -> CmdResult {
     install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
     // no twp support since experiment done
     format_local_nvme_disks(false)?;
@@ -31,9 +27,7 @@ pub fn bootstrap(
         sync;
     }?;
 
-    if let Some(bss_service_id) = bss_service_id {
-        register_service(&bss_service_id)?;
-    }
+    create_cloudmap_register_and_deregister_service(service_id)?;
 
     Ok(())
 }

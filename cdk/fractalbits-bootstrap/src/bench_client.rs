@@ -1,8 +1,9 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap() -> CmdResult {
+pub fn bootstrap(service_id: &str) -> CmdResult {
     download_binaries(&["warp"])?;
     create_systemd_unit_file("bench_client", true)?;
+    create_cloudmap_register_and_deregister_service(service_id)?;
     Ok(())
 }

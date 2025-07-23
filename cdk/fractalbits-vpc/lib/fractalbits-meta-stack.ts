@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { createEbsVolume, createEc2Asg, createInstance, createUserData } from './ec2-utils';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
@@ -33,8 +34,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
 
-    // Add Interface Endpoint for EC2 and SSM
-    ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES'].forEach(service => {
+    // Add Interface Endpoint for EC2, SSM and CloudMap
+    ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
       this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
         subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -47,7 +48,19 @@ export class FractalbitsMetaStack extends cdk.Stack {
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
       ],
+    });
+
+    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
+        name: 'fractalbits.local',
+        vpc: this.vpc,
+    });
+    const bssService = privateDnsNamespace.createService('BssService', {
+        name: 'bss-server',
+        dnsRecordType: servicediscovery.DnsRecordType.A,
+        dnsTtl: cdk.Duration.seconds(60),
+        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
 
     // Security Group
@@ -82,8 +95,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
         process.exit(1);
       }
       const bssInstanceTypes = props.bssInstanceTypes.split(',');
-      const bssBootstrapOptions = `--for_bench bss_server --meta_stack_testing`;
-      const asg = createEc2Asg(
+      const bssBootstrapOptions = `bss_server --service_id=${bssService.serviceId} --meta_stack_testing`;
+      const bssAsg = createEc2Asg(
         this,
         'BssAsg',
         this.vpc,
@@ -95,8 +108,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
         1,
       );
 
-      targetIdOutput = new cdk.CfnOutput(this, 'AsgName', {
-        value: asg.autoScalingGroupName,
+      targetIdOutput = new cdk.CfnOutput(this, 'bssAsgName', {
+        value: bssAsg.autoScalingGroupName,
         description: `Bss Auto Scaling Group Name`,
       });
     }

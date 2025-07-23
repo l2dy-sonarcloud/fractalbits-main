@@ -304,16 +304,128 @@ pub fn setup_cloudwatch_agent() -> CmdResult {
     Ok(())
 }
 
-pub fn register_service(service_id: &str) -> CmdResult {
-    let instance_id = run_fun!(ec2-metadata -i | awk r"{print $2}")?;
-    let private_ip = run_fun!(ec2-metadata -o | awk r"{print $2}")?;
-    run_cmd! {
-        info "registering itself to cloudmap";
-        aws servicediscovery register-instance
-            --service-id ${service_id}
-            --instance-id $instance_id
-            --attributes AWS_INSTANCE_IPV4=$private_ip
-    }?;
+pub fn create_cloudmap_register_and_deregister_service(service_id: &str) -> CmdResult {
+    run_cmd!(echo $service_id > ${ETC_PATH}service_id)?;
+    create_cloudmap_register_service()?;
+    create_cloudmap_deregister_service()?;
+    Ok(())
+}
 
+fn create_cloudmap_register_service() -> CmdResult {
+    let cloudmap_register_script = format!("{BIN_PATH}cloudmap-register.sh");
+    let systemd_unit_content = format!(
+        r##"[Unit]
+Description=Cloud Map Registration Service
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={cloudmap_register_script}
+
+[Install]
+WantedBy=multi-user.target
+"##
+    );
+
+    let register_script_content = format!(
+        r##"#!/bin/bash
+set -e
+service_id=$(cat {ETC_PATH}service_id) || exit 0 # not registered yet
+instance_id=$(ec2-metadata -i | awk '{{print $2}}')
+private_ip=$(ec2-metadata -o | awk '{{print $2}}')
+
+echo "Registering itself ($instance_id,$private_ip) to cloudmap $service_id" >&2
+aws servicediscovery register-instance \
+    --service-id $service_id \
+    --instance-id $instance_id \
+    --attributes AWS_INSTANCE_IPV4=$private_ip
+echo "Done" >&2
+"##
+    );
+
+    run_cmd! {
+        echo $register_script_content > $cloudmap_register_script;
+        chmod +x $cloudmap_register_script;
+
+        echo $systemd_unit_content > ${ETC_PATH}cloudmap-register.service;
+        systemctl enable --now ${ETC_PATH}cloudmap-register.service;
+    }?;
+    Ok(())
+}
+
+fn create_cloudmap_deregister_service() -> CmdResult {
+    let cloudmap_deregister_script = format!("{BIN_PATH}cloudmap-deregister.sh");
+    let systemd_unit_content = format!(
+        r##"[Unit]
+Description=Cloud Map Deregistration Service
+After=network-online.target
+Before=reboot.target halt.target poweroff.target kexec.target
+
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop={cloudmap_deregister_script}
+
+[Install]
+WantedBy=reboot.target halt.target poweroff.target kexec.target
+"##
+    );
+
+    let deregister_script_content = format!(
+        r##"#!/bin/bash
+set -e
+service_id=$(cat {ETC_PATH}service_id) || exit 0 # not registered yet
+instance_id=$(ec2-metadata -i | awk '{{print $2}}')
+
+echo "Deregistering itself ($instance_id) from cloudmap $service_id" >&2
+op_id=$(aws servicediscovery deregister-instance \
+    --service-id $service_id \
+    --instance-id $instance_id \
+    --output text \
+    --query 'OperationId')
+
+if [ -z "$op_id" ]; then
+    echo "Failed to get operation ID for deregister-instance" >&2
+    exit 1
+fi
+
+echo "Waiting for deregistration to complete (operation: $op_id)..." >&2
+while true; do
+    status=$(aws servicediscovery get-operation \
+        --operation-id "$op_id" \
+        --output text \
+        --query 'Operation.Status')
+    case "$status" in
+        SUCCESS)
+            echo "Deregistration successful." >&2
+            break
+            ;;
+        FAIL)
+            echo "Deregistration failed." >&2
+            exit 1
+            ;;
+        SUBMITTED|PENDING)
+            sleep 1
+            ;;
+        *)
+            echo "Unknown status: $status" >&2
+            exit 1
+            ;;
+    esac
+done
+echo "Done" >&2
+"##
+    );
+
+    run_cmd! {
+        echo $deregister_script_content > $cloudmap_deregister_script;
+        chmod +x $cloudmap_deregister_script;
+
+        echo $systemd_unit_content > ${ETC_PATH}cloudmap-deregister.service;
+        systemctl enable ${ETC_PATH}cloudmap-deregister.service;
+    }?;
     Ok(())
 }
