@@ -160,7 +160,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       // Create bench_server instance
       instanceConfigs.push({ id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
       // Create bench_client instance(s)
-      for (let i = 1; i <= props.numApiServers; i++) {
+      for (let i = 1; i <= props.numBenchClients; i++) {
         instanceConfigs.push({ id: `bench_client_${i}`, subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
       }
     }
@@ -275,7 +275,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     }
 
     if (props.benchType === "external") {
-      for (let i = 1; i <= props.numApiServers; i++) {
+      for (let i = 1; i <= props.numBenchClients; i++) {
         new cdk.CfnOutput(this, `BenchClient_${i}_Id`, {
           value: instances[`bench_client_${i}`].instanceId,
           description: `EC2 instance bench_client_${i} ID`,
