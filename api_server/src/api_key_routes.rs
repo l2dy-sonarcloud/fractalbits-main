@@ -80,7 +80,7 @@ pub async fn delete_api_key(
     let key_id = key_id.trim_start_matches("/api_keys/").to_string();
     info!("Deleting API key with key_id: {}", key_id);
     let table: Table<_, ApiKeyTable> = Table::new(app.clone(), None);
-    let mut api_key = table.get(key_id, true).await.map_err(|e| {
+    let api_key = table.get(key_id, true).await.map_err(|e| {
         error!("Failed to get API key from RSS: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -90,8 +90,7 @@ pub async fn delete_api_key(
             }),
         )
     })?;
-    api_key.data.is_deleted = true;
-    table.put(&api_key).await.map_err(|e| {
+    table.delete(&api_key.data).await.map_err(|e| {
         error!("Failed to put API key to RSS: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
