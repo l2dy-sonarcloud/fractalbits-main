@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { FractalbitsVpcStack } from '../lib/fractalbits-vpc-stack';
-import { FractalbitsBenchVpcStack } from '../lib/fractalbits-bench-vpc-stack';
-import { PeeringStack } from '../lib/fractalbits-peering-stack';
-import { FractalbitsMetaStack } from '../lib/fractalbits-meta-stack';
+import {FractalbitsVpcStack} from '../lib/fractalbits-vpc-stack';
+import {FractalbitsBenchVpcStack} from '../lib/fractalbits-bench-vpc-stack';
+import {PeeringStack} from '../lib/fractalbits-peering-stack';
+import {FractalbitsMetaStack} from '../lib/fractalbits-meta-stack';
 
 const app = new cdk.App();
 

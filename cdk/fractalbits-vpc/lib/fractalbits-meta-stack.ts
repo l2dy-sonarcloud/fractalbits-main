@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
+import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import { createEbsVolume, createEc2Asg, createInstance, createUserData } from './ec2-utils';
+import {createEbsVolume, createEc2Asg, createInstance, createUserData} from './ec2-utils';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
   serviceName: string;
@@ -25,7 +25,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
       availabilityZones: [az],
       natGateways: 0,
       subnetConfiguration: [
-        { name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
+        {name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24},
       ],
     });
 
@@ -38,7 +38,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
     ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
       this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
       });
     });
 
@@ -53,14 +53,14 @@ export class FractalbitsMetaStack extends cdk.Stack {
     });
 
     const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
-        name: 'fractalbits.local',
-        vpc: this.vpc,
+      name: 'fractalbits.local',
+      vpc: this.vpc,
     });
     const bssService = privateDnsNamespace.createService('BssService', {
-        name: 'bss-server',
-        dnsRecordType: servicediscovery.DnsRecordType.A,
-        dnsTtl: cdk.Duration.seconds(60),
-        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
+      name: 'bss-server',
+      dnsRecordType: servicediscovery.DnsRecordType.A,
+      dnsTtl: cdk.Duration.seconds(60),
+      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
 
     // Security Group

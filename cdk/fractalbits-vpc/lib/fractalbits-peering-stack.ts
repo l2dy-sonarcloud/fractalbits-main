@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
+import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 
 interface PeeringStackProps extends cdk.StackProps {
@@ -25,13 +25,13 @@ export class PeeringStack extends cdk.Stack {
     // });
 
     new ec2.CfnRoute(this, 'RouteFromAToB', {
-      routeTableId: props.vpcA.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnets[0].routeTable.routeTableId,
+      routeTableId: props.vpcA.selectSubnets({subnetType: ec2.SubnetType.PRIVATE_ISOLATED}).subnets[0].routeTable.routeTableId,
       destinationCidrBlock: props.vpcB.vpcCidrBlock,
       vpcPeeringConnectionId: vpcPeeringConnection.ref,
     });
 
     new ec2.CfnRoute(this, 'RouteFromBToA', {
-      routeTableId: props.vpcB.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnets[0].routeTable.routeTableId,
+      routeTableId: props.vpcB.selectSubnets({subnetType: ec2.SubnetType.PRIVATE_ISOLATED}).subnets[0].routeTable.routeTableId,
       destinationCidrBlock: props.vpcA.vpcCidrBlock,
       vpcPeeringConnectionId: vpcPeeringConnection.ref,
     });

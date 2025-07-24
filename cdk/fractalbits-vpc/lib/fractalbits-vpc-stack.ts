@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
+import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -8,7 +8,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 
-import { createInstance, createUserData, createEc2Asg, createEbsVolume} from './ec2-utils';
+import {createInstance, createUserData, createEc2Asg, createEbsVolume} from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
@@ -36,7 +36,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       enableDnsHostnames: true,
       enableDnsSupport: true,
       subnetConfiguration: [
-        { name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
+        {name: 'PrivateSubnet', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24},
       ],
     });
 
@@ -54,20 +54,20 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
-        name: 'fractalbits.local',
-        vpc: this.vpc,
+      name: 'fractalbits.local',
+      vpc: this.vpc,
     });
     const bssService = privateDnsNamespace.createService('BssService', {
-        name: 'bss-server',
-        dnsRecordType: servicediscovery.DnsRecordType.A,
-        dnsTtl: cdk.Duration.seconds(60),
-        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
+      name: 'bss-server',
+      dnsRecordType: servicediscovery.DnsRecordType.A,
+      dnsTtl: cdk.Duration.seconds(60),
+      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
     const apiServerService = privateDnsNamespace.createService('ApiServerService', {
-        name: 'api-server',
-        dnsRecordType: servicediscovery.DnsRecordType.A,
-        dnsTtl: cdk.Duration.seconds(60),
-        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
+      name: 'api-server',
+      dnsRecordType: servicediscovery.DnsRecordType.A,
+      dnsTtl: cdk.Duration.seconds(60),
+      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
     });
 
     // Add Gateway Endpoint for S3
@@ -84,7 +84,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
       this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
         service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
         privateDnsEnabled: true,
       });
     });
@@ -141,8 +141,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const benchInstanceType = new ec2.InstanceType('c7g.large');
     const bucketName = bucket.bucketName;
     const instanceConfigs = [
-      { id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg },
-      { id: 'nss_server_primary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg },
+      {id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
+      {id: 'nss_server_primary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg},
       // { id: 'nss_server_secondary', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nss_instance_type, sg: privateSg },
     ];
 
@@ -150,58 +150,58 @@ export class FractalbitsVpcStack extends cdk.Stack {
     let benchClientService: servicediscovery.Service | undefined;
     if (props.benchType === "external") {
       // Create bench_server
-      instanceConfigs.push({ id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg });
+      instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg});
       // Create bench_clients in a ASG group
       benchClientService = privateDnsNamespace.createService('benchClientService', {
-          name: 'bench-client',
-          dnsRecordType: servicediscovery.DnsRecordType.A,
-          dnsTtl: cdk.Duration.seconds(60),
-          routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
+        name: 'bench-client',
+        dnsRecordType: servicediscovery.DnsRecordType.A,
+        dnsTtl: cdk.Duration.seconds(60),
+        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
       });
       const benchClientBootstrapOptions = `bench_client --service_id=${benchClientService.serviceId}`;
       benchClientAsg = createEc2Asg(
-          this,
-          'benchClientAsg',
-          this.vpc,
-          privateSg,
-          ec2Role,
-          ['c7g.large'],
-          benchClientBootstrapOptions,
-          props.numBenchClients,
-          props.numBenchClients
+        this,
+        'benchClientAsg',
+        this.vpc,
+        privateSg,
+        ec2Role,
+        ['c7g.large'],
+        benchClientBootstrapOptions,
+        props.numBenchClients,
+        props.numBenchClients
       );
     }
     const instances: Record<string, ec2.Instance> = {};
-    instanceConfigs.forEach(({ id, subnet, instanceType, sg}) => {
+    instanceConfigs.forEach(({id, subnet, instanceType, sg}) => {
       instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role);
     });
 
     // Create bss_server in a ASG group
     const bssBootstrapOptions = `${forBenchFlag} bss_server --service_id=${bssService.serviceId}`;
     const bssAsg = createEc2Asg(
-        this,
-        'BssAsg',
-        this.vpc,
-        privateSg,
-        ec2Role,
-        props.bssInstanceTypes.split(','),
-        bssBootstrapOptions,
-        1,
-        1
+      this,
+      'BssAsg',
+      this.vpc,
+      privateSg,
+      ec2Role,
+      props.bssInstanceTypes.split(','),
+      bssBootstrapOptions,
+      1,
+      1
     );
 
     // Create api_server(s) in a ASG group
     const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp} --service_id=${apiServerService.serviceId}`;
     const apiServerAsg = createEc2Asg(
-        this,
-        'ApiServerAsg',
-        this.vpc,
-        publicSg,
-        ec2Role,
-        ['c8g.large'],
-        apiServerBootstrapOptions,
-        props.numApiServers,
-        props.numApiServers
+      this,
+      'ApiServerAsg',
+      this.vpc,
+      publicSg,
+      ec2Role,
+      ['c8g.large'],
+      apiServerBootstrapOptions,
+      props.numApiServers,
+      props.numApiServers
     );
 
     let nlb: elbv2.NetworkLoadBalancer | undefined;
@@ -210,10 +210,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
       nlb = new elbv2.NetworkLoadBalancer(this, 'ApiNLB', {
         vpc: this.vpc,
         internetFacing: false,
-        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        vpcSubnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
       });
 
-      const listener = nlb.addListener('ApiListener', { port: 80 });
+      const listener = nlb.addListener('ApiListener', {port: 80});
 
       listener.addTargets('ApiTargets', {
         port: 80,
