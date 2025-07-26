@@ -12,6 +12,7 @@ interface FractalbitsMetaStackProps extends cdk.StackProps {
   availabilityZone?: string;
   nssInstanceType?: string;
   bssInstanceTypes?: string;
+  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsMetaStack extends cdk.Stack {
@@ -109,10 +110,8 @@ export class FractalbitsMetaStack extends cdk.Stack {
         1,
       );
 
-      const helperStack = new FractalbitsHelperStack(this, 'FractalbitsHelperStack');
-
       new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-        serviceToken: helperStack.deregisterProviderServiceToken,
+        serviceToken: props.deregisterProviderServiceToken,
         properties: {
           ServiceId: bssService.serviceId,
           NamespaceName: privateDnsNamespace.namespaceName,

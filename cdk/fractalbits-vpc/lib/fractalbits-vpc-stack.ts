@@ -9,7 +9,6 @@ import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 
 import {createInstance, createUserData, createEc2Asg, createEbsVolume, addAsgDeregistrationLifecycleHook} from './ec2-utils';
-import {FractalbitsHelperStack} from './fractalbits-helper-stack';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
@@ -18,6 +17,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   availabilityZone?: string;
   bssInstanceTypes: string;
   browserIp?: string;
+  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -276,11 +276,9 @@ export class FractalbitsVpcStack extends cdk.Stack {
       instances[id]?.addUserData(createUserData(this, bootstrapOptions).render())
     })
 
-    const helperStack = new FractalbitsHelperStack(this, 'FractalbitsHelperStack');
-
     // Create custom resources for ASG CloudMap deregistration
     new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-      serviceToken: helperStack.deregisterProviderServiceToken,
+      serviceToken: props.deregisterProviderServiceToken,
       properties: {
         ServiceId: bssService.serviceId,
         NamespaceName: privateDnsNamespace.namespaceName,
@@ -292,7 +290,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     addAsgDeregistrationLifecycleHook(this, 'Bss', bssAsg, bssService);
 
     new cdk.CustomResource(this, 'DeregisterApiServerAsgInstances', {
-      serviceToken: helperStack.deregisterProviderServiceToken,
+      serviceToken: props.deregisterProviderServiceToken,
       properties: {
         ServiceId: apiServerService.serviceId,
         NamespaceName: privateDnsNamespace.namespaceName,
@@ -305,7 +303,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     if (benchClientAsg && benchClientService) {
       new cdk.CustomResource(this, 'DeregisterBenchClientAsgInstances', {
-        serviceToken: helperStack.deregisterProviderServiceToken,
+        serviceToken: props.deregisterProviderServiceToken,
         properties: {
           ServiceId: benchClientService.serviceId,
           NamespaceName: privateDnsNamespace.namespaceName,

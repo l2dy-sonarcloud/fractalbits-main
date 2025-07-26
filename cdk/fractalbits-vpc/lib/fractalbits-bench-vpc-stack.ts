@@ -10,6 +10,7 @@ interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
   benchClientCount: number;
   benchType?: "service_endpoint" | "internal" | "external" | null;
+  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsBenchVpcStack extends cdk.Stack {
@@ -108,10 +109,8 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       description: 'Auto Scaling Group Name for bench clients',
     });
 
-    const helperStack = new FractalbitsHelperStack(this, 'FractalbitsHelperStack');
-
     new cdk.CustomResource(this, 'DeregisterBenchClientAsgInstances', {
-      serviceToken: helperStack.deregisterProviderServiceToken,
+      serviceToken: props.deregisterProviderServiceToken,
       properties: {
         ServiceId: benchClientService.serviceId,
         NamespaceName: privateDnsNamespace.namespaceName,

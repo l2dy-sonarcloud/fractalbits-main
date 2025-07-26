@@ -19,7 +19,7 @@ export class FractalbitsHelperStack extends cdk.Stack {
     });
 
     const deregisterLambda = new lambda.Function(this, 'DeregisterLambda', {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('lib/lambda/deregister-asg-instances'),
       role: deregisterLambdaRole,
