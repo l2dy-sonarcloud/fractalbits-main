@@ -4,7 +4,8 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import {createEbsVolume, createEc2Asg, createInstance, createUserData, addAsgDeregistrationLifecycleHook, createDeregisterProviderServiceToken} from './ec2-utils';
+import {createEbsVolume, createEc2Asg, createInstance, createUserData, addAsgDeregistrationLifecycleHook} from './ec2-utils';
+import {FractalbitsHelperStack} from './fractalbits-helper-stack';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
   serviceName: string;
@@ -108,10 +109,10 @@ export class FractalbitsMetaStack extends cdk.Stack {
         1,
       );
 
-      const deregisterProviderServiceToken = createDeregisterProviderServiceToken(this, 'DeregisterProvider');
+      const helperStack = new FractalbitsHelperStack(this, 'FractalbitsHelperStack');
 
       new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-        serviceToken: deregisterProviderServiceToken,
+        serviceToken: helperStack.deregisterProviderServiceToken,
         properties: {
           ServiceId: bssService.serviceId,
           NamespaceName: privateDnsNamespace.namespaceName,

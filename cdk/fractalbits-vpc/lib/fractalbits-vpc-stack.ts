@@ -8,7 +8,8 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 
-import {createInstance, createUserData, createEc2Asg, createEbsVolume, addAsgDeregistrationLifecycleHook, createDeregisterProviderServiceToken} from './ec2-utils';
+import {createInstance, createUserData, createEc2Asg, createEbsVolume, addAsgDeregistrationLifecycleHook} from './ec2-utils';
+import {FractalbitsHelperStack} from './fractalbits-helper-stack';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
@@ -275,11 +276,11 @@ export class FractalbitsVpcStack extends cdk.Stack {
       instances[id]?.addUserData(createUserData(this, bootstrapOptions).render())
     })
 
-    const deregisterProviderServiceToken = createDeregisterProviderServiceToken(this, 'DeregisterProvider');
+    const helperStack = new FractalbitsHelperStack(this, 'FractalbitsHelperStack');
 
     // Create custom resources for ASG CloudMap deregistration
     new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-      serviceToken: deregisterProviderServiceToken,
+      serviceToken: helperStack.deregisterProviderServiceToken,
       properties: {
         ServiceId: bssService.serviceId,
         NamespaceName: privateDnsNamespace.namespaceName,
@@ -291,7 +292,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     addAsgDeregistrationLifecycleHook(this, 'Bss', bssAsg, bssService);
 
     new cdk.CustomResource(this, 'DeregisterApiServerAsgInstances', {
-      serviceToken: deregisterProviderServiceToken,
+      serviceToken: helperStack.deregisterProviderServiceToken,
       properties: {
         ServiceId: apiServerService.serviceId,
         NamespaceName: privateDnsNamespace.namespaceName,
@@ -304,7 +305,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     if (benchClientAsg && benchClientService) {
       new cdk.CustomResource(this, 'DeregisterBenchClientAsgInstances', {
-        serviceToken: deregisterProviderServiceToken,
+        serviceToken: helperStack.deregisterProviderServiceToken,
         properties: {
           ServiceId: benchClientService.serviceId,
           NamespaceName: privateDnsNamespace.namespaceName,

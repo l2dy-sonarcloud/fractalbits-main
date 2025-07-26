@@ -7,7 +7,6 @@ import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as hooktargets from 'aws-cdk-lib/aws-autoscaling-hooktargets';
 import * as path from 'path';
-import * as cr from 'aws-cdk-lib/custom-resources';
 
 export const createInstance = (
   scope: Construct,
@@ -121,32 +120,6 @@ export const createEbsVolume = (
   return ebsVolume;
 };
 
-export function createDeregisterProviderServiceToken(
-  scope: Construct,
-  id: string,
-): string {
-  const deregisterLambdaRole = new iam.Role(scope, `${id}DeregisterLambdaRole`, {
-    assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-    managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
-    ],
-  });
-
-  const deregisterLambda = new lambda.Function(scope, `${id}DeregisterLambda`, {
-    runtime: lambda.Runtime.NODEJS_20_X,
-    handler: 'index.handler',
-    code: lambda.Code.fromAsset('lib/lambda/deregister-asg-instances'),
-    role: deregisterLambdaRole,
-  });
-
-  const deregisterProvider = new cr.Provider(scope, `${id}DeregisterProvider`, {
-    onEventHandler: deregisterLambda,
-  });
-
-  return deregisterProvider.serviceToken;
-}
-
 export function addAsgDeregistrationLifecycleHook(
   scope: Construct,
   id: string,
@@ -183,3 +156,4 @@ export function addAsgDeregistrationLifecycleHook(
     notificationTarget: new hooktargets.FunctionHook(deregisterInstanceLambda),
   });
 }
+
