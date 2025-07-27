@@ -147,7 +147,7 @@ pub fn format_nss(ebs_dev: String, testing_mode: bool) -> CmdResult {
             cd /data;
 
             info "Running nss fbs";
-            /opt/fractalbits/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
+            /opt/fractalbits/bin/fbs -c /opt/fractalbits/etc/nss_server_cloud_config.toml --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
 
             info "Generating random 10_000_000 keys";
             /opt/fractalbits/bin/test_art --gen --size 10000000;
