@@ -66,11 +66,7 @@ pub async fn any_handler(
     let start = Instant::now();
     let (mut parts, body) = request.into_parts();
     let ApiCommandFromQuery(api_cmd) = extract_or_return!(&mut parts, &app, ApiCommandFromQuery);
-    let auth = if app.config.allow_missing_or_bad_signature {
-        None
-    } else {
-        Some(extract_or_return!(&mut parts, &app, Authentication))
-    };
+    let AuthFromHeaders(auth) = extract_or_return!(&mut parts, &app, AuthFromHeaders);
     let BucketAndKeyName { bucket, key } = extract_or_return!(&mut parts, &app, BucketAndKeyName);
     let api_sig = extract_or_return!(&mut parts, &app, ApiSignature);
     let request = http::Request::from_parts(parts, body);

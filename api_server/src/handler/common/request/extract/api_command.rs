@@ -64,14 +64,14 @@ where
             .filter_map(|cmd| ApiCommand::from_str(cmd.as_ref()).ok())
             .collect();
         if api_commands.is_empty() {
-            Ok(ApiCommandFromQuery(None))
+            Ok(Self(None))
         } else {
             if api_commands.len() > 1 {
                 tracing::warn!(
                     "Multiple api command found: {api_commands:?}, pick up the first one"
                 );
             }
-            Ok(ApiCommandFromQuery(Some(api_commands[0])))
+            Ok(Self(Some(api_commands[0])))
         }
     }
 }

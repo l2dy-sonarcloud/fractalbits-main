@@ -1,13 +1,16 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
-use crate::handler::common::{
-    s3_error::S3Error,
-    time::{LONG_DATETIME, SHORT_DATE},
-    xheader,
+use crate::{
+    config::ArcConfig,
+    handler::common::{
+        s3_error::S3Error,
+        time::{LONG_DATETIME, SHORT_DATE},
+        xheader,
+    },
 };
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRef, FromRequestParts},
     http::{
         header::{ToStrError, AUTHORIZATION},
         request::Parts,
@@ -43,23 +46,7 @@ pub struct Authentication {
     pub content_sha256: String,
     pub date: DateTime<Utc>,
 }
-
-impl Authentication {
-    pub fn dummy() -> Self {
-        Self {
-            key_id: "test_api_key".to_string(),
-            scope: Scope {
-                date: Utc::now().format(SHORT_DATE).to_string(),
-                region: "us-east-1".to_string(),
-                service: "s3".to_string(),
-            },
-            signed_headers: BTreeSet::new(),
-            signature: "".to_string(),
-            content_sha256: "UNSIGNED-PAYLOAD".to_string(),
-            date: Utc::now(),
-        }
-    }
-}
+pub struct AuthFromHeaders(pub Option<Authentication>);
 
 #[derive(Debug)]
 pub struct Scope {
@@ -77,13 +64,34 @@ impl Scope {
     }
 }
 
-impl<S> FromRequestParts<S> for Authentication
+impl<S> FromRequestParts<S> for AuthFromHeaders
 where
+    ArcConfig: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = S3Error;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let config = ArcConfig::from_ref(state);
+        match Self::from_request_parts_inner(parts, state) {
+            Ok(auth) => Ok(auth),
+            Err(e) => {
+                if config.allow_missing_or_bad_signature {
+                    Ok(Self(None))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
+impl AuthFromHeaders {
+    fn from_request_parts_inner<S>(parts: &mut Parts, _state: &S) -> Result<Self, S3Error>
+    where
+        ArcConfig: FromRef<S>,
+        S: Send + Sync,
+    {
         let authorization = match parts.headers.get(AUTHORIZATION) {
             Some(auth) => auth.to_str()?,
             None => return Err(S3Error::AccessDenied),
@@ -148,14 +156,15 @@ where
             return Err(AuthError::Invalid("Date mismatch".into()).into());
         }
 
-        Ok(Self {
+        let auth = Authentication {
             key_id,
             scope,
             signed_headers,
             signature,
             content_sha256: content_sha256.to_str()?.to_string(),
             date,
-        })
+        };
+        Ok(Self(Some(auth)))
     }
 }
 
