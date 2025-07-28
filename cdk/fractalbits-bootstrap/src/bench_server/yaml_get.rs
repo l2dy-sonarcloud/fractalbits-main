@@ -2,15 +2,11 @@ use super::*;
 
 // https://github.com/minio/warp/blob/master/yml-samples/get.yml
 pub fn create_get_workload_config(
+    warp_client_ips: &str,
     region: &str,
     service_endpoint: &str,
-    client_ips: &Vec<String>,
+    duration: &str,
 ) -> CmdResult {
-    let mut warp_clients_str = String::new();
-    for ip in client_ips {
-        warp_clients_str.push_str(&format!("  - {ip}:7761\n"));
-    }
-
     let config_content = format!(
         r##"warp:
   api: v1
@@ -36,7 +32,7 @@ pub fn create_get_workload_config(
   # See https://github.com/minio/warp?tab=readme-ov-file#distributed-benchmarking
   # Can be a single value or a list.
   warp-client:
-{warp_clients_str}
+{warp_client_ips}
   # Run MinIO server profiling during benchmark;
   # possible values are 'cpu', 'cpuio', 'mem', 'block', 'mutex', 'threads' and 'trace'.
   # Can be single value or a list.
@@ -80,7 +76,7 @@ pub fn create_get_workload_config(
   params:
     # Duration to run the benchmark.
     # Use 's' and 'm' to specify seconds and minutes.
-    duration: 5m
+    duration: {duration}
 
     # Concurrent operations to run per warp instance.
     concurrent: 48

@@ -4,6 +4,7 @@ mod yaml_put;
 
 use super::common::*;
 use cmd_lib::*;
+use {yaml_get::*, yaml_mixed::*, yaml_put::*};
 
 pub fn bootstrap(
     api_server_service_endpoint: String,
@@ -29,10 +30,32 @@ pub fn bootstrap(
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     };
+
     let region = get_current_aws_region()?;
-    yaml_put::create_put_workload_config(&region, &api_server_service_endpoint, &client_ips)?;
-    yaml_get::create_get_workload_config(&region, &api_server_service_endpoint, &client_ips)?;
-    yaml_mixed::create_mixed_workload_config(&region, &api_server_service_endpoint, &client_ips)?;
+    let mut warp_client_ips = String::new();
+    for ip in client_ips.iter() {
+        warp_client_ips.push_str(&format!("  - {ip}:7761\n"));
+    }
+    let duration: &str = "1m";
+    create_put_workload_config(
+        &warp_client_ips,
+        &region,
+        &api_server_service_endpoint,
+        duration,
+    )?;
+    create_get_workload_config(
+        &warp_client_ips,
+        &region,
+        &api_server_service_endpoint,
+        duration,
+    )?;
+    create_mixed_workload_config(
+        &warp_client_ips,
+        &region,
+        &api_server_service_endpoint,
+        duration,
+    )?;
+
     create_bench_start_script(&region, &api_server_service_endpoint)?;
     Ok(())
 }
@@ -40,23 +63,20 @@ pub fn bootstrap(
 fn create_bench_start_script(region: &str, api_server_service_endpoint: &str) -> CmdResult {
     let script_content = format!(
         r##"#!/bin/bash
-set -e
 
-CONF=/opt/fractalbits/etc/bench_${{WORKLOAD:-put}}.yml
-WARP=/opt/fractalbits/bin/warp
-region={region}
-bench_bucket=warp-benchmark-bucket
-host={api_server_service_endpoint}
-export AWS_DEFAULT_REGION=$region
-export AWS_ENDPOINT_URL_S3=http://$host
 export AWS_ACCESS_KEY_ID=test_api_key
 export AWS_SECRET_ACCESS_KEY=test_api_secret
+
+set -ex
+export AWS_DEFAULT_REGION={region}
+export AWS_ENDPOINT_URL_S3=http://{api_server_service_endpoint}
+bench_bucket=warp-benchmark-bucket
 
 if ! aws s3api head-bucket --bucket $bench_bucket &>/dev/null; then
   aws s3api create-bucket --bucket $bench_bucket
 fi
 
-$WARP run $CONF
+/opt/fractalbits/bin/warp run /opt/fractalbits/etc/bench_${{WORKLOAD:-put}}.yml
 "##
     );
     run_cmd! {
