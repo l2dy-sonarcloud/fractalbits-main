@@ -10,7 +10,7 @@ pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) ->
     create_coredump_config()?;
 
     info!("Creating directories for bss_server");
-    run_cmd!(mkdir -p /data/local/stats)?;
+    run_cmd!(mkdir -p "/data/local/stats")?;
     for i in 0..256 {
         run_cmd!(mkdir -p /data/local/blobs/dir$i)?;
     }
@@ -23,12 +23,13 @@ pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) ->
         xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
     }
 
+    create_logrotate_for_stats()?;
+    create_cloudmap_register_and_deregister_service(service_id)?;
+
     run_cmd! {
         info "Syncing file system changes";
         sync;
     }?;
-
-    create_cloudmap_register_and_deregister_service(service_id)?;
 
     Ok(())
 }

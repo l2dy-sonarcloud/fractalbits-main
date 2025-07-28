@@ -41,6 +41,7 @@ fn setup_configs(
     create_ebs_udev_rule(volume_id, service_name)?;
     create_coredump_config()?;
     create_systemd_unit_file(service_name, false)?;
+    create_logrotate_for_stats()?;
     Ok(())
 }
 

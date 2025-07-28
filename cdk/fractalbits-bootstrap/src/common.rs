@@ -110,13 +110,17 @@ WantedBy=multi-user.target
         systemctl enable ${ETC_PATH}${service_file} --force --quiet ${enable_now_opt};
     }?;
 
+    Ok(())
+}
+
+pub fn create_logrotate_for_stats() -> CmdResult {
     let rotate_config_content = r##"/data/local/stats/*.stats {
-size 50M
-rotate 10
-notifempty
-missingok
-nocreate
-copytruncate
+    size 50M
+    rotate 10
+    notifempty
+    missingok
+    nocreate
+    copytruncate
 }
 "##;
 
