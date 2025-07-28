@@ -9,6 +9,8 @@ pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
 pub const ROOT_SERVER_CONFIG: &str = "root_server_cloud_config.toml";
 pub const BENCH_SERVER_BENCH_START_SCRIPT: &str = "bench_start.sh";
 pub const BOOTSTRAP_DONE_FILE: &str = "/opt/fractalbits/.bootstrap_done";
+pub const STATS_LOGROTATE_CONFIG: &str = "/etc/logrotate.d/stats_logs";
+
 #[allow(dead_code)]
 pub const CLOUDWATCH_AGENT_CONFIG: &str = "cloudwatch_agent_config.json";
 pub const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
@@ -107,6 +109,22 @@ WantedBy=multi-user.target
         info "Enabling ${ETC_PATH}${service_file} (enable_now=${enable_now})";
         systemctl enable ${ETC_PATH}${service_file} --force --quiet ${enable_now_opt};
     }?;
+
+    let rotate_config_content = r##"/data/local/stats/*.stats {
+size 50M
+rotate 10
+notifempty
+missingok
+nocreate
+copytruncate
+}
+"##;
+
+    run_cmd! {
+        info "Enabling stats log rotate";
+        echo $rotate_config_content > ${STATS_LOGROTATE_CONFIG};
+    }?;
+
     Ok(())
 }
 
