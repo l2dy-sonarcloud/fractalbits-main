@@ -36,24 +36,23 @@ pub fn bootstrap(
     for ip in client_ips.iter() {
         warp_client_ips.push_str(&format!("  - {ip}:7761\n"));
     }
-    let duration: &str = "1m";
     create_put_workload_config(
         &warp_client_ips,
         &region,
         &api_server_service_endpoint,
-        duration,
+        "1m",
     )?;
     create_get_workload_config(
         &warp_client_ips,
         &region,
         &api_server_service_endpoint,
-        duration,
+        "5m",
     )?;
     create_mixed_workload_config(
         &warp_client_ips,
         &region,
         &api_server_service_endpoint,
-        duration,
+        "5m",
     )?;
 
     create_bench_start_script(&region, &api_server_service_endpoint)?;
@@ -68,12 +67,15 @@ export AWS_ACCESS_KEY_ID=test_api_key
 export AWS_SECRET_ACCESS_KEY=test_api_secret
 
 set -ex
+host=$(dig +short {api_server_service_endpoint} | head -1)
 export AWS_DEFAULT_REGION={region}
-export AWS_ENDPOINT_URL_S3=http://{api_server_service_endpoint}
+export AWS_ENDPOINT_URL_S3=http://$host
 bench_bucket=warp-benchmark-bucket
 
 if ! aws s3api head-bucket --bucket $bench_bucket &>/dev/null; then
   aws s3api create-bucket --bucket $bench_bucket
+  aws s3api wait bucket-exists --bucket $bench_bucket
+  aws s3 ls
 fi
 
 /opt/fractalbits/bin/warp run /opt/fractalbits/etc/bench_${{WORKLOAD:-put}}.yml

@@ -91,7 +91,7 @@ pub fn create_get_workload_config(
       size: 4KiB
 
       # Number of versions to upload of each object
-      versions: 1
+      # versions: 1
 
       # Randomize the size of each object within certain constraints.
       # See https://github.com/minio/warp?tab=readme-ov-file#random-file-sizes
@@ -120,10 +120,10 @@ pub fn create_get_workload_config(
     # only use objects already in the bucket.
     # If 'objects' is set > 0 this will limit the number of objects.
     # Does not perform any deletes before or after benchmark.
-    list-existing: false
+    # list-existing: false
 
     # When using list-existing, do not use recursive listing
-    list-flat: false
+    # list-flat: false
 
     # Do not clear bucket before or after running benchmarks.
     no-clear: true
