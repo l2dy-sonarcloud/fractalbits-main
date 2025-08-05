@@ -21,7 +21,11 @@ pub async fn abort_multipart_upload_handler(
     _upload_id: String,
 ) -> Result<Response, S3Error> {
     let rpc_timeout = app.config.rpc_timeout();
-    let resp = nss_rpc_retry!(app, get_inode(&bucket.root_blob_name, &key, Some(rpc_timeout))).await?;
+    let resp = nss_rpc_retry!(
+        app,
+        get_inode(&bucket.root_blob_name, &key, Some(rpc_timeout))
+    )
+    .await?;
 
     let object_bytes = match resp.result.unwrap() {
         get_inode_response::Result::Ok(res) => res,

@@ -119,7 +119,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       // Create bench_server
       instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg});
       // Create bench_clients in a ASG group
-      const benchClientBootstrapOptions = `bench_client --service_id=bench-client`;
+      const benchClientBootstrapOptions = `bench_client`;
       benchClientAsg = createEc2Asg(
         this,
         'benchClientAsg',
@@ -138,7 +138,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     // Create bss_server in a ASG group
-    const bssBootstrapOptions = `${forBenchFlag} bss_server --service_id=bss-server`;
+    const bssBootstrapOptions = `${forBenchFlag} bss_server`;
     const bssAsg = createEc2Asg(
       this,
       'BssAsg',
@@ -152,7 +152,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     );
 
     // Create api_server(s) in a ASG group
-    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp} --service_id=api-server`;
+    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`;
     const apiServerAsg = createEc2Asg(
       this,
       'ApiServerAsg',

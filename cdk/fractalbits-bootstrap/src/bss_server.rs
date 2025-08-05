@@ -1,7 +1,7 @@
 use super::common::*;
 use cmd_lib::*;
 
-pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) -> CmdResult {
+pub fn bootstrap(meta_stack_testing: bool, for_bench: bool) -> CmdResult {
     install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
     // no twp support since experiment done
     format_local_nvme_disks(false)?;
@@ -24,7 +24,7 @@ pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) ->
     }
 
     create_logrotate_for_stats()?;
-    create_ddb_register_and_deregister_service(service_id)?;
+    create_ddb_register_and_deregister_service("bss-server")?;
 
     run_cmd! {
         info "Syncing file system changes";

@@ -40,12 +40,6 @@ struct CommonOpts {
 enum Command {
     #[clap(about = "Run on api_server instance to bootstrap fractalbits service(s)")]
     ApiServer {
-        #[clap(
-            long,
-            long_help = "Api server service ID, used for service registering"
-        )]
-        service_id: String,
-
         #[clap(long, long_help = "S3 bucket name for fractalbits service")]
         bucket: String,
 
@@ -70,9 +64,6 @@ enum Command {
 
     #[clap(about = "Run on bss_server instance to bootstrap fractalbits service(s)")]
     BssServer {
-        #[clap(long, long_help = "Bss service ID, used for service registering")]
-        service_id: String,
-
         #[clap(long, default_value = "false", long_help = "For meta stack testing")]
         meta_stack_testing: bool,
     },
@@ -121,21 +112,18 @@ enum Command {
 
     #[clap(about = "Run on bench_server instance to benchmark fractalbits service(s)")]
     BenchServer {
+        #[clap(long, long_help = "Service endpoint for benchmark")]
+        api_server_service_endpoint: Option<String>,
+
         #[clap(long, long_help = "Number of api servers")]
-        api_server_num: usize,
+        api_server_num: Option<usize>,
 
         #[clap(long, long_help = "Number of bench clients")]
         bench_client_num: usize,
     },
 
     #[clap(about = "Run on bench_client instance to benchmark fractalbits service(s)")]
-    BenchClient {
-        #[clap(
-            long,
-            long_help = "Bench client service ID, used for service registering"
-        )]
-        service_id: String,
-    },
+    BenchClient,
 }
 
 #[cmd_lib::main]
@@ -174,20 +162,18 @@ fn main() -> CmdResult {
     let command = opts.command.as_ref().to_owned();
     match opts.command {
         Command::ApiServer {
-            service_id,
             bucket,
             nss_ip,
             rss_ip,
-        } => api_server::bootstrap(&service_id, &bucket, &nss_ip, &rss_ip, for_bench)?,
+        } => api_server::bootstrap(&bucket, &nss_ip, &rss_ip, for_bench)?,
         Command::GuiServer {
             bucket,
             nss_ip,
             rss_ip,
         } => gui_server::bootstrap(&bucket, &nss_ip, &rss_ip)?,
-        Command::BssServer {
-            service_id,
-            meta_stack_testing,
-        } => bss_server::bootstrap(&service_id, meta_stack_testing, for_bench)?,
+        Command::BssServer { meta_stack_testing } => {
+            bss_server::bootstrap(meta_stack_testing, for_bench)?
+        }
         Command::NssServer {
             bucket,
             volume_id,
@@ -215,10 +201,15 @@ fn main() -> CmdResult {
             ebs_dev,
         } => nss_server::format_nss(ebs_dev, testing_mode)?,
         Command::BenchServer {
+            api_server_service_endpoint,
             api_server_num,
             bench_client_num,
-        } => bench_server::bootstrap(api_server_num, bench_client_num)?,
-        Command::BenchClient { service_id } => bench_client::bootstrap(&service_id)?,
+        } => bench_server::bootstrap(
+            api_server_service_endpoint,
+            api_server_num,
+            bench_client_num,
+        )?,
+        Command::BenchClient => bench_client::bootstrap()?,
     }
 
     run_cmd! {

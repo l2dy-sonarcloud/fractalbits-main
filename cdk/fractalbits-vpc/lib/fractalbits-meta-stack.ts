@@ -65,7 +65,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         process.exit(1);
       }
       const bssInstanceTypes = props.bssInstanceTypes.split(',');
-      const bssBootstrapOptions = `bss_server --service_id=bss-server --meta_stack_testing`;
+      const bssBootstrapOptions = `bss_server --meta_stack_testing`;
       const bssAsg = createEc2Asg(
         this,
         'BssAsg',

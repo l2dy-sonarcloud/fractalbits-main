@@ -67,7 +67,7 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
     const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
 
     // Bench Client ASG
-    const benchClientBootstrapOptions = `bench_client --service_id=bench-client`;
+    const benchClientBootstrapOptions = `bench_client`;
     const benchClientAsg = createEc2Asg(
       this,
       'BenchClientAsg',
@@ -80,7 +80,7 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       props.benchClientCount
     );
 
-    const bootstrapOptions = `bench_server --api_server_service_endpoint=${props.serviceEndpoint} --bench_client_service_id=bench-client --bench_client_num=${props.benchClientCount}`;
+    const bootstrapOptions = `bench_server --api_server_service_endpoint=${props.serviceEndpoint} --bench_client_num=${props.benchClientCount}`;
     benchServerInstance.addUserData(createUserData(this, bootstrapOptions).render());
 
     // Outputs

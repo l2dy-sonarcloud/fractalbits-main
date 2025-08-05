@@ -1,30 +1,11 @@
 use crate::*;
 
-pub fn bootstrap(
-    service_id: &str,
-    bucket_name: &str,
-    nss_ip: &str,
-    rss_ip: &str,
-    for_bench: bool,
-) -> CmdResult {
+pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str, for_bench: bool) -> CmdResult {
     install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
     info!("Waiting for bss");
-    let bss_ip = loop {
-        let res = run_fun! {
-            aws dynamodb get-item
-                --table-name ${DDB_SERVICE_DISCOVERY_TABLE}
-                --key r#"{"service_id":{"S":"bss-server"}}"#
-                --projection-expression "ips"
-                --query "Item.ips.SS[0]"
-                --output text
-        };
-        match res {
-            Ok(ip) if !ip.is_empty() && ip != "None" => break ip,
-            _ => std::thread::sleep(std::time::Duration::from_secs(1)),
-        }
-    };
+    let bss_ip = &get_service_ips("bss-server", 1)[0];
     for (role, ip) in [("bss", bss_ip.as_str()), ("rss", rss_ip), ("nss", nss_ip)] {
         info!("Waiting for {role} node with ip {ip} to be ready");
         while run_cmd!(nc -z $ip 8088 &>/dev/null).is_err() {
@@ -33,7 +14,7 @@ pub fn bootstrap(
         info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
     }
 
-    create_config(bucket_name, &bss_ip, nss_ip, rss_ip)?;
+    create_config(bucket_name, bss_ip, nss_ip, rss_ip)?;
 
     if for_bench {
         // Try to download tools for micro-benchmarking
@@ -50,7 +31,7 @@ pub fn bootstrap(
 
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("api_server", true)?;
-    create_ddb_register_and_deregister_service(service_id)?;
+    create_ddb_register_and_deregister_service("api-server")?;
 
     Ok(())
 }

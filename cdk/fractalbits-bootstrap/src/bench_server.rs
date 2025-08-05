@@ -6,29 +6,18 @@ use super::common::*;
 use cmd_lib::*;
 use {yaml_get::*, yaml_mixed::*, yaml_put::*};
 
-pub fn bootstrap(api_server_num: usize, bench_client_num: usize) -> CmdResult {
+pub fn bootstrap(
+    api_server_service_endpoint: Option<String>,
+    api_server_num: Option<usize>,
+    bench_client_num: usize,
+) -> CmdResult {
     download_binaries(&["warp"])?;
 
-    info!("Waiting for {bench_client_num} bench client service");
-    let client_ips: Vec<String> = loop {
-        let res = run_fun! {
-             aws dynamodb get-item
-                 --table-name ${DDB_SERVICE_DISCOVERY_TABLE}
-                 --key r#"{"service_id":{"S":"bench-client"}}"#
-                 --projection-expression "ips"
-                 --query "Item.ips.SS"
-                 --output text
-        };
-        match res {
-            Ok(output) if !output.is_empty() && output != "None" => {
-                let ips: Vec<String> = output.split_whitespace().map(String::from).collect();
-                if ips.len() == bench_client_num {
-                    info!("Found a list of bench clients: {ips:?}");
-                    break ips;
-                }
-            }
-            _ => std::thread::sleep(std::time::Duration::from_secs(1)),
-        };
+    let client_ips = get_service_ips("bench-client", bench_client_num);
+    let api_server_ips = match (api_server_service_endpoint, api_server_num) {
+        (Some(service_endpoint), None) => vec![service_endpoint],
+        (None, Some(api_server_num)) => get_service_ips("api-server", api_server_num),
+        _ => cmd_die!("Wrong bootstrap options"),
     };
 
     let region = get_current_aws_region()?;
@@ -37,33 +26,12 @@ pub fn bootstrap(api_server_num: usize, bench_client_num: usize) -> CmdResult {
         warp_client_ips.push_str(&format!("  - {ip}:7761\n"));
     }
 
-    let api_server_ips: Vec<String> = loop {
-        let res = run_fun! {
-             aws dynamodb get-item
-                 --table-name ${DDB_SERVICE_DISCOVERY_TABLE}
-                 --key r#"{"service_id":{"S":"api-server"}}"#
-                 --projection-expression "ips"
-                 --query "Item.ips.SS"
-                 --output text
-        };
-        match res {
-            Ok(output) if !output.is_empty() && output != "None" => {
-                let ips: Vec<String> = output.split_whitespace().map(String::from).collect();
-                if ips.len() == api_server_num {
-                    info!("Found a list of bench clients: {ips:?}");
-                    break ips;
-                }
-            }
-            _ => std::thread::sleep(std::time::Duration::from_secs(1)),
-        };
-    };
-
     create_bench_start_script(&region, &api_server_ips[0])?;
 
-    let api_server_ips = api_server_ips.join(" ");
-    create_put_workload_config(&warp_client_ips, &region, &api_server_ips, "1m")?;
-    create_get_workload_config(&warp_client_ips, &region, &api_server_ips, "5m")?;
-    create_mixed_workload_config(&warp_client_ips, &region, &api_server_ips, "5m")?;
+    let api_server_ips_str = api_server_ips.join(" ");
+    create_put_workload_config(&warp_client_ips, &region, &api_server_ips_str, "1m")?;
+    create_get_workload_config(&warp_client_ips, &region, &api_server_ips_str, "5m")?;
+    create_mixed_workload_config(&warp_client_ips, &region, &api_server_ips_str, "5m")?;
 
     Ok(())
 }

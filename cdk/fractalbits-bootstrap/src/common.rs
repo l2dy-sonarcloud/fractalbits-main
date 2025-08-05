@@ -1,4 +1,5 @@
 use cmd_lib::*;
+use std::time::{Duration, Instant};
 
 pub const BIN_PATH: &str = "/opt/fractalbits/bin/";
 pub const ETC_PATH: &str = "/opt/fractalbits/etc/";
@@ -410,4 +411,34 @@ echo "Done" >&2
         systemctl enable ${ETC_PATH}ddb-deregister.service;
     }?;
     Ok(())
+}
+
+pub fn get_service_ips(service_id: &str, expected_min_count: usize) -> Vec<String> {
+    info!("Waiting for {expected_min_count} {service_id} service(s)");
+    let start_time = Instant::now();
+    let timeout = Duration::from_secs(120);
+    loop {
+        if start_time.elapsed() > timeout {
+            cmd_die!("Timeout waiting for {service_id} service(s)");
+        }
+        let key = format!(r#"{{"service_id":{{"S":"{service_id}"}}}}"#);
+        let res = run_fun! {
+             aws dynamodb get-item
+                 --table-name ${DDB_SERVICE_DISCOVERY_TABLE}
+                 --key $key
+                 --projection-expression "ips"
+                 --query "Item.ips.SS"
+                 --output text
+        };
+        match res {
+            Ok(output) if !output.is_empty() && output != "None" => {
+                let ips: Vec<String> = output.split_whitespace().map(String::from).collect();
+                if ips.len() >= expected_min_count {
+                    info!("Found a list of {service_id} clients: {ips:?}");
+                    return ips;
+                }
+            }
+            _ => std::thread::sleep(std::time::Duration::from_secs(1)),
+        }
+    }
 }
