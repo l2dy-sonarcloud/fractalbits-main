@@ -4,7 +4,6 @@ import {FractalbitsVpcStack} from '../lib/fractalbits-vpc-stack';
 import {FractalbitsBenchVpcStack} from '../lib/fractalbits-bench-vpc-stack';
 import {PeeringStack} from '../lib/fractalbits-peering-stack';
 import {FractalbitsMetaStack} from '../lib/fractalbits-meta-stack';
-import {FractalbitsHelperStack} from '../lib/fractalbits-helper-stack';
 
 const app = new cdk.App();
 
@@ -15,7 +14,6 @@ const availabilityZone = app.node.tryGetContext('availabilityZone') ?? app.node.
 const bssInstanceTypes = app.node.tryGetContext('bssInstanceTypes') ?? "i8g.xlarge,i8g.2xlarge,i8g.4xlarge";
 const browserIp = app.node.tryGetContext('browserIp') ?? null;
 
-const helperStack = new FractalbitsHelperStack(app, 'FractalbitsHelperStack');
 const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   env: {},
   browserIp: browserIp,
@@ -24,9 +22,7 @@ const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   benchType: benchType,
   availabilityZone: availabilityZone,
   bssInstanceTypes: bssInstanceTypes,
-  deregisterProviderServiceToken: helperStack.deregisterProviderServiceToken,
 });
-vpcStack.addDependency(helperStack);
 
 if (benchType === "service_endpoint") {
   const benchClientCount = app.node.tryGetContext('benchClientCount') ?? 1;
@@ -36,9 +32,7 @@ if (benchType === "service_endpoint") {
     serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
     benchClientCount: benchClientCount,
     benchType: benchType,
-    deregisterProviderServiceToken: helperStack.deregisterProviderServiceToken,
   });
-  benchVpcStack.addDependency(helperStack);
 
   new PeeringStack(app, 'PeeringStack', {
     vpcA: vpcStack.vpc,
@@ -49,18 +43,13 @@ if (benchType === "service_endpoint") {
 
 // === meta stack ===
 const nssInstanceType = app.node.tryGetContext('nssInstanceType') ?? null;
-const nssStack = new FractalbitsMetaStack(app, 'FractalbitsMetaStack-Nss', {
+new FractalbitsMetaStack(app, 'FractalbitsMetaStack-Nss', {
   serviceName: 'nss',
   nssInstanceType: nssInstanceType,
   availabilityZone: availabilityZone,
-  deregisterProviderServiceToken: helperStack.deregisterProviderServiceToken,
 });
-nssStack.addDependency(helperStack);
 
-const bssStack = new FractalbitsMetaStack(app, 'FractalbitsMetaStack-Bss', {
+new FractalbitsMetaStack(app, 'FractalbitsMetaStack-Bss', {
   serviceName: 'bss',
   bssInstanceTypes: bssInstanceTypes,
-  availabilityZone: availabilityZone,
-  deregisterProviderServiceToken: helperStack.deregisterProviderServiceToken,
 });
-bssStack.addDependency(helperStack);

@@ -10,11 +10,18 @@ pub fn bootstrap(
     install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
-    let bss_service_name = "bss-server.fractalbits.local";
-    info!("Waiting for bss with dns name: {bss_service_name}");
+    info!("Waiting for bss");
     let bss_ip = loop {
-        match run_fun!(dig +short $bss_service_name) {
-            Ok(ip) if !ip.is_empty() => break ip,
+        let res = run_fun! {
+            aws dynamodb get-item
+                --table-name ${DDB_SERVICE_DISCOVERY_TABLE}
+                --key r#"{"service_id":{"S":"bss-server"}}"#
+                --projection-expression "ips"
+                --query "Item.ips.SS[0]"
+                --output text
+        };
+        match res {
+            Ok(ip) if !ip.is_empty() && ip != "None" => break ip,
             _ => std::thread::sleep(std::time::Duration::from_secs(1)),
         }
     };
@@ -43,7 +50,7 @@ pub fn bootstrap(
 
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("api_server", true)?;
-    create_cloudmap_register_and_deregister_service(service_id)?;
+    create_ddb_register_and_deregister_service(service_id)?;
 
     Ok(())
 }

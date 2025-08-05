@@ -1,14 +1,12 @@
 import * as cdk from 'aws-cdk-lib';
 import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 
-import {createInstance, createUserData, createEc2Asg, createEbsVolume, addAsgDeregistrationLifecycleHook} from './ec2-utils';
+import {createInstance, createUserData, createEc2Asg, createEbsVolume, createServiceDiscoveryTable, createEc2Role, createVpcEndpoints} from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
@@ -17,7 +15,6 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   availabilityZone?: string;
   bssInstanceTypes: string;
   browserIp?: string;
-  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -43,59 +40,14 @@ export class FractalbitsVpcStack extends cdk.Stack {
       ],
     });
 
-    // IAM Role for EC2
-    const ec2Role = new iam.Role(this, 'InstanceRole', {
-      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMFullAccess'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
-      ],
-    });
+    const ec2Role = createEc2Role(this);
 
-    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
-      name: 'fractalbits.local',
-      vpc: this.vpc,
-    });
-    const bssService = privateDnsNamespace.createService('BssService', {
-      name: 'bss-server',
-      dnsRecordType: servicediscovery.DnsRecordType.A,
-      dnsTtl: cdk.Duration.seconds(60),
-      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
-    });
-    const apiServerService = privateDnsNamespace.createService('ApiServerService', {
-      name: 'api-server',
-      dnsRecordType: servicediscovery.DnsRecordType.A,
-      dnsTtl: cdk.Duration.seconds(60),
-      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
-    });
-
-    // Add Gateway Endpoint for S3
-    this.vpc.addGatewayEndpoint('S3Endpoint', {
-      service: ec2.GatewayVpcEndpointAwsService.S3,
-    });
-
-    // Add Gateway Endpoint for DynamoDB
-    this.vpc.addGatewayEndpoint('DynamoDbEndpoint', {
-      service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
-    });
-
-    // Add Interface Endpoint for EC2, SSM, CloudWatch and CloudMap
-    ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
-      this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
-        service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
-        subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
-        privateDnsEnabled: true,
-      });
-    });
+    createVpcEndpoints(this.vpc);
 
     const publicSg = new ec2.SecurityGroup(this, 'PublicInstanceSG', {
       vpc: this.vpc,
       securityGroupName: 'FractalbitsPublicInstanceSG',
-      description: 'Allow inbound on port 80 for public access, and outbound for SSM, DDB, S3',
+      description: 'Allow inbound on port 80 for public access, and all outbound',
       allowAllOutbound: true,
     });
     publicSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'Allow HTTP access from anywhere');
@@ -103,7 +55,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const privateSg = new ec2.SecurityGroup(this, 'PrivateInstanceSG', {
       vpc: this.vpc,
       securityGroupName: 'FractalbitsPrivateInstanceSG',
-      description: 'Allow inbound on port 8088 (e.g., from internal sources), and outbound for SSM, DDB, S3',
+      description: 'Allow inbound on port 8088 (e.g., from internal sources), and all outbound',
       allowAllOutbound: true,
     });
     privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(8088), 'Allow access to port 8088 from within VPC');
@@ -127,6 +79,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       tableName: 'fractalbits-keys-and-buckets',
     });
+
+    createServiceDiscoveryTable(this);
 
     new dynamodb.Table(this, 'EBSFailoverStateTable', {
       partitionKey: {
@@ -161,18 +115,11 @@ export class FractalbitsVpcStack extends cdk.Stack {
     }
 
     let benchClientAsg: autoscaling.AutoScalingGroup | undefined;
-    let benchClientService: servicediscovery.Service | undefined;
     if (props.benchType === "external") {
       // Create bench_server
       instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg});
       // Create bench_clients in a ASG group
-      benchClientService = privateDnsNamespace.createService('benchClientService', {
-        name: 'bench-client',
-        dnsRecordType: servicediscovery.DnsRecordType.A,
-        dnsTtl: cdk.Duration.seconds(60),
-        routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
-      });
-      const benchClientBootstrapOptions = `bench_client --service_id=${benchClientService.serviceId}`;
+      const benchClientBootstrapOptions = `bench_client --service_id=bench-client`;
       benchClientAsg = createEc2Asg(
         this,
         'benchClientAsg',
@@ -191,7 +138,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     // Create bss_server in a ASG group
-    const bssBootstrapOptions = `${forBenchFlag} bss_server --service_id=${bssService.serviceId}`;
+    const bssBootstrapOptions = `${forBenchFlag} bss_server --service_id=bss-server`;
     const bssAsg = createEc2Asg(
       this,
       'BssAsg',
@@ -205,7 +152,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     );
 
     // Create api_server(s) in a ASG group
-    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp} --service_id=${apiServerService.serviceId}`;
+    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp} --service_id=api-server`;
     const apiServerAsg = createEc2Asg(
       this,
       'ApiServerAsg',
@@ -263,7 +210,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     if (props.benchType === "external") {
       instanceBootstrapOptions.push({
         id: 'bench_server',
-        bootstrapOptions: `bench_server --bench_client_service_id=${benchClientService?.serviceId} --bench_client_num=${props.numBenchClients}`,
+        bootstrapOptions: `bench_server --api_server_num=${props.numApiServers} --bench_client_num=${props.numBenchClients}`,
       });
     }
     if (props.browserIp) {
@@ -275,44 +222,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
       instances[id]?.addUserData(createUserData(this, bootstrapOptions).render())
     })
-
-    // Create custom resources for ASG CloudMap deregistration
-    new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-      serviceToken: props.deregisterProviderServiceToken,
-      properties: {
-        ServiceId: bssService.serviceId,
-        NamespaceName: privateDnsNamespace.namespaceName,
-        ServiceName: bssService.serviceName,
-        AsgName: bssAsg.autoScalingGroupName,
-      },
-    });
-
-    addAsgDeregistrationLifecycleHook(this, 'Bss', bssAsg, bssService);
-
-    new cdk.CustomResource(this, 'DeregisterApiServerAsgInstances', {
-      serviceToken: props.deregisterProviderServiceToken,
-      properties: {
-        ServiceId: apiServerService.serviceId,
-        NamespaceName: privateDnsNamespace.namespaceName,
-        ServiceName: apiServerService.serviceName,
-        AsgName: apiServerAsg.autoScalingGroupName,
-      },
-    });
-
-    addAsgDeregistrationLifecycleHook(this, 'ApiServer', apiServerAsg, apiServerService);
-
-    if (benchClientAsg && benchClientService) {
-      new cdk.CustomResource(this, 'DeregisterBenchClientAsgInstances', {
-        serviceToken: props.deregisterProviderServiceToken,
-        properties: {
-          ServiceId: benchClientService.serviceId,
-          NamespaceName: privateDnsNamespace.namespaceName,
-          ServiceName: benchClientService.serviceName,
-          AsgName: benchClientAsg.autoScalingGroupName,
-        },
-      });
-      addAsgDeregistrationLifecycleHook(this, 'BenchClient', benchClientAsg, benchClientService);
-    }
 
     // Outputs
     new cdk.CfnOutput(this, 'FractalbitsBucketName', {

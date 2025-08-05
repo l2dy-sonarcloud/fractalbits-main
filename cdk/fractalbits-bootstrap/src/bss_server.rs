@@ -24,7 +24,7 @@ pub fn bootstrap(service_id: &str, meta_stack_testing: bool, for_bench: bool) ->
     }
 
     create_logrotate_for_stats()?;
-    create_cloudmap_register_and_deregister_service(service_id)?;
+    create_ddb_register_and_deregister_service(service_id)?;
 
     run_cmd! {
         info "Syncing file system changes";

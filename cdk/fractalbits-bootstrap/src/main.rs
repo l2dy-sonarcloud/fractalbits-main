@@ -121,15 +121,8 @@ enum Command {
 
     #[clap(about = "Run on bench_server instance to benchmark fractalbits service(s)")]
     BenchServer {
-        #[clap(
-            long,
-            default_value = "api-server.fractalbits.local",
-            long_help = "Service endpoint for benchmark"
-        )]
-        api_server_service_endpoint: String,
-
-        #[clap(long, long_help = "Bench client service ID")]
-        bench_client_service_id: String,
+        #[clap(long, long_help = "Number of api servers")]
+        api_server_num: usize,
 
         #[clap(long, long_help = "Number of bench clients")]
         bench_client_num: usize,
@@ -222,14 +215,9 @@ fn main() -> CmdResult {
             ebs_dev,
         } => nss_server::format_nss(ebs_dev, testing_mode)?,
         Command::BenchServer {
-            api_server_service_endpoint,
-            bench_client_service_id,
+            api_server_num,
             bench_client_num,
-        } => bench_server::bootstrap(
-            api_server_service_endpoint,
-            bench_client_service_id,
-            bench_client_num,
-        )?,
+        } => bench_server::bootstrap(api_server_num, bench_client_num)?,
         Command::BenchClient { service_id } => bench_client::bootstrap(&service_id)?,
     }
 

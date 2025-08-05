@@ -2,14 +2,12 @@ import * as cdk from 'aws-cdk-lib';
 import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import {createInstance, createUserData, createEc2Asg, addAsgDeregistrationLifecycleHook} from './ec2-utils';
+import {createInstance, createUserData, createEc2Asg} from './ec2-utils';
 
 interface FractalbitsBenchVpcStackProps extends cdk.StackProps {
   serviceEndpoint: string;
   benchClientCount: number;
   benchType?: "service_endpoint" | "internal" | "external" | null;
-  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsBenchVpcStack extends cdk.Stack {
@@ -55,18 +53,6 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       ],
     });
 
-    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsBenchNamespace', {
-      name: 'fractalbits-bench.local',
-      vpc: this.vpc,
-    });
-
-    const benchClientService = privateDnsNamespace.createService('BenchClientService', {
-      name: 'bench-client',
-      dnsRecordType: servicediscovery.DnsRecordType.A,
-      dnsTtl: cdk.Duration.seconds(60),
-      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
-    });
-
     const privateSg = new ec2.SecurityGroup(this, 'BenchPrivateInstanceSG', {
       vpc: this.vpc,
       securityGroupName: 'FractalbitsBenchPrivateInstanceSG',
@@ -81,7 +67,7 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
     const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
 
     // Bench Client ASG
-    const benchClientBootstrapOptions = `bench_client --service_id=${benchClientService.serviceId}`;
+    const benchClientBootstrapOptions = `bench_client --service_id=bench-client`;
     const benchClientAsg = createEc2Asg(
       this,
       'BenchClientAsg',
@@ -94,7 +80,7 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       props.benchClientCount
     );
 
-    const bootstrapOptions = `bench_server --api_server_service_endpoint=${props.serviceEndpoint} --bench_client_service_id=${benchClientService.serviceId} --bench_client_num=${props.benchClientCount}`;
+    const bootstrapOptions = `bench_server --api_server_service_endpoint=${props.serviceEndpoint} --bench_client_service_id=bench-client --bench_client_num=${props.benchClientCount}`;
     benchServerInstance.addUserData(createUserData(this, bootstrapOptions).render());
 
     // Outputs
@@ -107,17 +93,5 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
       value: benchClientAsg.autoScalingGroupName,
       description: 'Auto Scaling Group Name for bench clients',
     });
-
-    new cdk.CustomResource(this, 'DeregisterBenchClientAsgInstances', {
-      serviceToken: props.deregisterProviderServiceToken,
-      properties: {
-        ServiceId: benchClientService.serviceId,
-        NamespaceName: privateDnsNamespace.namespaceName,
-        ServiceName: benchClientService.serviceName,
-        AsgName: benchClientAsg.autoScalingGroupName,
-      },
-    });
-
-    addAsgDeregistrationLifecycleHook(this, 'BenchClient', benchClientAsg, benchClientService);
   }
 }

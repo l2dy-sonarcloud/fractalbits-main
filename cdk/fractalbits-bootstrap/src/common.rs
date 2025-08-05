@@ -10,6 +10,7 @@ pub const ROOT_SERVER_CONFIG: &str = "root_server_cloud_config.toml";
 pub const BENCH_SERVER_BENCH_START_SCRIPT: &str = "bench_start.sh";
 pub const BOOTSTRAP_DONE_FILE: &str = "/opt/fractalbits/.bootstrap_done";
 pub const STATS_LOGROTATE_CONFIG: &str = "/etc/logrotate.d/stats_logs";
+pub const DDB_SERVICE_DISCOVERY_TABLE: &str = "fractalbits-service-discovery";
 
 #[allow(dead_code)]
 pub const CLOUDWATCH_AGENT_CONFIG: &str = "cloudwatch_agent_config.json";
@@ -314,23 +315,23 @@ pub fn setup_cloudwatch_agent() -> CmdResult {
     Ok(())
 }
 
-pub fn create_cloudmap_register_and_deregister_service(service_id: &str) -> CmdResult {
+pub fn create_ddb_register_and_deregister_service(service_id: &str) -> CmdResult {
     run_cmd!(echo $service_id > ${ETC_PATH}service_id)?;
-    create_cloudmap_register_service()?;
-    create_cloudmap_deregister_service()?;
+    create_ddb_register_service()?;
+    create_ddb_deregister_service()?;
     Ok(())
 }
 
-fn create_cloudmap_register_service() -> CmdResult {
-    let cloudmap_register_script = format!("{BIN_PATH}cloudmap-register.sh");
+fn create_ddb_register_service() -> CmdResult {
+    let ddb_register_script = format!("{BIN_PATH}ddb-register.sh");
     let systemd_unit_content = format!(
         r##"[Unit]
-Description=Cloud Map Registration Service
+Description=DynamoDB Service Registration
 After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart={cloudmap_register_script}
+ExecStart={ddb_register_script}
 
 [Install]
 WantedBy=multi-user.target
@@ -344,30 +345,31 @@ service_id=$(cat {ETC_PATH}service_id) || exit 0 # not registered yet
 instance_id=$(ec2-metadata -i | awk '{{print $2}}')
 private_ip=$(ec2-metadata -o | awk '{{print $2}}')
 
-echo "Registering itself ($instance_id,$private_ip) to cloudmap $service_id" >&2
-aws servicediscovery register-instance \
-    --service-id $service_id \
-    --instance-id $instance_id \
-    --attributes AWS_INSTANCE_IPV4=$private_ip
+echo "Registering itself ($instance_id,$private_ip) to ddb table {DDB_SERVICE_DISCOVERY_TABLE} with service_id $service_id" >&2
+aws dynamodb update-item \
+    --table-name {DDB_SERVICE_DISCOVERY_TABLE} \
+    --key "{{\"service_id\": {{ \"S\": \"$service_id\"}}}} " \
+    --update-expression "ADD ips :ip" \
+    --expression-attribute-values "{{\":ip\": {{ \"SS\": [\"$private_ip\"]}}}} "
 echo "Done" >&2
 "##
     );
 
     run_cmd! {
-        echo $register_script_content > $cloudmap_register_script;
-        chmod +x $cloudmap_register_script;
+        echo $register_script_content > $ddb_register_script;
+        chmod +x $ddb_register_script;
 
-        echo $systemd_unit_content > ${ETC_PATH}cloudmap-register.service;
-        systemctl enable --now ${ETC_PATH}cloudmap-register.service;
+        echo $systemd_unit_content > ${ETC_PATH}ddb-register.service;
+        systemctl enable --now ${ETC_PATH}ddb-register.service;
     }?;
     Ok(())
 }
 
-fn create_cloudmap_deregister_service() -> CmdResult {
-    let cloudmap_deregister_script = format!("{BIN_PATH}cloudmap-deregister.sh");
+fn create_ddb_deregister_service() -> CmdResult {
+    let ddb_deregister_script = format!("{BIN_PATH}ddb-deregister.sh");
     let systemd_unit_content = format!(
         r##"[Unit]
-Description=Cloud Map Deregistration Service
+Description=DynamoDB Service Deregistration
 After=network-online.target
 Before=reboot.target halt.target poweroff.target kexec.target
 
@@ -376,8 +378,7 @@ DefaultDependencies=no
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/true
-ExecStop={cloudmap_deregister_script}
+ExecStart={ddb_deregister_script}
 
 [Install]
 WantedBy=reboot.target halt.target poweroff.target kexec.target
@@ -389,53 +390,24 @@ WantedBy=reboot.target halt.target poweroff.target kexec.target
 set -e
 service_id=$(cat {ETC_PATH}service_id) || exit 0 # not registered yet
 instance_id=$(ec2-metadata -i | awk '{{print $2}}')
+private_ip=$(ec2-metadata -o | awk '{{print $2}}')
 
-echo "Deregistering itself ($instance_id) from cloudmap $service_id" >&2
-op_id=$(aws servicediscovery deregister-instance \
-    --service-id $service_id \
-    --instance-id $instance_id \
-    --output text \
-    --query 'OperationId')
-
-if [ -z "$op_id" ]; then
-    echo "Failed to get operation ID for deregister-instance" >&2
-    exit 1
-fi
-
-echo "Waiting for deregistration to complete (operation: $op_id)..." >&2
-while true; do
-    status=$(aws servicediscovery get-operation \
-        --operation-id "$op_id" \
-        --output text \
-        --query 'Operation.Status')
-    case "$status" in
-        SUCCESS)
-            echo "Deregistration successful." >&2
-            break
-            ;;
-        FAIL)
-            echo "Deregistration failed." >&2
-            exit 1
-            ;;
-        SUBMITTED|PENDING)
-            sleep 1
-            ;;
-        *)
-            echo "Unknown status: $status" >&2
-            exit 1
-            ;;
-    esac
-done
+echo "Deregistering itself ($instance_id, $private_ip) from ddb table {DDB_SERVICE_DISCOVERY_TABLE} with service_id $service_id" >&2
+aws dynamodb update-item \
+    --table-name {DDB_SERVICE_DISCOVERY_TABLE} \
+    --key "{{\"service_id\": {{ \"S\": \"$service_id\"}}}} " \
+    --update-expression "DELETE ips :ip" \
+    --expression-attribute-values "{{\":ip\": {{ \"SS\": [\"$private_ip\"]}}}} "
 echo "Done" >&2
 "##
     );
 
     run_cmd! {
-        echo $deregister_script_content > $cloudmap_deregister_script;
-        chmod +x $cloudmap_deregister_script;
+        echo $deregister_script_content > $ddb_deregister_script;
+        chmod +x $ddb_deregister_script;
 
-        echo $systemd_unit_content > ${ETC_PATH}cloudmap-deregister.service;
-        systemctl enable ${ETC_PATH}cloudmap-deregister.service;
+        echo $systemd_unit_content > ${ETC_PATH}ddb-deregister.service;
+        systemctl enable ${ETC_PATH}ddb-deregister.service;
     }?;
     Ok(())
 }

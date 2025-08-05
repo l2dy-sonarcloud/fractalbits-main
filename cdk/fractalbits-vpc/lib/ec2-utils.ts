@@ -6,7 +6,54 @@ import {Construct} from 'constructs';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as hooktargets from 'aws-cdk-lib/aws-autoscaling-hooktargets';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as path from 'path';
+
+export const createVpcEndpoints = (vpc: ec2.Vpc) => {
+  // Add Gateway Endpoint for S3
+  vpc.addGatewayEndpoint('S3Endpoint', {
+    service: ec2.GatewayVpcEndpointAwsService.S3,
+  });
+
+  // Add Gateway Endpoint for DynamoDB
+  vpc.addGatewayEndpoint('DynamoDbEndpoint', {
+    service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+  });
+
+  // Add Interface Endpoint for EC2, SSM, and CloudWatch
+  ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS'].forEach(service => {
+    vpc.addInterfaceEndpoint(`${service}Endpoint`, {
+      service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
+      subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
+      privateDnsEnabled: true,
+    });
+  });
+};
+
+export const createEc2Role = (scope: Construct): iam.Role => {
+  return new iam.Role(scope, 'InstanceRole', {
+    assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+    managedPolicies: [
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMFullAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
+    ],
+  });
+};
+
+export const createServiceDiscoveryTable = (scope: Construct): dynamodb.Table => {
+  return new dynamodb.Table(scope, 'ServiceDiscoveryTable', {
+    partitionKey: {
+      name: 'service_id',
+      type: dynamodb.AttributeType.STRING,
+    },
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    tableName: 'fractalbits-service-discovery',
+  });
+};
 
 export const createInstance = (
   scope: Construct,

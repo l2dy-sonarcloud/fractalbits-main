@@ -4,7 +4,7 @@ use super::*;
 pub fn create_put_workload_config(
     warp_client_ips: &str,
     region: &str,
-    service_endpoint: &str,
+    api_server_ips: &str,
     duration: &str,
 ) -> CmdResult {
     let config_content = format!(
@@ -52,7 +52,7 @@ pub fn create_put_workload_config(
     # Multiple servers can be specified with ellipsis notation;
     # for example '10.0.0.{{1...10}}:9000' specifies 10 hosts.
     # See more at https://github.com/minio/warp?tab=readme-ov-file#multiple-hosts
-    host: {service_endpoint}
+    host: {api_server_ips}
 
     # Use TLS for calls.
     tls: false

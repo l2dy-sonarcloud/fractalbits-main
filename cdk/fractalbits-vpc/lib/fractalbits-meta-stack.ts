@@ -1,17 +1,14 @@
 import * as cdk from 'aws-cdk-lib';
 import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import {createEbsVolume, createEc2Asg, createInstance, createUserData, addAsgDeregistrationLifecycleHook} from './ec2-utils';
+import {createEbsVolume, createEc2Asg, createInstance, createUserData, createServiceDiscoveryTable, createEc2Role, createVpcEndpoints} from './ec2-utils';
 
 interface FractalbitsMetaStackProps extends cdk.StackProps {
   serviceName: string;
   availabilityZone?: string;
   nssInstanceType?: string;
   bssInstanceTypes?: string;
-  deregisterProviderServiceToken: string;
 }
 
 export class FractalbitsMetaStack extends cdk.Stack {
@@ -30,45 +27,17 @@ export class FractalbitsMetaStack extends cdk.Stack {
       ],
     });
 
-    // Add Gateway Endpoint for S3
-    this.vpc.addGatewayEndpoint('S3Endpoint', {
-      service: ec2.GatewayVpcEndpointAwsService.S3,
-    });
+    createVpcEndpoints(this.vpc);
 
-    // Add Interface Endpoint for EC2, SSM and CloudMap
-    ['SSM', 'SSM_MESSAGES', 'EC2_MESSAGES', 'CLOUD_MAP_SERVICE_DISCOVERY'].forEach(service => {
-      this.vpc.addInterfaceEndpoint(`${service}Endpoint`, {
-        service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
-        subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
-      });
-    });
+    createServiceDiscoveryTable(this);
 
-    // IAM Role for EC2
-    const ec2Role = new iam.Role(this, 'InstanceRole', {
-      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
-      ],
-    });
-
-    const privateDnsNamespace = new servicediscovery.PrivateDnsNamespace(this, 'FractalbitsNamespace', {
-      name: 'fractalbits.local',
-      vpc: this.vpc,
-    });
-    const bssService = privateDnsNamespace.createService('BssService', {
-      name: 'bss-server',
-      dnsRecordType: servicediscovery.DnsRecordType.A,
-      dnsTtl: cdk.Duration.seconds(60),
-      routingPolicy: servicediscovery.RoutingPolicy.MULTIVALUE,
-    });
+    const ec2Role = createEc2Role(this);
 
     // Security Group
     const sg = new ec2.SecurityGroup(this, 'InstanceSG', {
       vpc: this.vpc,
       securityGroupName: 'FractalbitsInstanceSG',
-      description: 'Allow outbound only for SSM and S3 access',
+      description: 'Allow all outbound',
       allowAllOutbound: true,
     });
 
@@ -96,7 +65,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         process.exit(1);
       }
       const bssInstanceTypes = props.bssInstanceTypes.split(',');
-      const bssBootstrapOptions = `bss_server --service_id=${bssService.serviceId} --meta_stack_testing`;
+      const bssBootstrapOptions = `bss_server --service_id=bss-server --meta_stack_testing`;
       const bssAsg = createEc2Asg(
         this,
         'BssAsg',
@@ -108,18 +77,6 @@ export class FractalbitsMetaStack extends cdk.Stack {
         1,
         1,
       );
-
-      new cdk.CustomResource(this, 'DeregisterBssAsgInstances', {
-        serviceToken: props.deregisterProviderServiceToken,
-        properties: {
-          ServiceId: bssService.serviceId,
-          NamespaceName: privateDnsNamespace.namespaceName,
-          ServiceName: bssService.serviceName,
-          AsgName: bssAsg.autoScalingGroupName,
-        },
-      });
-
-      addAsgDeregistrationLifecycleHook(this, 'Bss', bssAsg, bssService);
 
       targetIdOutput = new cdk.CfnOutput(this, 'bssAsgName', {
         value: bssAsg.autoScalingGroupName,
