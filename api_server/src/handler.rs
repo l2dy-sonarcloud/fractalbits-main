@@ -350,6 +350,7 @@ async fn put_handler(
             put::copy_object_handler(app, request, api_key, bucket, key, blob_deletion).await
         }
         PutEndpoint::RenameFolder => put::rename_folder_handler(app, request, bucket, key).await,
+        PutEndpoint::RenameObject => put::rename_object_handler(app, request, bucket, key).await,
     }
 }
 

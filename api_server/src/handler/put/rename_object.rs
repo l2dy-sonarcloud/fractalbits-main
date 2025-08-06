@@ -17,25 +17,24 @@ struct QueryOpts {
     src_path: String,
 }
 
-pub async fn rename_folder_handler(
+pub async fn rename_object_handler(
     app: Arc<AppState>,
     request: Request,
     bucket: &Bucket,
     key: String,
 ) -> Result<Response, S3Error> {
     let Query(QueryOpts { src_path }): Query<QueryOpts> = request.into_parts().0.extract().await?;
-    let mut dst_path = key;
-    if !dst_path.ends_with('/') {
-        dst_path.push('/');
-    };
-    info!(bucket=%bucket.bucket_name, %src_path, %dst_path, "renaming folder in bucket");
+    let dst_path = key;
+    assert!(!src_path.ends_with('/'));
+    assert!(!dst_path.ends_with('/'));
+    info!(bucket=%bucket.bucket_name, %src_path, %dst_path, "renaming object in bucket");
 
     let root_blob_name = bucket.root_blob_name.clone();
 
-    nss_rpc_retry!(app, rename_folder(&root_blob_name, &src_path, &dst_path, Some(app.config.rpc_timeout())))
+    nss_rpc_retry!(app, rename_object(&root_blob_name, &src_path, &dst_path, Some(app.config.rpc_timeout())))
         .await
         .map_err(|e| {
-            error!(bucket=%bucket.bucket_name, %src_path, %dst_path, error=%e, "failed to rename folder");
+            error!(bucket=%bucket.bucket_name, %src_path, %dst_path, error=%e, "failed to rename object");
             S3Error::InternalError
         })?;
 

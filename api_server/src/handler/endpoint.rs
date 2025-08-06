@@ -105,6 +105,9 @@ impl Endpoint {
             (Some(ApiCommand::RenameFolder), None, None, None) => {
                 Ok(Endpoint::Put(PutEndpoint::RenameFolder))
             }
+            (Some(ApiCommand::RenameObject), None, None, None) => {
+                Ok(Endpoint::Put(PutEndpoint::RenameObject))
+            }
             (None, Some(part_number), Some(upload_id), None) => Ok(Endpoint::Put(
                 PutEndpoint::UploadPart(part_number, upload_id),
             )),

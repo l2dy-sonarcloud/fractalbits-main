@@ -257,14 +257,14 @@ impl RpcClient {
         Ok(resp)
     }
 
-    pub async fn rename_dir(
+    pub async fn rename_folder(
         &self,
         root_blob_name: &str,
         src_path: &str,
         dst_path: &str,
         timeout: Option<Duration>,
     ) -> Result<(), RpcError> {
-        let _guard = InflightRpcGuard::new("nss", "rename_dir");
+        let _guard = InflightRpcGuard::new("nss", "rename_folder");
         let body = RenameDirRequest {
             root_blob_name: root_blob_name.to_string(),
             src_path: src_path.to_string(),
@@ -287,7 +287,57 @@ impl RpcClient {
             .await
             .map_err(|e| {
                 if !e.retryable() {
-                    error!(rpc=%"rename_dir", %request_id, %root_blob_name, %src_path, %dst_path, error=?e, "nss rpc failed");
+                    error!(rpc=%"rename_folder", %request_id, %root_blob_name, %src_path, %dst_path, error=?e, "nss rpc failed");
+                }
+                e
+            })?
+            .body;
+        let resp: RenameDirResponse =
+            PbMessage::decode(resp_bytes).map_err(RpcError::DecodeError)?;
+        match resp.result.unwrap() {
+            rename_dir_response::Result::Ok(_) => Ok(()),
+            rename_dir_response::Result::ErrSrcNonexisted(_) => Err(RpcError::NotFound),
+            rename_dir_response::Result::ErrDstExisted(_) => Err(RpcError::AlreadyExists),
+            rename_dir_response::Result::ErrOthers(e) => Err(RpcError::InternalResponseError(e)),
+        }
+    }
+
+    pub async fn rename_object(
+        &self,
+        root_blob_name: &str,
+        src_path: &str,
+        dst_path: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(), RpcError> {
+        let mut nss_src_path = src_path.to_string();
+        nss_src_path.push('\0');
+        let mut nss_dst_path = dst_path.to_string();
+        nss_dst_path.push('\0');
+
+        let _guard = InflightRpcGuard::new("nss", "rename_object");
+        let body = RenameDirRequest {
+            root_blob_name: root_blob_name.to_string(),
+            src_path: nss_src_path,
+            dst_path: nss_dst_path,
+        };
+
+        let mut header = MessageHeader::default();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
+        header.command = Command::RenameDir;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+
+        let mut request_bytes = BytesMut::with_capacity(header.size as usize);
+        header.encode(&mut request_bytes);
+        body.encode(&mut request_bytes)
+            .map_err(RpcError::EncodeError)?;
+
+        let resp_bytes = self
+            .send_request(header.id, Message::Bytes(request_bytes.freeze()), timeout)
+            .await
+            .map_err(|e| {
+                if !e.retryable() {
+                    error!(rpc=%"rename_object", %request_id, %root_blob_name, %src_path, %dst_path, error=?e, "nss rpc failed");
                 }
                 e
             })?
