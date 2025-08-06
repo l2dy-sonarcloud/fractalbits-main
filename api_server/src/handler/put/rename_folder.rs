@@ -15,24 +15,27 @@ use tracing::{error, info};
 #[serde(rename_all = "kebab-case")]
 struct QueryOpts {
     src_path: String,
-    dst_path: String,
 }
 
-pub async fn rename_dir_handler(
+pub async fn rename_folder_handler(
     app: Arc<AppState>,
     request: Request,
     bucket: &Bucket,
+    key: String,
 ) -> Result<Response, S3Error> {
-    let Query(QueryOpts { src_path, dst_path }): Query<QueryOpts> =
-        request.into_parts().0.extract().await?;
-    info!(bucket=%bucket.bucket_name, %src_path, %dst_path, "renaming directory in bucket");
+    let Query(QueryOpts { src_path }): Query<QueryOpts> = request.into_parts().0.extract().await?;
+    let mut dst_path = key;
+    if !dst_path.ends_with('/') {
+        dst_path.push('/');
+    };
+    info!(bucket=%bucket.bucket_name, %src_path, %dst_path, "renaming folder in bucket");
 
     let root_blob_name = bucket.root_blob_name.clone();
 
     nss_rpc_retry!(app, rename_dir(&root_blob_name, &src_path, &dst_path, Some(app.config.rpc_timeout())))
         .await
         .map_err(|e| {
-            error!(bucket=%bucket.bucket_name, %src_path, %dst_path, error=%e, "failed to rename directory");
+            error!(bucket=%bucket.bucket_name, %src_path, %dst_path, error=%e, "failed to rename folder");
             S3Error::InternalError
         })?;
 

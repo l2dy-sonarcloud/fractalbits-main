@@ -35,7 +35,7 @@ pub enum ApiCommand {
     PublicAccessBlock,
     Replication,
     RequestPayment,
-    Rename,
+    RenameFolder,
     Restore,
     Retention,
     Select,

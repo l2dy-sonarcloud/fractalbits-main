@@ -349,6 +349,7 @@ async fn put_handler(
         PutEndpoint::CopyObject => {
             put::copy_object_handler(app, request, api_key, bucket, key, blob_deletion).await
         }
+        PutEndpoint::RenameFolder => put::rename_folder_handler(app, request, bucket, key).await,
     }
 }
 
@@ -378,7 +379,6 @@ async fn post_handler(
         PostEndpoint::DeleteObjects => {
             post::delete_objects_handler(app, request, bucket, blob_deletion).await
         }
-        PostEndpoint::RenameDir => post::rename_dir_handler(app, request, bucket).await,
     }
 }
 

@@ -1,10 +1,12 @@
 mod block_data_stream;
 mod copy_object;
 mod put_object;
+mod rename_folder;
 mod upload_part;
 
 pub use copy_object::copy_object_handler;
 pub use put_object::put_object_handler;
+pub use rename_folder::rename_folder_handler;
 pub use upload_part::upload_part_handler;
 
 use super::common::authorization::Authorization;
@@ -13,6 +15,7 @@ pub enum PutEndpoint {
     CopyObject,
     PutObject,
     UploadPart(u64, String),
+    RenameFolder,
 }
 
 impl PutEndpoint {
@@ -20,6 +23,7 @@ impl PutEndpoint {
         match self {
             PutEndpoint::CopyObject => Authorization::Write,
             PutEndpoint::PutObject => Authorization::Write,
+            PutEndpoint::RenameFolder => Authorization::Write,
             PutEndpoint::UploadPart(..) => Authorization::Write,
         }
     }
@@ -28,6 +32,7 @@ impl PutEndpoint {
         match self {
             PutEndpoint::CopyObject => "CopyObject",
             PutEndpoint::PutObject => "PutObject",
+            PutEndpoint::RenameFolder => "RenameFolder",
             PutEndpoint::UploadPart(..) => "UploadPart",
         }
     }
