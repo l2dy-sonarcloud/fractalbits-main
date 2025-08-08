@@ -38,7 +38,9 @@ export class VpcWithPrivateLinkStack extends cdk.Stack {
       description: 'Allow all outbound',
       allowAllOutbound: true,
     });
+    const servicePort = 5001;
     sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'Allow HTTP access from anywhere');
+    sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(servicePort), 'Allow port 5001 access from anywhere');
 
     const machineImage = ec2.MachineImage.latestAmazonLinux2023();
     const instanceType = ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO);
@@ -72,9 +74,9 @@ export class VpcWithPrivateLinkStack extends cdk.Stack {
         subnets: this.vpc.isolatedSubnets,
       }
     });
-    const listener = nlb.addListener('listener', {port: 80});
+    const listener = nlb.addListener('listener', {port: servicePort});
     listener.addTargets('target', {
-      port: 80,
+      port: servicePort,
       targets: [new elbv2_targets.InstanceTarget(provider)],
     });
 
@@ -88,7 +90,7 @@ export class VpcWithPrivateLinkStack extends cdk.Stack {
       vpc: this.vpc,
       service: {
         name: endpointService.vpcEndpointServiceName,
-        port: 80,
+        port: servicePort,
       },
       privateDnsEnabled: false,
       subnets: {
