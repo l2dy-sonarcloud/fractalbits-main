@@ -215,41 +215,6 @@ pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn start_etcd_service() -> CmdResult {
-    let pwd = run_fun!(pwd)?;
-    let working_dir = format!("{pwd}/data/rss");
-    let service_file = "etc/etcd.service";
-    let service_file_content = format!(
-        r##"[Unit]
-Description=etcd for root_server
-
-[Install]
-WantedBy=default.target
-
-[Service]
-Type=simple
-ExecStart="/home/linuxbrew/.linuxbrew/opt/etcd/bin/etcd"
-Restart=always
-WorkingDirectory={pwd}/data/rss
-"##
-    );
-
-    let etcd_wait_secs = 5;
-    run_cmd! {
-        mkdir -p etc;
-        mkdir -p $working_dir;
-        echo $service_file_content > $service_file;
-        info "Linking $service_file into ~/.config/systemd/user";
-        systemctl --user link $service_file --force --quiet;
-        systemctl --user start etcd.service;
-        info "Waiting ${etcd_wait_secs}s for etcd up";
-        sleep $etcd_wait_secs;
-        systemctl --user is-active --quiet etcd.service;
-    }?;
-
-    Ok(())
-}
 
 fn start_ddb_local_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
