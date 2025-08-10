@@ -101,10 +101,15 @@ async fn main() {
         .route("/", get(api_key_routes::list_api_keys))
         .route("/{key_id}", delete(api_key_routes::delete_api_key));
 
-    let app = Router::new()
-        .nest_service("/ui", ServeDir::new(web_root))
-        .nest("/api_keys", api_key_routes)
-        .fallback(any_handler)
+    let router = if let Some(web_root) = web_root {
+        Router::new()
+            .nest_service("/ui", ServeDir::new(web_root))
+            .nest("/api_keys", api_key_routes)
+            .fallback(any_handler)
+    } else {
+        Router::new().fallback(any_handler)
+    };
+    let app = router
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|req: &Request| {

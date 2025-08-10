@@ -383,7 +383,7 @@ Environment="RUST_LOG=debug""##
             }
             BuildMode::Release => {
                 r##"
-Environment="RUST_LOG=info""##
+Environment="RUST_LOG=warn""##
             }
         }
     };

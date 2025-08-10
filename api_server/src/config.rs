@@ -18,7 +18,7 @@ pub struct Config {
 
     pub s3_cache: S3CacheConfig,
     pub allow_missing_or_bad_signature: bool,
-    pub web_root: String,
+    pub web_root: Option<String>,
 }
 
 impl Config {
@@ -67,7 +67,7 @@ impl Default for Config {
             http_request_timeout_seconds: 5,
             rpc_timeout_seconds: 4,
             allow_missing_or_bad_signature: false,
-            web_root: "../ui/dist".into(),
+            web_root: None,
         }
     }
 }

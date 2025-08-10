@@ -53,7 +53,6 @@ with_metrics = false
 http_request_timeout_seconds = 5
 rpc_timeout_seconds = 4
 allow_missing_or_bad_signature = false
-web_root = "{WEB_ROOT}"
 
 [s3_cache]
 s3_host = "http://s3.{aws_region}.amazonaws.com"
