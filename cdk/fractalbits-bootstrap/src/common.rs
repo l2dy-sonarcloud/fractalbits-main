@@ -50,7 +50,7 @@ pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResu
     let exec_start = match service_name {
         "api_server" => {
             env_settings = r##"
-Environment="RUST_LOG=info""##
+Environment="RUST_LOG=warn""##
                 .to_string();
             format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}")
         }
@@ -60,7 +60,7 @@ Environment="RUST_LOG=info""##
         }
         "root_server" => {
             env_settings = r##"
-Environment="RUST_LOG=info""##
+Environment="RUST_LOG=warn""##
                 .to_string();
             format!("{BIN_PATH}{service_name} -r {aws_region} -c {ETC_PATH}{ROOT_SERVER_CONFIG}")
         }
@@ -73,7 +73,7 @@ Environment="RUST_LOG=info""##
         }
         "ebs-failover" => {
             env_settings = r##"
-Environment="RUST_LOG=info""##
+Environment="RUST_LOG=warn""##
                 .to_string();
             format!("{BIN_PATH}{service_name} -r {aws_region}")
         }
