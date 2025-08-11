@@ -2926,7 +2926,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nss_health_agent"
+name = "nss_role_agent"
 version = "0.1.0"
 dependencies = [
  "clap 4.5.43",

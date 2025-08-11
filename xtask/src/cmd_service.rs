@@ -111,7 +111,7 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
         ServiceName::Bss => init_bss()?,
         ServiceName::Rss => init_rss()?,
         ServiceName::Nss => init_nss()?,
-        ServiceName::NssHealthAgent => init_nss_role_agent()?,
+        ServiceName::NssRoleAgent => init_nss_role_agent()?,
         ServiceName::All => {
             init_rss()?;
             init_bss()?;
@@ -160,7 +160,7 @@ pub fn start_services(service: ServiceName, build_mode: BuildMode, for_gui: bool
     match service {
         ServiceName::Bss => start_bss_service(build_mode)?,
         ServiceName::Nss => start_nss_service(build_mode, false)?,
-        ServiceName::NssHealthAgent => start_nss_role_agent_service(build_mode)?,
+        ServiceName::NssRoleAgent => start_nss_role_agent_service(build_mode)?,
         ServiceName::Rss => start_rss_service(build_mode)?,
         ServiceName::ApiServer => start_api_server(build_mode, for_gui)?,
         ServiceName::All => {
@@ -220,7 +220,7 @@ pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResul
 }
 
 pub fn start_nss_role_agent_service(build_mode: BuildMode) -> CmdResult {
-    create_systemd_unit_file(ServiceName::NssHealthAgent, build_mode, None)?;
+    create_systemd_unit_file(ServiceName::NssRoleAgent, build_mode, None)?;
 
     let wait_secs = 10;
     run_cmd! {
@@ -229,7 +229,7 @@ pub fn start_nss_role_agent_service(build_mode: BuildMode) -> CmdResult {
         sleep $wait_secs;
     }?;
     let server_pid = run_fun!(pidof nss_role_agent)?;
-    check_pids(ServiceName::NssHealthAgent, &server_pid)?;
+    check_pids(ServiceName::NssRoleAgent, &server_pid)?;
     info!("nss_role_agent server (pid={server_pid}) started");
     Ok(())
 }
@@ -397,7 +397,7 @@ Environment="RUST_LOG=warn""##
                 format!("{pwd}/zig-out/bin/nss_server serve -c {pwd}/etc/{NSS_SERVER_BENCH_CONFIG}")
             }
         },
-        ServiceName::NssHealthAgent => {
+        ServiceName::NssRoleAgent => {
             env_settings += env_rust_log(build_mode);
             format!("{pwd}/target/{build}/nss_role_agent")
         }

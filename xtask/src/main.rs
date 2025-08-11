@@ -144,7 +144,7 @@ pub enum ServiceName {
     All,
     Minio,
     DdbLocal,
-    NssHealthAgent,
+    NssRoleAgent,
 }
 
 #[derive(Parser, Clone)]
