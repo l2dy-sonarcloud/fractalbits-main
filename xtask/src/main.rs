@@ -141,6 +141,7 @@ pub enum ServiceName {
     All,
     Minio,
     DdbLocal,
+    NssHealthAgent,
 }
 
 #[derive(Parser, Clone)]
@@ -166,8 +167,8 @@ fn main() -> CmdResult {
     match Cmd::parse() {
         Cmd::Build { release } => {
             let build_mode = build_mode(release);
-            cmd_build::build_rss_api_server(build_mode)?;
-            cmd_build::build_bss_nss_server(build_mode)?;
+            cmd_build::build_rust_servers(build_mode)?;
+            cmd_build::build_zig_servers(build_mode)?;
             cmd_build::build_rewrk_rpc()?;
             cmd_build::build_ui(UI_DEFAULT_REGION)?;
         }

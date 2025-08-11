@@ -48,27 +48,27 @@ pub fn build_rewrk_rpc() -> CmdResult {
     }
 }
 
-pub fn build_bss_nss_server(mode: BuildMode) -> CmdResult {
+pub fn build_zig_servers(mode: BuildMode) -> CmdResult {
     let build_info = BUILD_INFO.get().unwrap();
     let opts = match mode {
         BuildMode::Debug => "",
         BuildMode::Release => "--release=safe",
     };
     run_cmd! {
-        info "Building bss and nss server ...";
+        info "Building zig-based servers ...";
         zig build -Dbuild_info=$build_info $opts 2>&1;
         info "Building bss and nss server done";
     }
 }
 
-pub fn build_rss_api_server(mode: BuildMode) -> CmdResult {
+pub fn build_rust_servers(mode: BuildMode) -> CmdResult {
     let build_info = BUILD_INFO.get().unwrap();
     let opts = match mode {
         BuildMode::Debug => "",
         BuildMode::Release => "--release",
     };
     run_cmd! {
-        info "Building rss & api_server ...";
+        info "Building rust-based servers ...";
         BUILD_INFO=$build_info cargo build $opts;
     }
 }

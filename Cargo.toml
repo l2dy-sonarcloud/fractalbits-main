@@ -11,12 +11,12 @@ members = [
     "api_server/rpc_client/rss",
     "api_server/slotmap_conn_pool",
     "cdk/fractalbits-bootstrap",
+    "nss_health_agent",
     "root_server",
     "root_server/admin",
     "root_server/ebs-failover",
     "xtask",
     "xtask/tools",
-    "play/test_s3_express/s3_express_sdk_test",
 ]
 resolver = "2"
 

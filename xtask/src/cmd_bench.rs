@@ -30,11 +30,11 @@ pub fn run_cmd_bench(
     let mut bench_opts = Vec::new();
     let keys_limit = keys_limit.to_string();
 
-    build_bss_nss_server(build_mode)?;
+    build_zig_servers(build_mode)?;
     match service {
         BenchService::ApiServer => {
             *service_name = ServiceName::All;
-            build_rss_api_server(build_mode)?;
+            build_rust_servers(build_mode)?;
             build_rewrk()?;
             run_cmd_service(
                 *service_name,

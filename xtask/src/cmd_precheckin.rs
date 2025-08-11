@@ -3,8 +3,8 @@ use crate::*;
 pub fn run_cmd_precheckin(api_only: bool) -> CmdResult {
     let working_dir = run_fun!(pwd)?;
     cmd_service::stop_service(ServiceName::All)?;
-    cmd_build::build_rss_api_server(BuildMode::Debug)?;
-    cmd_build::build_bss_nss_server(BuildMode::Debug)?;
+    cmd_build::build_rust_servers(BuildMode::Debug)?;
+    cmd_build::build_zig_servers(BuildMode::Debug)?;
 
     if api_only {
         return run_s3_api_tests();
