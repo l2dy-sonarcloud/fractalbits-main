@@ -126,6 +126,7 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
         ServiceName::All => vec![
             ServiceName::ApiServer.as_ref().to_owned(),
             ServiceName::Nss.as_ref().to_owned(),
+            ServiceName::NssRoleAgent.as_ref().to_owned(),
             ServiceName::Bss.as_ref().to_owned(),
             ServiceName::Rss.as_ref().to_owned(),
             ServiceName::Minio.as_ref().to_owned(),
@@ -133,11 +134,6 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
         ],
         single_service => vec![single_service.as_ref().to_owned()],
     };
-
-    run_cmd! {
-        info "Running sync command";
-        sync
-    }?;
 
     info!("Killing previous service(s) (if any) ...");
     for service in services {
