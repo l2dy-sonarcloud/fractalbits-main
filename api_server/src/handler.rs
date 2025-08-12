@@ -288,26 +288,19 @@ async fn any_handler_inner(
             let bucket_ctx = BucketRequestContext::new(app, request, api_key, bucket_name);
             bucket_handler(bucket_ctx, bucket_endpoint).await
         }
-        Endpoint::Head(head_endpoint) => {
-            let object_ctx = ObjectRequestContext::new(app, request, None, bucket_name, key);
-            head_handler(object_ctx, head_endpoint).await
-        }
-        Endpoint::Get(get_endpoint) => {
-            let object_ctx = ObjectRequestContext::new(app, request, None, bucket_name, key);
-            get_handler(object_ctx, get_endpoint).await
-        }
-        Endpoint::Put(put_endpoint) => {
+        ref _object_endpoints => {
             let object_ctx =
                 ObjectRequestContext::new(app, request, Some(api_key), bucket_name, key);
-            put_handler(object_ctx, put_endpoint).await
-        }
-        Endpoint::Post(post_endpoint) => {
-            let object_ctx = ObjectRequestContext::new(app, request, None, bucket_name, key);
-            post_handler(object_ctx, post_endpoint).await
-        }
-        Endpoint::Delete(delete_endpoint) => {
-            let object_ctx = ObjectRequestContext::new(app, request, None, bucket_name, key);
-            delete_handler(object_ctx, delete_endpoint).await
+            match endpoint {
+                Endpoint::Head(head_endpoint) => head_handler(object_ctx, head_endpoint).await,
+                Endpoint::Get(get_endpoint) => get_handler(object_ctx, get_endpoint).await,
+                Endpoint::Put(put_endpoint) => put_handler(object_ctx, put_endpoint).await,
+                Endpoint::Post(post_endpoint) => post_handler(object_ctx, post_endpoint).await,
+                Endpoint::Delete(delete_endpoint) => {
+                    delete_handler(object_ctx, delete_endpoint).await
+                }
+                Endpoint::Bucket(_) => unreachable!(),
+            }
         }
     }
 }
