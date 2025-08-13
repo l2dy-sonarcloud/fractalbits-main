@@ -15,6 +15,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   availabilityZone?: string;
   bssInstanceTypes: string;
   browserIp?: string;
+  dataBlobStorage?: "hybrid" | "s3Express";
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -24,6 +25,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FractalbitsVpcStackProps) {
     super(scope, id, props);
     const forBenchFlag = props.benchType ? ' --for_bench' : '';
+    const dataBlobStorage = props.dataBlobStorage ?? 'hybrid';
 
     // === VPC Configuration ===
     const az = props.availabilityZone ?? this.availabilityZones[this.availabilityZones.length - 1];
@@ -68,6 +70,17 @@ export class FractalbitsVpcStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete bucket on stack delete
       autoDeleteObjects: true,                  // Empty bucket before deletion
     });
+
+    // Create S3 Express One Zone bucket for high-performance blob storage when in s3Express mode
+    let dataBlobBucket: s3.Bucket | undefined;
+    if (dataBlobStorage === 's3Express') {
+      dataBlobBucket = new s3.Bucket(this, 'DataBlobExpressBucket', {
+        // S3 Express One Zone bucket configuration
+        bucketName: `${this.stackName.toLowerCase()}-data-blobs-express--${az}--x-s3`,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        autoDeleteObjects: true,
+      });
+    }
 
     new dynamodb.Table(this, 'FractalbitsTable', {
       partitionKey: {
@@ -146,22 +159,26 @@ export class FractalbitsVpcStack extends cdk.Stack {
       instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role);
     });
 
-    // Create bss_server in a ASG group
-    const bssBootstrapOptions = `${forBenchFlag} bss_server`;
-    const bssAsg = createEc2Asg(
-      this,
-      'BssAsg',
-      this.vpc,
-      privateSg,
-      ec2Role,
-      props.bssInstanceTypes.split(','),
-      bssBootstrapOptions,
-      1,
-      1
-    );
+    // Create bss_server in a ASG group only for hybrid mode
+    let bssAsg: autoscaling.AutoScalingGroup | undefined;
+    if (dataBlobStorage === 'hybrid') {
+      const bssBootstrapOptions = `${forBenchFlag} bss_server`;
+      bssAsg = createEc2Asg(
+        this,
+        'BssAsg',
+        this.vpc,
+        privateSg,
+        ec2Role,
+        props.bssInstanceTypes.split(','),
+        bssBootstrapOptions,
+        1,
+        1
+      );
+    }
 
     // Create api_server(s) in a ASG group
-    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`;
+    const dataBlobBucketName = dataBlobStorage === 's3Express' ? dataBlobBucket!.bucketName : bucket.bucketName;
+    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${dataBlobBucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`;
     const apiServerAsg = createEc2Asg(
       this,
       'ApiServerAsg',
@@ -256,10 +273,19 @@ export class FractalbitsVpcStack extends cdk.Stack {
       description: 'EBS volume ID',
     });
 
-    new cdk.CfnOutput(this, 'bssAsgName', {
-      value: bssAsg.autoScalingGroupName,
-      description: `Bss Auto Scaling Group Name`,
-    });
+    if (bssAsg) {
+      new cdk.CfnOutput(this, 'bssAsgName', {
+        value: bssAsg.autoScalingGroupName,
+        description: `Bss Auto Scaling Group Name`,
+      });
+    }
+
+    if (dataBlobBucket) {
+      new cdk.CfnOutput(this, 'DataBlobExpressBucketName', {
+        value: dataBlobBucket.bucketName,
+        description: 'S3 Express One Zone bucket for data blobs',
+      });
+    }
 
     new cdk.CfnOutput(this, 'apiServerAsgName', {
       value: apiServerAsg.autoScalingGroupName,
