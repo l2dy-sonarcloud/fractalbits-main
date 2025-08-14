@@ -8,7 +8,7 @@ use tracing::info;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct S3ExpressConfig {
+pub struct S3ExpressMultiAzConfig {
     pub local_az_host: String,
     pub local_az_port: u16,
     pub s3_region: String,
@@ -18,14 +18,14 @@ pub struct S3ExpressConfig {
     pub express_session_auth: bool,
 }
 
-pub struct S3ExpressStorage {
+pub struct S3ExpressMultiAzStorage {
     client_s3: S3Client,
     local_az_bucket: String,
     remote_az_bucket: String,
 }
 
-impl S3ExpressStorage {
-    pub async fn new(config: &S3ExpressConfig) -> Result<Self, BlobStorageError> {
+impl S3ExpressMultiAzStorage {
+    pub async fn new(config: &S3ExpressMultiAzConfig) -> Result<Self, BlobStorageError> {
         info!(
             "Initializing S3 Express One Zone storage for buckets: {} (local) and {} (remote) in AZ: {}",
             config.local_az_bucket, config.remote_az_bucket, config.az
@@ -75,7 +75,7 @@ impl S3ExpressStorage {
     }
 }
 
-impl BlobStorage for S3ExpressStorage {
+impl BlobStorage for S3ExpressMultiAzStorage {
     async fn put_blob(
         &self,
         blob_id: Uuid,

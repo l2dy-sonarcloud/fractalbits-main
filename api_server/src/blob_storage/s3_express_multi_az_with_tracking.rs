@@ -26,7 +26,7 @@ pub struct S3ExpressWithTrackingConfig {
     pub express_session_auth: bool,
 }
 
-pub struct S3ExpressWithTracking {
+pub struct S3ExpressMultiAzWithTracking {
     client_s3: S3Client,
     local_az_bucket: String,
     remote_az_bucket: String,
@@ -51,7 +51,7 @@ impl From<DataBlobTrackingError> for BlobStorageError {
     }
 }
 
-impl S3ExpressWithTracking {
+impl S3ExpressMultiAzWithTracking {
     pub async fn new(
         config: &S3ExpressWithTrackingConfig,
         data_blob_tracker: Arc<DataBlobTracker>,
@@ -227,7 +227,7 @@ impl S3ExpressWithTracking {
     }
 }
 
-impl BlobStorage for S3ExpressWithTracking {
+impl BlobStorage for S3ExpressMultiAzWithTracking {
     async fn put_blob(
         &self,
         blob_id: Uuid,

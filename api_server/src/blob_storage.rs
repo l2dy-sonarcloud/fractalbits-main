@@ -1,18 +1,20 @@
-mod bss_only_storage;
-mod hybrid_storage;
-mod s3_express_storage;
-mod s3_express_with_tracking;
+mod bss_only_single_az_storage;
+mod hybrid_single_az_storage;
+mod s3_express_multi_az_storage;
+mod s3_express_multi_az_with_tracking;
 
-pub use bss_only_storage::BssOnlyStorage;
-pub use hybrid_storage::HybridStorage;
-pub use s3_express_storage::{S3ExpressConfig, S3ExpressStorage};
-pub use s3_express_with_tracking::{S3ExpressWithTracking, S3ExpressWithTrackingConfig};
+pub use bss_only_single_az_storage::BssOnlySingleAzStorage;
+pub use hybrid_single_az_storage::HybridSingleAzStorage;
+pub use s3_express_multi_az_storage::{S3ExpressMultiAzConfig, S3ExpressMultiAzStorage};
+pub use s3_express_multi_az_with_tracking::{
+    S3ExpressMultiAzWithTracking, S3ExpressWithTrackingConfig,
+};
 
 pub enum BlobStorageImpl {
-    BssOnly(BssOnlyStorage),
-    Hybrid(HybridStorage),
-    S3Express(S3ExpressStorage),
-    S3ExpressWithTracking(S3ExpressWithTracking),
+    BssOnlySingleAz(BssOnlySingleAzStorage),
+    HybridSingleAz(HybridSingleAzStorage),
+    S3ExpressMultiAz(S3ExpressMultiAzStorage),
+    S3ExpressMultiAzWithTracking(S3ExpressMultiAzWithTracking),
 }
 
 use aws_config::BehaviorVersion;
@@ -124,14 +126,16 @@ impl BlobStorage for BlobStorageImpl {
         body: Bytes,
     ) -> Result<(), BlobStorageError> {
         match self {
-            BlobStorageImpl::BssOnly(storage) => {
+            BlobStorageImpl::BssOnlySingleAz(storage) => {
                 storage.put_blob(blob_id, block_number, body).await
             }
-            BlobStorageImpl::Hybrid(storage) => storage.put_blob(blob_id, block_number, body).await,
-            BlobStorageImpl::S3Express(storage) => {
+            BlobStorageImpl::HybridSingleAz(storage) => {
                 storage.put_blob(blob_id, block_number, body).await
             }
-            BlobStorageImpl::S3ExpressWithTracking(storage) => {
+            BlobStorageImpl::S3ExpressMultiAz(storage) => {
+                storage.put_blob(blob_id, block_number, body).await
+            }
+            BlobStorageImpl::S3ExpressMultiAzWithTracking(storage) => {
                 storage.put_blob(blob_id, block_number, body).await
             }
         }
@@ -144,14 +148,16 @@ impl BlobStorage for BlobStorageImpl {
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
         match self {
-            BlobStorageImpl::BssOnly(storage) => {
+            BlobStorageImpl::BssOnlySingleAz(storage) => {
                 storage.get_blob(blob_id, block_number, body).await
             }
-            BlobStorageImpl::Hybrid(storage) => storage.get_blob(blob_id, block_number, body).await,
-            BlobStorageImpl::S3Express(storage) => {
+            BlobStorageImpl::HybridSingleAz(storage) => {
                 storage.get_blob(blob_id, block_number, body).await
             }
-            BlobStorageImpl::S3ExpressWithTracking(storage) => {
+            BlobStorageImpl::S3ExpressMultiAz(storage) => {
+                storage.get_blob(blob_id, block_number, body).await
+            }
+            BlobStorageImpl::S3ExpressMultiAzWithTracking(storage) => {
                 storage.get_blob(blob_id, block_number, body).await
             }
         }
@@ -159,10 +165,16 @@ impl BlobStorage for BlobStorageImpl {
 
     async fn delete_blob(&self, blob_id: Uuid, block_number: u32) -> Result<(), BlobStorageError> {
         match self {
-            BlobStorageImpl::BssOnly(storage) => storage.delete_blob(blob_id, block_number).await,
-            BlobStorageImpl::Hybrid(storage) => storage.delete_blob(blob_id, block_number).await,
-            BlobStorageImpl::S3Express(storage) => storage.delete_blob(blob_id, block_number).await,
-            BlobStorageImpl::S3ExpressWithTracking(storage) => {
+            BlobStorageImpl::BssOnlySingleAz(storage) => {
+                storage.delete_blob(blob_id, block_number).await
+            }
+            BlobStorageImpl::HybridSingleAz(storage) => {
+                storage.delete_blob(blob_id, block_number).await
+            }
+            BlobStorageImpl::S3ExpressMultiAz(storage) => {
+                storage.delete_blob(blob_id, block_number).await
+            }
+            BlobStorageImpl::S3ExpressMultiAzWithTracking(storage) => {
                 storage.delete_blob(blob_id, block_number).await
             }
         }

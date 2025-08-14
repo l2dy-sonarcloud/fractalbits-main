@@ -4,8 +4,8 @@ pub mod handler;
 mod object_layout;
 
 use blob_storage::{
-    BlobStorage, BlobStorageError, BlobStorageImpl, BssOnlyStorage, HybridStorage,
-    S3ExpressStorage, S3ExpressWithTracking, S3ExpressWithTrackingConfig,
+    BlobStorage, BlobStorageError, BlobStorageImpl, BssOnlySingleAzStorage, HybridSingleAzStorage,
+    S3ExpressMultiAzStorage, S3ExpressMultiAzWithTracking, S3ExpressWithTrackingConfig,
 };
 use bucket_tables::{table::KvClientProvider, Versioned};
 use bytes::Bytes;
@@ -222,8 +222,9 @@ impl BlobClient {
                         "BSS configuration required for BssOnly backend".into(),
                     )
                 })?;
-                BlobStorageImpl::BssOnly(
-                    BssOnlyStorage::new(bss_config.addr, bss_config.conn_num, rpc_timeout).await,
+                BlobStorageImpl::BssOnlySingleAz(
+                    BssOnlySingleAzStorage::new(bss_config.addr, bss_config.conn_num, rpc_timeout)
+                        .await,
                 )
             }
             BlobStorageBackend::Hybrid => {
@@ -235,8 +236,8 @@ impl BlobClient {
                         "S3 cache configuration required for Hybrid backend".into(),
                     )
                 })?;
-                BlobStorageImpl::Hybrid(
-                    HybridStorage::new(
+                BlobStorageImpl::HybridSingleAz(
+                    HybridSingleAzStorage::new(
                         bss_config.addr,
                         bss_config.conn_num,
                         s3_cache_config,
@@ -252,7 +253,7 @@ impl BlobClient {
                             "S3 Express configuration required for S3Express backend".into(),
                         )
                     })?;
-                let express_config = blob_storage::S3ExpressConfig {
+                let express_config = blob_storage::S3ExpressMultiAzConfig {
                     local_az_host: s3_express_config.local_az_host.clone(),
                     local_az_port: s3_express_config.local_az_port,
                     s3_region: s3_express_config.s3_region.clone(),
@@ -261,7 +262,9 @@ impl BlobClient {
                     az: s3_express_config.az.clone(),
                     express_session_auth: s3_express_config.express_session_auth,
                 };
-                BlobStorageImpl::S3Express(S3ExpressStorage::new(&express_config).await?)
+                BlobStorageImpl::S3ExpressMultiAz(
+                    S3ExpressMultiAzStorage::new(&express_config).await?,
+                )
             }
             BlobStorageBackend::S3ExpressWithTracking => {
                 let s3_express_config =
@@ -297,8 +300,8 @@ impl BlobClient {
                     az: s3_express_config.az.clone(),
                     express_session_auth: s3_express_config.express_session_auth,
                 };
-                BlobStorageImpl::S3ExpressWithTracking(
-                    S3ExpressWithTracking::new(
+                BlobStorageImpl::S3ExpressMultiAzWithTracking(
+                    S3ExpressMultiAzWithTracking::new(
                         &express_config,
                         data_blob_tracker,
                         rss_client,
