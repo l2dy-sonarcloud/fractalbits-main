@@ -38,7 +38,7 @@ impl Context {
                 // Check if it's a BucketAlreadyOwnedByYou error
                 let service_error = e.into_service_error();
                 if !service_error.is_bucket_already_owned_by_you() {
-                    panic!("Failed to create bucket: {:?}", service_error);
+                    panic!("Failed to create bucket: {service_error:?}");
                 }
                 // If bucket already exists and we own it, that's fine
             }
@@ -74,7 +74,7 @@ pub fn build_client() -> Client {
     let credentials = Credentials::new(TEST_KEY, TEST_SECRET, None, None, "fractalbits-integ-bits");
     #[allow(deprecated)]
     let config = Config::builder()
-        .endpoint_url(format!("http://127.0.0.1:{}", DEFAULT_PORT))
+        .endpoint_url(format!("http://127.0.0.1:{DEFAULT_PORT}"))
         .region(Region::from_static("us-west-1"))
         .credentials_provider(credentials)
         .behavior_version(BehaviorVersion::v2024_03_28())
