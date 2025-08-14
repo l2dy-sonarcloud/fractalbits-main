@@ -332,11 +332,16 @@ WorkingDirectory={pwd}/data
 "##
     );
     let minio_url = "http://localhost:9000";
-    let bucket_name = match data_blob_storage {
-        DataBlobStorage::Hybrid => "fractalbits-bucket",
-        DataBlobStorage::S3Express => "fractalbits-bucket", // Use regular name for local minio testing
+    let (local_bucket_name, remote_bucket_name) = match data_blob_storage {
+        DataBlobStorage::Hybrid => ("fractalbits-bucket", "fractalbits-bucket"),
+        DataBlobStorage::S3Express => (
+            "fractalbits-local-az-data-bucket",
+            "fractalbits-remote-az-data-bucket",
+        ),
     };
-    let my_bucket = format!("s3://{bucket_name}");
+    let local_bucket = format!("s3://{local_bucket_name}");
+    let remote_bucket = format!("s3://{remote_bucket_name}");
+
     run_cmd! {
         mkdir -p etc;
         echo $service_file_content > $service_file;
@@ -347,27 +352,36 @@ WorkingDirectory={pwd}/data
     wait_for_service_ready(ServiceName::Minio, 10)?;
 
     run_cmd! {
-        info "Creating s3 bucket (\"$bucket_name\") in minio ...";
+        info "Creating s3 buckets (\"$local_bucket_name\" and \"$remote_bucket_name\") in minio ...";
         ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb $my_bucket &>/dev/null;
+            aws s3 mb $local_bucket &>/dev/null;
+        ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
+            aws s3 mb $remote_bucket &>/dev/null;
     }?;
 
     let mut wait_new_buckets_secs = 0;
     const TIMEOUT_SECS: i32 = 5;
     loop {
-        if run_cmd! (
+        let local_ready = run_cmd! (
             AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3api head-bucket --bucket $bucket_name &>/dev/null
-        ).is_ok() {
+            aws s3api head-bucket --bucket $local_bucket_name &>/dev/null
+        ).is_ok();
+
+        let remote_ready = run_cmd! (
+            AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
+            aws s3api head-bucket --bucket $remote_bucket_name &>/dev/null
+        ).is_ok();
+
+        if local_ready && remote_ready {
             break;
         }
 
         wait_new_buckets_secs += 1;
         if wait_new_buckets_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
+            cmd_die!("timeout waiting for newly created buckets {local_bucket_name} and {remote_bucket_name}");
         }
 
-        info!("waiting for newly created bucket {bucket_name}: {wait_new_buckets_secs}s");
+        info!("waiting for newly created buckets {local_bucket_name} and {remote_bucket_name}: {wait_new_buckets_secs}s");
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
     Ok(())
@@ -426,10 +440,10 @@ pub fn start_all_services(
 
     // Start supporting services first
     info!("Starting supporting services (ddb_local, minio)");
-    run_cmd!(systemctl --user start ddb_local.service minio.service)?;
+    start_ddb_local_service()?;
+    start_minio_service(data_blob_storage)?;
 
     wait_for_service_ready(ServiceName::DdbLocal, 10)?;
-    wait_for_service_ready(ServiceName::Minio, 10)?;
 
     // Start all main services - systemd dependencies will handle ordering
     match data_blob_storage {
