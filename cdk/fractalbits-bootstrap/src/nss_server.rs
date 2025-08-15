@@ -88,6 +88,7 @@ blob_dram_kilo_bytes = {blob_dram_kilo_bytes}
 art_journal_segment_size = {art_journal_segment_size}
 log_level = "info"
 iam_role = "{iam_role}"
+nss_role = "solo"
 
 [s3_cache]
 s3_host = "s3.{aws_region}.amazonaws.com"
