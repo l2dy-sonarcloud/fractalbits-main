@@ -1,6 +1,11 @@
 use crate::*;
 
-pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str) -> CmdResult {
+pub fn bootstrap(
+    bucket_name: &str,
+    bucket_remote_az: Option<&str>,
+    nss_ip: &str,
+    rss_ip: &str,
+) -> CmdResult {
     install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
@@ -23,7 +28,7 @@ pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str) -> CmdResult {
         info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
     }
 
-    api_server::create_config(bucket_name, &bss_ip, nss_ip, rss_ip)?;
+    api_server::create_config(bucket_name, bucket_remote_az, &bss_ip, nss_ip, rss_ip)?;
     // setup_cloudwatch_agent()?;
     let extra_start_opts = format!("--gui {WEB_ROOT}");
     create_systemd_unit_file_with_extra_start_opts("api_server", &extra_start_opts, true)?;

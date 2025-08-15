@@ -16,7 +16,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   availabilityZone?: string;
   bssInstanceTypes: string;
   browserIp?: string;
-  dataBlobStorage?: "hybrid" | "s3Express";
+  dataBlobStorage: "hybridSingleAz" | "s3ExpressSingleAz" | "s3ExpressMultiAz";
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -26,7 +26,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FractalbitsVpcStackProps) {
     super(scope, id, props);
     const forBenchFlag = props.benchType ? ' --for_bench' : '';
-    const dataBlobStorage = props.dataBlobStorage ?? 's3Express';
+    const dataBlobStorage = props.dataBlobStorage;
 
     // === VPC Configuration ===
     const az = props.availabilityZone ?? this.availabilityZones[this.availabilityZones.length - 1];
@@ -74,7 +74,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     // Create S3 Express One Zone bucket for high-performance blob storage when in s3Express mode
     let dataBlobBucket: s3express.CfnDirectoryBucket | undefined;
-    if (dataBlobStorage === 's3Express') {
+    let dataBlobBucket2: s3express.CfnDirectoryBucket | undefined;
+    let zoneId2: string | undefined;
+    const dataBlobOnS3Express = dataBlobStorage === 's3ExpressSingleAz' || dataBlobStorage === 's3ExpressMultiAz';
+    if (dataBlobOnS3Express) {
       // For S3 Express, derive zone ID from availability zone
       // Map us-west-2[a-d] to usw2-az[1-4] using CloudFormation mappings
       const azMappings = new cdk.CfnMapping(this, 'AZToZoneIdMapping', {
@@ -89,12 +92,36 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
       const zoneId = azMappings.findInMap(az, 'zoneId');
 
+      // Generate a unique base name for the buckets
+      const bucketBaseName = `fractalbits-data-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`;
+
       dataBlobBucket = new s3express.CfnDirectoryBucket(this, 'DataBlobExpressBucket', {
-        // Remove bucketName property to let CDK auto-generate
+        bucketName: `${bucketBaseName}--${zoneId}--x-s3`,
         dataRedundancy: 'SingleAvailabilityZone',
         locationName: zoneId,
         // Note: CfnDirectoryBucket doesn't support removalPolicy/autoDeleteObjects like regular buckets
       });
+
+      if (dataBlobStorage === 's3ExpressMultiAz') {
+        // Create second S3 Express bucket in alternate AZ
+        // If primary is usw2-az3, use usw2-az4, and vice versa
+        // If primary is usw2-az1 or usw2-az2, use usw2-az3
+        if (zoneId === 'usw2-az3') {
+          zoneId2 = 'usw2-az4';
+        } else if (zoneId === 'usw2-az4') {
+          zoneId2 = 'usw2-az3';
+        } else {
+          // For usw2-az1 or usw2-az2, default to usw2-az3
+          zoneId2 = 'usw2-az3';
+        }
+
+        dataBlobBucket2 = new s3express.CfnDirectoryBucket(this, 'DataBlobExpressBucket2', {
+          bucketName: `${bucketBaseName}--${zoneId2}--x-s3`,
+          dataRedundancy: 'SingleAvailabilityZone',
+          locationName: zoneId2,
+          // Note: CfnDirectoryBucket doesn't support removalPolicy/autoDeleteObjects like regular buckets
+        });
+      }
     }
 
     new dynamodb.Table(this, 'FractalbitsTable', {
@@ -176,7 +203,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     // Create bss_server in a ASG group only for hybrid mode
     let bssAsg: autoscaling.AutoScalingGroup | undefined;
-    if (dataBlobStorage === 'hybrid') {
+    if (dataBlobStorage === 'hybridSingleAz') {
       const bssBootstrapOptions = `${forBenchFlag} bss_server`;
       bssAsg = createEc2Asg(
         this,
@@ -192,8 +219,17 @@ export class FractalbitsVpcStack extends cdk.Stack {
     }
 
     // Create api_server(s) in a ASG group
-    const dataBlobBucketName = dataBlobStorage === 's3Express' ? dataBlobBucket!.ref : bucket.bucketName;
-    const apiServerBootstrapOptions = `${forBenchFlag} api_server --bucket=${dataBlobBucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`;
+    const dataBlobBucketName = dataBlobOnS3Express ? dataBlobBucket!.ref : bucket.bucketName;
+    const dataBlobBucketName2 = dataBlobStorage === 's3ExpressMultiAz' && dataBlobBucket2 ? dataBlobBucket2.ref : '';
+    const bucketRemoteAzParam = dataBlobBucketName2 ? ` --bucket_remote_az=${dataBlobBucketName2}` : '';
+    // Reusable function to create bootstrap options for api_server and gui_server
+    const createBootstrapOptions = (serviceName: string) =>
+      `${forBenchFlag} ${serviceName} ` +
+      `--bucket=${dataBlobBucketName} ` +
+      `--nss_ip=${instances["nss_server_primary"].instancePrivateIp} ` +
+      `--rss_ip=${instances["root_server"].instancePrivateIp}` +
+      bucketRemoteAzParam;
+    const apiServerBootstrapOptions = createBootstrapOptions('api_server');
     const apiServerAsg = createEc2Asg(
       this,
       'ApiServerAsg',
@@ -243,10 +279,6 @@ export class FractalbitsVpcStack extends cdk.Stack {
         id: 'nss_server_secondary',
         bootstrapOptions: `${forBenchFlag} nss_server --bucket=${bucketName} --volume_id=${ebsVolumeId} --iam_role=${ec2Role.roleName}`
       },
-      {
-        id: 'gui_server',
-        bootstrapOptions: `gui_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`
-      },
     ];
     if (props.benchType === "external") {
       instanceBootstrapOptions.push({
@@ -257,7 +289,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     if (props.browserIp) {
       instanceBootstrapOptions.push({
         id: 'gui_server',
-        bootstrapOptions: `${forBenchFlag} gui_server --bucket=${bucket.bucketName} --nss_ip=${instances["nss_server_primary"].instancePrivateIp} --rss_ip=${instances["root_server"].instancePrivateIp}`
+        bootstrapOptions: createBootstrapOptions('gui_server')
       });
     }
     instanceBootstrapOptions.forEach(({id, bootstrapOptions}) => {
@@ -299,6 +331,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
       new cdk.CfnOutput(this, 'DataBlobExpressBucketName', {
         value: dataBlobBucket.ref,
         description: 'S3 Express One Zone bucket for data blobs',
+      });
+    }
+
+    if (dataBlobBucket2) {
+      new cdk.CfnOutput(this, 'DataBlobExpressBucketName2', {
+        value: dataBlobBucket2.ref,
+        description: 'S3 Express One Zone bucket for data blobs (remote AZ)',
       });
     }
 

@@ -1,6 +1,12 @@
 use crate::*;
 
-pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str, for_bench: bool) -> CmdResult {
+pub fn bootstrap(
+    bucket_name: &str,
+    bucket_remote_az: Option<&str>,
+    nss_ip: &str,
+    rss_ip: &str,
+    for_bench: bool,
+) -> CmdResult {
     install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
@@ -34,7 +40,7 @@ pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str, for_bench: bool)
         }
     }
 
-    create_config(bucket_name, &bss_ip, nss_ip, rss_ip)?;
+    create_config(bucket_name, bucket_remote_az, &bss_ip, nss_ip, rss_ip)?;
 
     if for_bench {
         // Try to download tools for micro-benchmarking
@@ -56,14 +62,52 @@ pub fn bootstrap(bucket_name: &str, nss_ip: &str, rss_ip: &str, for_bench: bool)
     Ok(())
 }
 
-pub fn create_config(bucket_name: &str, bss_ip: &str, nss_ip: &str, rss_ip: &str) -> CmdResult {
+pub fn create_config(
+    bucket_name: &str,
+    bucket_remote_az: Option<&str>,
+    bss_ip: &str,
+    nss_ip: &str,
+    rss_ip: &str,
+) -> CmdResult {
     let aws_region = get_current_aws_region()?;
     let aws_az = get_current_aws_az()?;
     let num_cores = run_fun!(nproc)?;
     let is_s3_express = bucket_name.ends_with("--x-s3");
+    let is_multi_az = bucket_remote_az.is_some();
 
-    let config_content = if is_s3_express {
-        // S3 Express configuration
+    let config_content = if is_s3_express && is_multi_az {
+        // S3 Express Multi-AZ configuration
+        let remote_bucket = bucket_remote_az.unwrap();
+        format!(
+            r##"nss_addr = "{nss_ip}:8088"
+rss_addr = "{rss_ip}:8088"
+nss_conn_num = {num_cores}
+rss_conn_num = 1
+region = "{aws_region}"
+port = 80
+root_domain = ".localhost"
+with_metrics = true
+http_request_timeout_seconds = 5
+rpc_timeout_seconds = 4
+allow_missing_or_bad_signature = false
+
+[blob_storage]
+backend = "s3_express_multi_az"
+
+[blob_storage.s3_express_multi_az]
+local_az_host = "http://s3.{aws_region}.amazonaws.com"
+local_az_port = 80
+remote_az_host = "http://s3.{aws_region}.amazonaws.com"
+remote_az_port = 80
+s3_region = "{aws_region}"
+local_az_bucket = "{bucket_name}"
+remote_az_bucket = "{remote_bucket}"
+az = "{aws_az}"
+force_path_style = false
+"##
+        )
+    } else if is_s3_express {
+        // S3 Express Single-AZ configuration
         format!(
             r##"nss_addr = "{nss_ip}:8088"
 rss_addr = "{rss_ip}:8088"
@@ -90,7 +134,7 @@ force_path_style = false
 "##
         )
     } else {
-        // Hybrid configuration
+        // Hybrid single az configuration
         format!(
             r##"bss_addr = "{bss_ip}:8088"
 nss_addr = "{nss_ip}:8088"

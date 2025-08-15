@@ -14,6 +14,7 @@ const benchType = app.node.tryGetContext('benchType') ?? null;
 const availabilityZone = app.node.tryGetContext('availabilityZone') ?? app.node.tryGetContext('az') ?? 'us-west-2d';
 const bssInstanceTypes = app.node.tryGetContext('bssInstanceTypes') ?? "i8g.xlarge,i8g.2xlarge,i8g.4xlarge";
 const browserIp = app.node.tryGetContext('browserIp') ?? null;
+const dataBlobStorage = app.node.tryGetContext('dataBlobStorage') ?? "s3ExpressMultiAz";
 
 const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   env: {},
@@ -23,6 +24,7 @@ const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
   benchType: benchType,
   availabilityZone: availabilityZone,
   bssInstanceTypes: bssInstanceTypes,
+  dataBlobStorage: dataBlobStorage,
 });
 
 if (benchType === "service_endpoint") {
