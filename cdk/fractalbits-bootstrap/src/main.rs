@@ -43,8 +43,8 @@ enum Command {
         #[clap(long, long_help = "S3 bucket name for fractalbits service")]
         bucket: String,
 
-        #[clap(long, long_help = "S3 remote bucket zone id, used in multi-az setup")]
-        bucket_remote_az: Option<String>,
+        #[clap(long, long_help = "S3 remote bucket name used in multi-az setup")]
+        remote_bucket: Option<String>,
 
         #[clap(long, long_help = "primary nss_server IP address")]
         nss_ip: String,
@@ -58,8 +58,8 @@ enum Command {
         #[clap(long, long_help = "S3 bucket name for fractalbits service")]
         bucket: String,
 
-        #[clap(long, long_help = "S3 remote bucket zone id, used in multi-az setup")]
-        bucket_remote_az: Option<String>,
+        #[clap(long, long_help = "S3 remote bucket name, used in multi-az setup")]
+        remote_bucket: Option<String>,
 
         #[clap(long, long_help = "primary nss_server IP address")]
         nss_ip: String,
@@ -170,22 +170,22 @@ fn main() -> CmdResult {
     match opts.command {
         Command::ApiServer {
             bucket,
-            bucket_remote_az,
+            remote_bucket,
             nss_ip,
             rss_ip,
         } => api_server::bootstrap(
             &bucket,
-            bucket_remote_az.as_deref(),
+            remote_bucket.as_deref(),
             &nss_ip,
             &rss_ip,
             for_bench,
         )?,
         Command::GuiServer {
             bucket,
-            bucket_remote_az,
+            remote_bucket,
             nss_ip,
             rss_ip,
-        } => gui_server::bootstrap(&bucket, bucket_remote_az.as_deref(), &nss_ip, &rss_ip)?,
+        } => gui_server::bootstrap(&bucket, remote_bucket.as_deref(), &nss_ip, &rss_ip)?,
         Command::BssServer { meta_stack_testing } => {
             bss_server::bootstrap(meta_stack_testing, for_bench)?
         }

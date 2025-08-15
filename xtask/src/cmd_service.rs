@@ -788,7 +788,7 @@ fn create_dirs_for_mirrord_server() -> CmdResult {
         mkdir -p data/nss-standby/ebs;
         mkdir -p data/nss-standby/local/stats;
         mkdir -p data/nss-standby/local/meta_cache/blobs;
-    }?; 
+    }?;
     for i in 0..256 {
         run_cmd!(mkdir -p data/nss-standby/local/meta_cache/blobs/dir$i)?;
     }

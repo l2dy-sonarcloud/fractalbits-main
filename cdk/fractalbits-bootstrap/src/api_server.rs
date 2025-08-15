@@ -2,7 +2,7 @@ use crate::*;
 
 pub fn bootstrap(
     bucket_name: &str,
-    bucket_remote_az: Option<&str>,
+    remote_bucket: Option<&str>,
     nss_ip: &str,
     rss_ip: &str,
     for_bench: bool,
@@ -40,7 +40,7 @@ pub fn bootstrap(
         }
     }
 
-    create_config(bucket_name, bucket_remote_az, &bss_ip, nss_ip, rss_ip)?;
+    create_config(bucket_name, remote_bucket, &bss_ip, nss_ip, rss_ip)?;
 
     if for_bench {
         // Try to download tools for micro-benchmarking
@@ -58,7 +58,7 @@ pub fn bootstrap(
 
 pub fn create_config(
     bucket_name: &str,
-    bucket_remote_az: Option<&str>,
+    remote_bucket: Option<&str>,
     bss_ip: &str,
     nss_ip: &str,
     rss_ip: &str,
@@ -67,11 +67,31 @@ pub fn create_config(
     let aws_az = get_current_aws_az()?;
     let num_cores = run_fun!(nproc)?;
     let is_s3_express = bucket_name.ends_with("--x-s3");
-    let is_multi_az = bucket_remote_az.is_some();
+    let is_multi_az = remote_bucket.is_some();
+
+    // Extract zone ID from S3 Express bucket name (format: bucket-base-name--zone-id--x-s3)
+    let extract_zone_id = |bucket: &str| -> Option<String> {
+        if bucket.ends_with("--x-s3") {
+            let parts: Vec<&str> = bucket.split("--").collect();
+            if parts.len() >= 3 {
+                // Zone ID is the second-to-last part (before --x-s3)
+                return Some(parts[parts.len() - 2].to_string());
+            }
+        }
+        None
+    };
 
     let config_content = if is_s3_express && is_multi_az {
         // S3 Express Multi-AZ configuration
-        let remote_bucket = bucket_remote_az.unwrap();
+        let remote_bucket = remote_bucket.unwrap();
+
+        // Extract zone IDs from bucket names
+        let local_zone_id = extract_zone_id(bucket_name)
+            .unwrap_or_else(|| panic!("Failed to extract zone ID from bucket name: {bucket_name}"));
+        let remote_zone_id = extract_zone_id(remote_bucket).unwrap_or_else(|| {
+            panic!("Failed to extract zone ID from remote bucket name: {remote_bucket}")
+        });
+
         format!(
             r##"nss_addr = "{nss_ip}:8088"
 rss_addr = "{rss_ip}:8088"
@@ -89,9 +109,9 @@ allow_missing_or_bad_signature = false
 backend = "s3_express_multi_az"
 
 [blob_storage.s3_express_multi_az]
-local_az_host = "http://s3.{aws_region}.amazonaws.com"
+local_az_host = "http://s3express-{local_zone_id}.{aws_region}.amazonaws.com"
 local_az_port = 80
-remote_az_host = "http://s3.{aws_region}.amazonaws.com"
+remote_az_host = "http://s3express-{remote_zone_id}.{aws_region}.amazonaws.com"
 remote_az_port = 80
 s3_region = "{aws_region}"
 local_az_bucket = "{bucket_name}"
@@ -102,6 +122,11 @@ force_path_style = false
         )
     } else if is_s3_express {
         // S3 Express Single-AZ configuration
+
+        // Extract zone ID from bucket name
+        let zone_id = extract_zone_id(bucket_name)
+            .unwrap_or_else(|| panic!("Failed to extract zone ID from bucket name: {bucket_name}"));
+
         format!(
             r##"nss_addr = "{nss_ip}:8088"
 rss_addr = "{rss_ip}:8088"
@@ -119,7 +144,7 @@ allow_missing_or_bad_signature = false
 backend = "s3_express_single_az"
 
 [blob_storage.s3_express_single_az]
-s3_host = "http://s3.{aws_region}.amazonaws.com"
+s3_host = "http://s3express-{zone_id}.{aws_region}.amazonaws.com"
 s3_port = 80
 s3_region = "{aws_region}"
 s3_bucket = "{bucket_name}"
