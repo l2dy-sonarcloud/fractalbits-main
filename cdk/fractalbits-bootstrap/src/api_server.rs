@@ -100,14 +100,17 @@ az = "{aws_az}"
 force_path_style = false
 
 [blob_storage.s3_express_multi_az.ratelimit]
-enabled = false
+enabled = true
 put_qps = 7000
 get_qps = 10000
 delete_qps = 5000
 
-[blob_storage.s3_express_multi_az.retry]
-retry_mode = "standard"
+[blob_storage.s3_express_multi_az.retry_config]
+enabled = true
 max_attempts = 15
+initial_backoff_us = 50
+max_backoff_us = 500
+backoff_multiplier = 1.0
 "##
         )
     } else if is_s3_express {
@@ -137,14 +140,17 @@ az = "{aws_az}"
 force_path_style = false
 
 [blob_storage.s3_express_single_az.ratelimit]
-enabled = false
+enabled = true
 put_qps = 7000
 get_qps = 10000
 delete_qps = 5000
 
-[blob_storage.s3_express_single_az.retry]
-retry_mode = "standard"
+[blob_storage.s3_express_single_az.retry_config]
+enabled = true
 max_attempts = 15
+initial_backoff_us = 50
+max_backoff_us = 500
+backoff_multiplier = 1.0
 "##
         )
     } else {
@@ -183,9 +189,12 @@ put_qps = 7000
 get_qps = 10000
 delete_qps = 5000
 
-[blob_storage.s3_hybrid.retry]
-retry_mode = "standard"
-max_attempts = 15
+[blob_storage.s3_hybrid.retry_config]
+enabled = true
+max_attempts = 8
+initial_backoff_us = 15000
+max_backoff_us = 2000000
+backoff_multiplier = 1.8
 "##
         )
     };

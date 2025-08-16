@@ -5,17 +5,25 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 /// Configuration for retry behavior
-#[derive(Clone, Debug)]
-pub struct RetryConfig {
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct S3RetryConfig {
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     pub max_attempts: u32,
     pub initial_backoff_us: u64,
     pub max_backoff_us: u64,
     pub backoff_multiplier: f64,
 }
 
-impl Default for RetryConfig {
+fn default_enabled() -> bool {
+    true
+}
+
+impl Default for S3RetryConfig {
+    // "standard" mode
     fn default() -> Self {
         Self {
+            enabled: true,
             max_attempts: 8,
             initial_backoff_us: 15_000,
             max_backoff_us: 2_000_000,
@@ -24,10 +32,11 @@ impl Default for RetryConfig {
     }
 }
 
-impl RetryConfig {
+impl S3RetryConfig {
     /// Configuration optimized for rate-limited S3 operations
     pub fn rate_limited() -> Self {
         Self {
+            enabled: true,
             max_attempts: 15,
             initial_backoff_us: 50,  // 50 microseconds
             max_backoff_us: 500,     // 500 microseconds (0.5ms cap)
@@ -38,17 +47,12 @@ impl RetryConfig {
     /// Configuration for disabled retries (single attempt only)
     pub fn disabled() -> Self {
         Self {
+            enabled: false,
             max_attempts: 1,
             initial_backoff_us: 0,
             max_backoff_us: 0,
             backoff_multiplier: 1.0,
         }
-    }
-
-    /// Set the maximum number of attempts
-    pub fn with_max_attempts(mut self, max_attempts: u32) -> Self {
-        self.max_attempts = max_attempts;
-        self
     }
 }
 
@@ -168,7 +172,7 @@ where
 }
 
 /// Calculate backoff with jitter
-pub fn calculate_backoff(attempt: u32, config: &RetryConfig) -> Duration {
+pub fn calculate_backoff(attempt: u32, config: &S3RetryConfig) -> Duration {
     let base_backoff =
         config.initial_backoff_us as f64 * config.backoff_multiplier.powi(attempt as i32 - 1);
     let capped_backoff = base_backoff.min(config.max_backoff_us as f64);
@@ -185,7 +189,7 @@ pub async fn retry_s3_operation<F, Fut, T, E>(
     operation_name: &str,
     storage_type: &str,
     bucket: &str,
-    config: &RetryConfig,
+    config: &S3RetryConfig,
     mut operation: F,
 ) -> Result<T, SdkError<E>>
 where

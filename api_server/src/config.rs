@@ -1,3 +1,4 @@
+use crate::blob_storage::S3RetryConfig;
 use serde::Deserialize;
 use std::{net::SocketAddr, time::Duration};
 
@@ -48,21 +49,6 @@ impl Default for RatelimitConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RetryConfig {
-    pub retry_mode: String, // "standard" | "adaptive" | "disabled"
-    pub max_attempts: u32,
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            retry_mode: "disabled".to_string(), // Default to disabled for local testing
-            max_attempts: 3,
-        }
-    }
-}
-
-#[derive(Deserialize, Debug, Clone)]
 pub struct S3ExpressMultiAzConfig {
     pub local_az_host: String,
     pub local_az_port: u16,
@@ -75,7 +61,7 @@ pub struct S3ExpressMultiAzConfig {
     #[serde(default)]
     pub ratelimit: RatelimitConfig,
     #[serde(default)]
-    pub retry: RetryConfig,
+    pub retry_config: S3RetryConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -90,7 +76,7 @@ pub struct S3ExpressSingleAzConfig {
     #[serde(default)]
     pub ratelimit: RatelimitConfig,
     #[serde(default)]
-    pub retry: RetryConfig,
+    pub retry_config: S3RetryConfig,
 }
 
 fn default_force_path_style() -> bool {
@@ -107,7 +93,7 @@ impl Default for S3ExpressSingleAzConfig {
             az: "us-west-1a".into(),
             force_path_style: true,
             ratelimit: RatelimitConfig::default(),
-            retry: RetryConfig::default(),
+            retry_config: S3RetryConfig::default(),
         }
     }
 }
@@ -149,7 +135,7 @@ pub struct S3HybridConfig {
     #[serde(default)]
     pub ratelimit: RatelimitConfig,
     #[serde(default)]
-    pub retry: RetryConfig,
+    pub retry_config: S3RetryConfig,
 }
 
 impl Default for Config {

@@ -1,8 +1,15 @@
 use super::{
-    blob_key, create_s3_client_wrapper, retry, BlobStorage, BlobStorageError, RetryMode,
-    S3ClientWrapper, S3RateLimitConfig,
+    blob_key, create_s3_client_wrapper, BlobStorage, BlobStorageError, S3ClientWrapper,
+    S3RateLimitConfig, S3RetryConfig,
 };
 use crate::s3_retry;
+use aws_sdk_s3::{
+    error::SdkError,
+    operation::{
+        delete_object::{DeleteObjectError, DeleteObjectOutput},
+        get_object::{GetObjectError, GetObjectOutput},
+    },
+};
 use bytes::Bytes;
 use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use metrics::{counter, histogram};
@@ -26,8 +33,7 @@ pub struct S3ExpressWithTrackingConfig {
     #[allow(dead_code)] // Will be used for separate remote AZ client
     pub remote_az_port: Option<u16>,
     pub rate_limit_config: S3RateLimitConfig,
-    pub retry_mode: RetryMode,
-    pub max_attempts: u32,
+    pub retry_config: S3RetryConfig,
 }
 
 pub struct S3ExpressMultiAzWithTracking {
@@ -39,9 +45,7 @@ pub struct S3ExpressMultiAzWithTracking {
     nss_client: Arc<RpcClientNss>,
     /// Key for storing AZ availability status in RSS
     az_status_key: String,
-    retry_config: retry::RetryConfig,
-    #[allow(dead_code)]
-    retry_mode: RetryMode,
+    retry_config: S3RetryConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -66,8 +70,8 @@ impl S3ExpressMultiAzWithTracking {
         nss_client: Arc<RpcClientNss>,
     ) -> Result<Self, BlobStorageError> {
         info!(
-            "Initializing S3 Express One Zone storage with tracking for buckets: {} (local) and {} (remote) in AZ: {} (rate_limit_enabled: {}, retry_mode: {:?})",
-            config.local_az_bucket, config.remote_az_bucket, config.az, config.rate_limit_config.enabled, config.retry_mode
+            "Initializing S3 Express One Zone storage with tracking for buckets: {} (local) and {} (remote) in AZ: {} (rate_limit_enabled: {}, retry_enabled: {})",
+            config.local_az_bucket, config.remote_az_bucket, config.az, config.rate_limit_config.enabled, config.retry_config.enabled
         );
 
         let client_s3 = if config.local_az_host.ends_with("amazonaws.com") {
@@ -95,11 +99,6 @@ impl S3ExpressMultiAzWithTracking {
         let endpoint_url = format!("{}:{}", config.local_az_host, config.local_az_port);
         info!("S3 client with tracking initialized with endpoint: {endpoint_url}");
 
-        let retry_config = match config.retry_mode {
-            RetryMode::Disabled => retry::RetryConfig::disabled(),
-            _ => retry::RetryConfig::rate_limited().with_max_attempts(config.max_attempts),
-        };
-
         Ok(Self {
             client_s3,
             local_az_bucket: config.local_az_bucket.clone(),
@@ -108,8 +107,7 @@ impl S3ExpressMultiAzWithTracking {
             rss_client,
             nss_client,
             az_status_key: format!("az_status/{}", config.az),
-            retry_config,
-            retry_mode: config.retry_mode.clone(),
+            retry_config: config.retry_config.clone(),
         })
     }
 
@@ -124,8 +122,8 @@ impl S3ExpressMultiAzWithTracking {
         aws_sdk_s3::operation::put_object::PutObjectOutput,
         aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
     > {
-        match self.retry_mode {
-            RetryMode::Disabled => {
+        match self.retry_config.enabled {
+            false => {
                 self.client_s3
                     .put_object()
                     .await
@@ -135,7 +133,7 @@ impl S3ExpressMultiAzWithTracking {
                     .send()
                     .await
             }
-            _ => {
+            true => {
                 s3_retry!(
                     "put_blob",
                     "s3_express_multi_az_with_tracking",
@@ -159,12 +157,9 @@ impl S3ExpressMultiAzWithTracking {
         &self,
         bucket: &str,
         key: &str,
-    ) -> Result<
-        aws_sdk_s3::operation::get_object::GetObjectOutput,
-        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
-    > {
-        match self.retry_mode {
-            RetryMode::Disabled => {
+    ) -> Result<GetObjectOutput, SdkError<GetObjectError>> {
+        match self.retry_config.enabled {
+            false => {
                 self.client_s3
                     .get_object()
                     .await
@@ -173,7 +168,7 @@ impl S3ExpressMultiAzWithTracking {
                     .send()
                     .await
             }
-            _ => {
+            true => {
                 s3_retry!(
                     "get_blob",
                     "s3_express_multi_az_with_tracking",
@@ -196,12 +191,9 @@ impl S3ExpressMultiAzWithTracking {
         &self,
         bucket: &str,
         key: &str,
-    ) -> Result<
-        aws_sdk_s3::operation::delete_object::DeleteObjectOutput,
-        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
-    > {
-        match self.retry_mode {
-            RetryMode::Disabled => {
+    ) -> Result<DeleteObjectOutput, SdkError<DeleteObjectError>> {
+        match self.retry_config.enabled {
+            false => {
                 self.client_s3
                     .delete_object()
                     .await
@@ -210,7 +202,7 @@ impl S3ExpressMultiAzWithTracking {
                     .send()
                     .await
             }
-            _ => {
+            true => {
                 s3_retry!(
                     "delete_blob",
                     "s3_express_multi_az_with_tracking",

@@ -7,6 +7,7 @@ mod s3_express_single_az_storage;
 
 pub use bss_only_single_az_storage::BssOnlySingleAzStorage;
 pub use hybrid_single_az_storage::HybridSingleAzStorage;
+pub use retry::S3RetryConfig;
 pub use s3_express_multi_az_storage::{S3ExpressMultiAzConfig, S3ExpressMultiAzStorage};
 pub use s3_express_multi_az_with_tracking::{
     S3ExpressMultiAzWithTracking, S3ExpressWithTrackingConfig,
@@ -75,36 +76,6 @@ impl Default for S3RateLimitConfig {
             put_qps: 7000,    // Based on initial testing results
             get_qps: 10000,   // Higher for reads
             delete_qps: 5000, // Lower for deletes
-        }
-    }
-}
-
-/// Retry mode configuration
-#[derive(Clone, Debug)]
-pub enum RetryMode {
-    Standard,
-    Adaptive,
-    Disabled,
-}
-
-impl From<&str> for RetryMode {
-    fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "standard" => RetryMode::Standard,
-            "adaptive" => RetryMode::Adaptive,
-            "disabled" => RetryMode::Disabled,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl From<&crate::config::RetryConfig> for S3RateLimitConfig {
-    fn from(_config: &crate::config::RetryConfig) -> Self {
-        Self {
-            enabled: false, // Rate limiting is separate from retry config
-            put_qps: 7000,
-            get_qps: 10000,
-            delete_qps: 5000,
         }
     }
 }
@@ -238,7 +209,7 @@ pub async fn create_s3_client(
     force_path_style: bool,
 ) -> S3Client {
     // Disable SDK retries - we'll handle retries ourselves for better visibility
-    let retry_config = RetryConfig::standard().with_max_attempts(1); // No retries at SDK level
+    let retry_config = RetryConfig::disabled(); // No retries at SDK level
 
     if s3_host.ends_with("amazonaws.com") {
         // Real AWS S3
