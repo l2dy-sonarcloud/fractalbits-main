@@ -784,6 +784,13 @@ Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
 
     // Add systemd dependencies based on service type
     let dependencies = match service {
+        // Note the current nss (managed by nss_role_agent_a) code requires mirrord (managed by
+        // nss_role_agent_b) to start at first, so we create dependency here. Once it has no
+        // restriction like this, we can remove the dependency requirement.
+        ServiceName::NssRoleAgentA => {
+            "After=rss.service nss_role_agent_b.service\nWants=rss.service nss_role_agent_b.service\n"
+        }
+        ServiceName::NssRoleAgentB => "After=rss.service\nWants=rss.service\n",
         ServiceName::Rss => "After=ddb_local.service\nWants=ddb_local.service\n",
         ServiceName::Nss => "After=minio.service\nWants=minio.service\n",
         ServiceName::ApiServer => "After=rss.service nss.service\nWants=rss.service nss.service\n",
@@ -888,9 +895,9 @@ fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdResult 
                 ServiceName::Nss => check_port_ready(8087),
                 ServiceName::Mirrord => check_port_ready(9999),
                 ServiceName::ApiServer => check_port_ready(8080),
-                ServiceName::NssRoleAgentA => true, // No network port for this service
-                ServiceName::NssRoleAgentB => true, // No network port for this service
-                ServiceName::DataBlobResyncServer => true, // CLI tool, not a service
+                ServiceName::NssRoleAgentA => check_port_ready(8087), // Check managed nss_server
+                ServiceName::NssRoleAgentB => check_port_ready(9999), // check managed mirrord
+                ServiceName::DataBlobResyncServer => true,            // CLI tool, not a service
                 ServiceName::All => unreachable!("Should not check readiness for All"),
             };
 
