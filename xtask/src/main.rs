@@ -139,9 +139,10 @@ pub enum ServiceAction {
     Stop,
     Start,
     Restart,
+    Status,
 }
 
-#[derive(AsRefStr, EnumString, Copy, Clone)]
+#[derive(AsRefStr, EnumString, Copy, Clone, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum ServiceName {
     ApiServer,

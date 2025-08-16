@@ -1,4 +1,5 @@
 use crate::*;
+use colored::*;
 
 pub fn run_cmd_service(
     service: ServiceName,
@@ -15,6 +16,7 @@ pub fn run_cmd_service(
             stop_service(service)?;
             start_services(service, build_mode, for_gui, data_blob_storage)
         }
+        ServiceAction::Status => show_service_status(service, data_blob_storage),
     }
 }
 
@@ -181,6 +183,76 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
         // make sure the process is really killed
         if run_cmd!(systemctl --user is-active --quiet $service.service).is_ok() {
             cmd_die!("Failed to stop $service: service is still running");
+        }
+    }
+
+    Ok(())
+}
+
+pub fn show_service_status(service: ServiceName, data_blob_storage: DataBlobStorage) -> CmdResult {
+    match service {
+        ServiceName::All => {
+            println!("Service Status:");
+            println!("─────────────────────────────────────");
+
+            let all_services = vec![
+                ServiceName::ApiServer,
+                ServiceName::Rss,
+                ServiceName::Bss,
+                ServiceName::Nss,
+                ServiceName::NssRoleAgentA,
+                ServiceName::NssRoleAgentB,
+                ServiceName::Mirrord,
+                ServiceName::DdbLocal,
+                ServiceName::Minio,
+                ServiceName::MinioLocalAz,
+                ServiceName::MinioRemoteAz,
+            ];
+
+            for svc in all_services {
+                let service_name = match svc {
+                    ServiceName::NssRoleAgentA => "nss_role_agent_a",
+                    ServiceName::NssRoleAgentB => "nss_role_agent_b",
+                    _ => svc.as_ref(),
+                };
+
+                let status = if run_cmd!(systemctl --user list-unit-files --quiet $service_name.service | grep -q $service_name).is_ok() {
+                    // Service exists, get its status
+                    match run_fun!(systemctl --user is-active $service_name.service 2>/dev/null) {
+                        Ok(output) => match output.trim() {
+                            "active" => "active".green().to_string(),
+                            status => status.yellow().to_string(),
+                        },
+                        Err(_) => {
+                            // Command failed, try to get the actual status
+                            if run_cmd!(systemctl --user is-failed --quiet $service_name.service).is_ok() {
+                                // Check if this is BSS service and it shouldn't be running in current storage mode
+                                if svc == ServiceName::Bss && matches!(data_blob_storage, DataBlobStorage::S3ExpressSingleAz | DataBlobStorage::S3ExpressMultiAz) {
+                                    "not needed".bright_black().to_string()
+                                } else {
+                                    "failed".red().to_string()
+                                }
+                            } else {
+                                "inactive (dead)".bright_black().to_string()
+                            }
+                        }
+                    }
+                } else {
+                    "not installed".bright_black().to_string()
+                };
+
+                println!("{service_name:<16}: {status}");
+            }
+        }
+        single_service => {
+            // Show detailed status for a single service
+            let service_name = match single_service {
+                ServiceName::NssRoleAgentA => "nss_role_agent_a",
+                ServiceName::NssRoleAgentB => "nss_role_agent_b",
+                _ => single_service.as_ref(),
+            };
+
+            run_cmd!(systemctl --user status $service_name.service --no-pager)?;
         }
     }
 
