@@ -288,7 +288,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       },
       {
         id: 'nss-B',
-        bootstrapOptions: `${forBenchFlag} nss_server --bucket=${bucketName} --volume_id=${ebsVolumeBId} --iam_role=${ec2Role.roleName} --standby`
+        bootstrapOptions: `${forBenchFlag} nss_server --bucket=${bucketName} --volume_id=${ebsVolumeBId} --iam_role=${ec2Role.roleName} --standby_ip=${instances['nss-A'].instancePrivateIp}`
       },
     ];
     if (props.benchType === "external") {

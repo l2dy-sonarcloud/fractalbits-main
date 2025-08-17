@@ -41,7 +41,7 @@ pub fn bootstrap(
     )?;
     // setup_cloudwatch_agent()?;
     let extra_start_opts = format!("--gui {WEB_ROOT}");
-    create_systemd_unit_file_with_extra_opts("api_server", &extra_start_opts, false, true)?;
+    create_systemd_unit_file_with_extra_opts("api_server", &extra_start_opts, true)?;
 
     Ok(())
 }

@@ -49,13 +49,12 @@ fn download_binary(file_name: &str) -> CmdResult {
 }
 
 pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResult {
-    create_systemd_unit_file_with_extra_opts(service_name, "", false, enable_now)
+    create_systemd_unit_file_with_extra_opts(service_name, "", enable_now)
 }
 
 pub fn create_systemd_unit_file_with_extra_opts(
     service_name: &str,
     extra_start_opts: &str,
-    standby: bool,
     enable_now: bool,
 ) -> CmdResult {
     let aws_region = get_current_aws_region()?;
@@ -96,10 +95,7 @@ Environment="RUST_LOG=info""##
                 r##"
 Environment="RUST_LOG=info"
 Environment="APP_AGENT_ID={instance_id}"
-Environment="APP_NSS_ROLE=active"
-Environment="APP_SERVICE_TYPE={}"
-"##,
-                if standby { "mirrord" } else { "nss" }
+"##
             );
             format!("{BIN_PATH}{service_name}")
         }

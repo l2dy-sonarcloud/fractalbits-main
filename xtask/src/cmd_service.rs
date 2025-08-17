@@ -63,6 +63,31 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
                 --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1 >/dev/null;
         }?;
 
+        // Initialize NSS role state in DDB table for nss_role_agent
+        let nss_a_item = r#"{"id":{"S":"nss-A"},"value":{"S":"active"},"version":{"N":"1"}}"#;
+        let nss_b_item = r#"{"id":{"S":"nss-B"},"value":{"S":"standby"},"version":{"N":"1"}}"#;
+
+        run_cmd! {
+            info "Initializing NSS role state in $DDB_TABLE_NAME ...";
+            AWS_DEFAULT_REGION=fakeRegion
+            AWS_ACCESS_KEY_ID=fakeMyKeyId
+            AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+            AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+            aws dynamodb put-item
+                --table-name $DDB_TABLE_NAME
+                --item $nss_a_item >/dev/null;
+        }?;
+
+        run_cmd! {
+            AWS_DEFAULT_REGION=fakeRegion
+            AWS_ACCESS_KEY_ID=fakeMyKeyId
+            AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+            AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+            aws dynamodb put-item
+                --table-name $DDB_TABLE_NAME
+                --item $nss_b_item >/dev/null;
+        }?;
+
         Ok(())
     };
     let init_rss = || -> CmdResult {
@@ -314,7 +339,7 @@ pub fn start_services(
         ServiceName::DataBlobResyncServer => {
             info!("DataBlobResyncServer is a standalone CLI tool, not a service. Use 'cargo run -p data_blob_resync_server' instead.");
         }
-        ServiceName::All => start_all_services(build_mode, for_gui, data_blob_storage, nss_role)?,
+        ServiceName::All => start_all_services(build_mode, for_gui, data_blob_storage)?,
         ServiceName::Minio => start_minio_service()?,
         ServiceName::MinioLocalAz => start_minio_local_az_service()?,
         ServiceName::MinioRemoteAz => start_minio_remote_az_service()?,
@@ -402,7 +427,7 @@ pub fn start_nss_role_agent_service(
         _ => panic!("Invalid agent_id: {agent_id}"),
     };
 
-    create_systemd_unit_file_for_agent(service_name, build_mode, None, nss_role)?;
+    create_systemd_unit_file(service_name, build_mode, None)?;
 
     let service_file = format!("nss_role_agent_{}.service", agent_id.to_lowercase());
     run_cmd!(systemctl --user start $service_file)?;
@@ -690,7 +715,6 @@ pub fn start_all_services(
     build_mode: BuildMode,
     for_gui: bool,
     data_blob_storage: DataBlobStorage,
-    nss_role: NssRole,
 ) -> CmdResult {
     info!("Starting all services with systemd dependency management");
 
@@ -710,7 +734,7 @@ pub fn start_all_services(
         }
     }
 
-    create_systemd_unit_file_for_agent(ServiceName::NssRoleAgentA, build_mode, None, nss_role)?;
+    create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode, None)?;
     create_systemd_unit_file(ServiceName::Nss, build_mode, None)?;
 
     create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode, None)?;
@@ -738,8 +762,8 @@ pub fn start_all_services(
             // Wait for all services to be ready in dependency order
             wait_for_service_ready(ServiceName::Rss, 15)?;
             wait_for_service_ready(ServiceName::Bss, 15)?;
-            wait_for_service_ready(ServiceName::NssRoleAgentA, 15)?;
-            wait_for_service_ready(ServiceName::NssRoleAgentB, 15)?;
+            wait_for_service_ready(ServiceName::NssRoleAgentA, 30)?;
+            wait_for_service_ready(ServiceName::NssRoleAgentB, 30)?;
             wait_for_service_ready(ServiceName::ApiServer, 15)?;
         }
         DataBlobStorage::S3ExpressMultiAz | DataBlobStorage::S3ExpressSingleAz => {
@@ -747,8 +771,8 @@ pub fn start_all_services(
             info!("Starting main services (skipping BSS in {} mode)", mode);
             run_cmd!(systemctl --user start rss.service nss_role_agent_a.service nss_role_agent_b.service api_server.service)?;
             wait_for_service_ready(ServiceName::Rss, 15)?;
-            wait_for_service_ready(ServiceName::NssRoleAgentA, 15)?;
-            wait_for_service_ready(ServiceName::NssRoleAgentB, 15)?;
+            wait_for_service_ready(ServiceName::NssRoleAgentA, 30)?;
+            wait_for_service_ready(ServiceName::NssRoleAgentB, 30)?;
             wait_for_service_ready(ServiceName::ApiServer, 15)?;
         }
     }
@@ -765,36 +789,11 @@ fn create_systemd_unit_file(
     create_systemd_unit_file_with_extra_start_opts(service, build_mode, config_file, "")
 }
 
-fn create_systemd_unit_file_for_agent(
-    service: ServiceName,
-    build_mode: BuildMode,
-    config_file: Option<String>,
-    nss_role: NssRole,
-) -> CmdResult {
-    create_systemd_unit_file_with_nss_role(service, build_mode, config_file, "", nss_role)
-}
-
 fn create_systemd_unit_file_with_extra_start_opts(
     service: ServiceName,
     build_mode: BuildMode,
     config_file: Option<String>,
     extra_start_opts: &str,
-) -> CmdResult {
-    create_systemd_unit_file_with_nss_role(
-        service,
-        build_mode,
-        config_file,
-        extra_start_opts,
-        NssRole::Active,
-    )
-}
-
-fn create_systemd_unit_file_with_nss_role(
-    service: ServiceName,
-    build_mode: BuildMode,
-    config_file: Option<String>,
-    extra_start_opts: &str,
-    nss_role: NssRole,
 ) -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let build = build_mode.as_ref();
@@ -823,21 +822,11 @@ Environment="RUST_LOG=warn""##
         ServiceName::Mirrord => format!("{pwd}/zig-out/bin/mirrord"),
         ServiceName::NssRoleAgentA => {
             env_settings += env_rust_log(build_mode);
-            env_settings += &format!(
-                r##"
-Environment="APP_AGENT_ID=A"
-Environment="APP_SERVICE_TYPE=nss"
-Environment="APP_NSS_ROLE={}""##,
-                nss_role.as_ref()
-            );
-            format!("{pwd}/target/{build}/nss_role_agent")
+            format!("{pwd}/target/{build}/nss_role_agent --instance-id=nss-A")
         }
         ServiceName::NssRoleAgentB => {
             env_settings += env_rust_log(build_mode);
-            env_settings += r##"
-Environment="APP_AGENT_ID=B"
-Environment="APP_SERVICE_TYPE=mirrord""##;
-            format!("{pwd}/target/{build}/nss_role_agent")
+            format!("{pwd}/target/{build}/nss_role_agent --instance-id=nss-B")
         }
         ServiceName::Rss => {
             env_settings = r##"

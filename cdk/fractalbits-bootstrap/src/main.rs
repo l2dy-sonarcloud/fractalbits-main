@@ -88,9 +88,6 @@ enum Command {
         #[clap(long, default_value = "false", long_help = "For meta stack testing")]
         meta_stack_testing: bool,
 
-        #[clap(long, default_value = "false", long_help = "Standby server")]
-        standby: bool,
-
         #[clap(long, long_help = "Standby server IP address for mirroring")]
         standby_ip: Option<String>,
     },
@@ -208,7 +205,6 @@ fn main() -> CmdResult {
             volume_id,
             meta_stack_testing,
             iam_role,
-            standby,
             standby_ip,
         } => nss_server::bootstrap(
             &bucket,
@@ -216,7 +212,6 @@ fn main() -> CmdResult {
             meta_stack_testing,
             for_bench,
             &iam_role,
-            standby,
             standby_ip.as_deref(),
         )?,
         Command::RootServer {
