@@ -12,7 +12,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
   numBenchClients: number;
   benchType?: "service_endpoint" | "external" | null;
-  availabilityZone?: string;
+  azPair?: [string, string];
   bssInstanceTypes: string;
   browserIp?: string;
   dataBlobStorage: "hybridSingleAz" | "s3ExpressSingleAz" | "s3ExpressMultiAz";
@@ -28,11 +28,28 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const dataBlobStorage = props.dataBlobStorage;
 
     // === VPC Configuration ===
-    const az = props.availabilityZone ?? this.availabilityZones[this.availabilityZones.length - 1];
+    const defaultAzPair: [string, string] = ['usw2-az3', 'usw2-az4'];
+    const azPair = props.azPair ?? defaultAzPair;
+
+    // Map zone IDs to availability zones
+    const zoneIdToAzMapping: Record<string, string> = {
+      'usw2-az1': 'us-west-2b',
+      'usw2-az2': 'us-west-2a',
+      'usw2-az3': 'us-west-2c',
+      'usw2-az4': 'us-west-2d',
+    };
+
+    const az1 = zoneIdToAzMapping[azPair[0]];
+    const az2 = zoneIdToAzMapping[azPair[1]];
+
+    if (!az1 || !az2) {
+      throw new Error(`Invalid azPair: ${azPair}. Must use valid zone IDs: usw2-az1, usw2-az2, usw2-az3, usw2-az4`);
+    }
+
     this.vpc = new ec2.Vpc(this, 'FractalbitsVpc', {
       vpcName: 'fractalbits-vpc',
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
-      availabilityZones: [az],
+      availabilityZones: [az1, az2],
       natGateways: 0,
       enableDnsHostnames: true,
       enableDnsSupport: true,
@@ -90,7 +107,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         lazy: true,
       });
 
-      const zoneId = azMappings.findInMap(az, 'zoneId');
+      const zoneId = azPair[0];
 
       // Generate a unique base name for the buckets
       const bucketBaseName = `fractalbits-data-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`;
@@ -103,17 +120,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
       });
 
       if (dataBlobStorage === 's3ExpressMultiAz') {
-        // Create second S3 Express bucket in alternate AZ
-        // If primary is usw2-az3, use usw2-az4, and vice versa
-        // If primary is usw2-az1 or usw2-az2, use usw2-az3
-        if (zoneId === 'usw2-az3') {
-          zoneId2 = 'usw2-az4';
-        } else if (zoneId === 'usw2-az4') {
-          zoneId2 = 'usw2-az3';
-        } else {
-          // For usw2-az1 or usw2-az2, default to usw2-az3
-          zoneId2 = 'usw2-az3';
-        }
+        // Create second S3 Express bucket in the second AZ from azPair
+        zoneId2 = azPair[1];
 
         dataBlobBucket2 = new s3express.CfnDirectoryBucket(this, 'DataBlobExpressBucket2', {
           bucketName: `${bucketBaseName}--${zoneId2}--x-s3`,
@@ -145,10 +153,10 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const benchInstanceType = new ec2.InstanceType('c7g.large');
     const bucketName = bucket.bucketName;
     const instanceConfigs = [
-      {id: 'rss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
-      {id: 'rss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
-      {id: 'nss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg},
-      {id: 'nss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg},
+      {id: 'rss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg, az: az1},
+      {id: 'rss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg, az: az2},
+      {id: 'nss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg, az: az1},
+      {id: 'nss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg, az: az2},
     ];
 
     if (props.browserIp) {
@@ -159,13 +167,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
         allowAllOutbound: true,
       });
       guiServerSg.addIngressRule(ec2.Peer.ipv4(`${props.browserIp}/32`), ec2.Port.tcp(80), 'Allow access to port 80 from specific IP');
-      instanceConfigs.push({id: 'gui_server', subnet: ec2.SubnetType.PUBLIC, instanceType: new ec2.InstanceType('c8g.large'), sg: guiServerSg});
+      instanceConfigs.push({id: 'gui_server', subnet: ec2.SubnetType.PUBLIC, instanceType: new ec2.InstanceType('c8g.large'), sg: guiServerSg, az: az1});
     }
 
     let benchClientAsg: autoscaling.AutoScalingGroup | undefined;
     if (props.benchType === "external") {
       // Create bench_server
-      instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg});
+      instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg, az: az1});
       // Create bench_clients in a ASG group
       const benchClientBootstrapOptions = `bench_client`;
       benchClientAsg = createEc2Asg(
@@ -181,8 +189,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
       );
     }
     const instances: Record<string, ec2.Instance> = {};
-    instanceConfigs.forEach(({id, subnet, instanceType, sg}) => {
-      instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role);
+    instanceConfigs.forEach(({id, subnet, instanceType, sg, az}) => {
+      instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role, az);
     });
 
     // Create bss_server in a ASG group only for hybrid mode
@@ -252,8 +260,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
     });
 
     // Create EBS Volumes for nss_servers
-    const ebsVolumeA = createEbsVolume(this, 'MultiAttachVolumeA', az, instances['nss-A'].instanceId);
-    const ebsVolumeB = createEbsVolume(this, 'MultiAttachVolumeB', az, instances['nss-B'].instanceId);
+    const ebsVolumeA = createEbsVolume(this, 'MultiAttachVolumeA', az1, instances['nss-A'].instanceId);
+    const ebsVolumeB = createEbsVolume(this, 'MultiAttachVolumeB', az2, instances['nss-B'].instanceId);
 
     // Create UserData: we need to make it a separate step since we want to get the instance/volume ids
     const nssA = instances['nss-A'].instanceId;

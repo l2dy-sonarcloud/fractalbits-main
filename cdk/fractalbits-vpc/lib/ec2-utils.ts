@@ -93,7 +93,12 @@ export const createInstance = (
   instanceType: ec2.InstanceType,
   sg: ec2.SecurityGroup,
   role: iam.Role,
+  availabilityZone?: string,
 ): ec2.Instance => {
+  const vpcSubnets = availabilityZone
+    ? {subnetType, availabilityZones: [availabilityZone]}
+    : {subnetType};
+
   return new ec2.Instance(scope, id, {
     vpc: vpc,
     instanceType: instanceType,
@@ -102,7 +107,7 @@ export const createInstance = (
         ? ec2.AmazonLinuxCpuType.ARM_64
         : ec2.AmazonLinuxCpuType.X86_64
     }),
-    vpcSubnets: {subnetType},
+    vpcSubnets,
     securityGroup: sg,
     role: role,
   });
