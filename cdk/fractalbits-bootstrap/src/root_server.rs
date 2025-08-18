@@ -14,7 +14,6 @@ pub fn bootstrap(
     prefer_leader: bool,
     for_bench: bool,
 ) -> CmdResult {
-    install_rpms(&["amazon-cloudwatch-agent", "perf"])?;
     // download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
     download_binaries(&["rss_admin", "root_server"])?;
     let region = get_current_aws_region()?;

@@ -2,7 +2,7 @@ use super::common::*;
 use cmd_lib::*;
 
 pub fn bootstrap(meta_stack_testing: bool, for_bench: bool) -> CmdResult {
-    install_rpms(&["nvme-cli", "mdadm", "perf", "lldb"])?;
+    install_rpms(&["nvme-cli", "mdadm"])?;
     // no twp support since experiment done
     format_local_nvme_disks(false)?;
     download_binaries(&["bss_server"])?;

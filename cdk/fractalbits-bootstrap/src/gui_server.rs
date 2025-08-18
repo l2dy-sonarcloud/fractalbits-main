@@ -6,7 +6,6 @@ pub fn bootstrap(
     nss_endpoint: &str,
     rss_endpoint: &str,
 ) -> CmdResult {
-    install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
     let builds_bucket = format!("s3://fractalbits-builds-{}", get_current_aws_region()?);

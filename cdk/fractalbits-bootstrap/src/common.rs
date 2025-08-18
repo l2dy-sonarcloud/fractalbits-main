@@ -23,6 +23,7 @@ pub const EXT4_MKFS_OPTS: [&str; 4] = ["-O", "bigalloc", "-C", "16384"];
 
 pub fn common_setup() -> CmdResult {
     create_network_tuning_sysctl_file()?;
+    install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf", "lldb"])?;
     Ok(())
 }
 

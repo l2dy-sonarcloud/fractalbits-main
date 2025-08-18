@@ -29,7 +29,7 @@ pub fn bootstrap(
     mirrord_endpoint: &str,
     rss_endpoint: &str,
 ) -> CmdResult {
-    install_rpms(&["nvme-cli", "mdadm", "perf", "lldb", "nmap-ncat"])?;
+    install_rpms(&["nvme-cli", "mdadm"])?;
     if meta_stack_testing || for_bench {
         download_binaries(&["fbs", "test_art", "rewrk_rpc"])?;
     }

@@ -7,7 +7,6 @@ pub fn bootstrap(
     rss_endpoint: &str,
     for_bench: bool,
 ) -> CmdResult {
-    install_rpms(&["amazon-cloudwatch-agent", "nmap-ncat", "perf"])?;
     download_binaries(&["api_server"])?;
 
     // Check if we're using S3 Express One Zone by looking at bucket name
