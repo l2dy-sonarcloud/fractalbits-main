@@ -3,7 +3,6 @@ import {Construct} from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3express from 'aws-cdk-lib/aws-s3express';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 
@@ -146,7 +145,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const benchInstanceType = new ec2.InstanceType('c7g.large');
     const bucketName = bucket.bucketName;
     const instanceConfigs = [
-      {id: 'root_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
+      {id: 'rss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
+      {id: 'rss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg},
       {id: 'nss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg},
       {id: 'nss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg},
     ];
@@ -213,7 +213,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const mirrordPort = 9999;
     const nssPrivateLink = createPrivateLinkNlb(this, 'Nss', this.vpc, [instances['nss-A'], instances['nss-B']], servicePort);
     const mirrordPrivateLink = createPrivateLinkNlb(this, 'Mirrord', this.vpc, [instances['nss-A'], instances['nss-B']], mirrordPort);
-    const rssPrivateLink = createPrivateLinkNlb(this, 'Rss', this.vpc, [instances['root_server']], servicePort);
+    const rssPrivateLink = createPrivateLinkNlb(this, 'Rss', this.vpc, [instances['rss-A'], instances['rss-B']], servicePort);
 
     // Reusable function to create bootstrap options for api_server and gui_server
     const createApiServerBootstrapOptions = (serviceName: string) =>
@@ -280,8 +280,12 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     const instanceBootstrapOptions = [
       {
-        id: 'root_server',
-        bootstrapOptions: `${forBenchFlag} root_server --nss_a_id=${nssA} --nss_b_id=${nssB} --volume_a_id=${ebsVolumeAId} --volume_b_id=${ebsVolumeBId} `
+        id: 'rss-A',
+        bootstrapOptions: `${forBenchFlag} root_server --nss_a_id=${nssA} --nss_b_id=${nssB} --volume_a_id=${ebsVolumeAId} --volume_b_id=${ebsVolumeBId} --prefer_leader`
+      },
+      {
+        id: 'rss-B',
+        bootstrapOptions: `${forBenchFlag} root_server --nss_a_id=${nssA} --nss_b_id=${nssB} --volume_a_id=${ebsVolumeAId} --volume_b_id=${ebsVolumeBId}`
       },
       {
         id: 'nss-A',

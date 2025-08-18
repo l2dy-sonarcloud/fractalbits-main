@@ -11,6 +11,7 @@ pub fn bootstrap(
     nss_b_id: &str,
     volume_a_id: &str,
     volume_b_id: &str,
+    prefer_leader: bool,
     for_bench: bool,
 ) -> CmdResult {
     install_rpms(&["amazon-cloudwatch-agent", "perf"])?;
@@ -26,30 +27,31 @@ pub fn bootstrap(
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("root_server", true)?;
 
-    for (nss_id, volume_id, role) in [
-        (nss_b_id, volume_b_id, "standby"),
-        (nss_a_id, volume_a_id, "active"),
-    ] {
-        info!("Formatting NSS instance {nss_id} ({role}) with volume {volume_id}");
-        // Format EBS with SSM
-        let ebs_dev = get_volume_dev(volume_id);
-        wait_for_ssm_ready(nss_id);
-        let extra_opt = if for_bench { "--testing_mode" } else { "" };
-        let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
-        info!("Running format_nss on {nss_id} ({role}) with device {ebs_dev}");
-        run_cmd_with_ssm(
-            nss_id,
-            &format!(
-                r##"sudo bash -c "{bootstrap_bin} format_nss --ebs_dev {ebs_dev} {extra_opt} &>>{CLOUD_INIT_LOG}""##
-            ),
-        )?;
-        info!("Successfully formatted {nss_id} ({role})");
+    // Initialize leader election record if prefer_leader is true
+    if prefer_leader {
+        initialize_leader_election_record()?;
+
+        for (nss_id, volume_id, role) in [
+            (nss_b_id, volume_b_id, "standby"),
+            (nss_a_id, volume_a_id, "active"),
+        ] {
+            info!("Formatting NSS instance {nss_id} ({role}) with volume {volume_id}");
+            // Format EBS with SSM
+            let ebs_dev = get_volume_dev(volume_id);
+            wait_for_ssm_ready(nss_id);
+            let extra_opt = if for_bench { "--testing_mode" } else { "" };
+            let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
+            info!("Running format_nss on {nss_id} ({role}) with device {ebs_dev}");
+            run_cmd_with_ssm(
+                nss_id,
+                &format!(
+                    r##"sudo bash -c "{bootstrap_bin} format_nss --ebs_dev {ebs_dev} {extra_opt} &>>{CLOUD_INIT_LOG}""##
+                ),
+            )?;
+            info!("Successfully formatted {nss_id} ({role})");
+        }
+        // bootstrap_ebs_failover_service(nss_a_id, nss_b_id, volume_id)?;
     }
-
-    // if nss_b_id != "null" {
-    //     bootstrap_ebs_failover_service(nss_a_id, nss_b_id, volume_id)?;
-    // }
-
     Ok(())
 }
 
@@ -75,6 +77,37 @@ fn initialize_nss_roles_in_ddb(nss_a_id: &str, nss_b_id: &str) -> CmdResult {
     }?;
 
     info!("NSS roles initialized in service-discovery table");
+    Ok(())
+}
+
+fn initialize_leader_election_record() -> CmdResult {
+    const LEADER_ELECTION_TABLE: &str = "fractalbits-leader-election";
+    const LEADER_KEY: &str = "root-server-leader";
+    let region = get_current_aws_region()?;
+
+    // Get current instance ID to set as initial leader
+    let instance_id = get_instance_id()?;
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let lease_expiry = current_time + 30; // 30 seconds lease
+
+    info!("Initializing leader election record with instance {instance_id} as initial leader");
+
+    // Create initial leader election record
+    let leader_item = format!(
+        r#"{{"key":{{"S":"{LEADER_KEY}"}}, "leader_id":{{"S":"{instance_id}"}}, "lease_expiry":{{"N":"{lease_expiry}"}}, "last_heartbeat":{{"N":"{current_time}"}}}}"#
+    );
+
+    run_cmd! {
+        aws dynamodb put-item
+            --table-name $LEADER_ELECTION_TABLE
+            --item $leader_item
+            --region $region
+    }?;
+
+    info!("Leader election record initialized with {instance_id} as leader");
     Ok(())
 }
 
@@ -228,8 +261,7 @@ max_retry_attempts = 5
 
 # Enable monitoring and metrics collection
 enable_monitoring = false
-"##
-    .to_string();
+"##;
     run_cmd! {
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/$ROOT_SERVER_CONFIG;
