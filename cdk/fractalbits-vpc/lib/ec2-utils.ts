@@ -89,16 +89,11 @@ export const createInstance = (
   scope: Construct,
   vpc: ec2.Vpc,
   id: string,
-  subnetType: ec2.SubnetType,
+  specificSubnet: ec2.ISubnet,
   instanceType: ec2.InstanceType,
   sg: ec2.SecurityGroup,
   role: iam.Role,
-  availabilityZone?: string,
 ): ec2.Instance => {
-  const vpcSubnets = availabilityZone
-    ? {subnetType, availabilityZones: [availabilityZone]}
-    : {subnetType};
-
   return new ec2.Instance(scope, id, {
     vpc: vpc,
     instanceType: instanceType,
@@ -107,7 +102,7 @@ export const createInstance = (
         ? ec2.AmazonLinuxCpuType.ARM_64
         : ec2.AmazonLinuxCpuType.X86_64
     }),
-    vpcSubnets,
+    vpcSubnets: {subnets: [specificSubnet]},
     securityGroup: sg,
     role: role,
   });
@@ -129,13 +124,13 @@ export const createEc2Asg = (
   scope: Construct,
   id: string,
   vpc: ec2.Vpc,
+  specificSubnet: ec2.ISubnet,
   sg: ec2.SecurityGroup,
   role: iam.Role,
   instanceTypeNames: string[],
   bootstrapOptions: string,
   minCapacity: number,
   maxCapacity: number,
-  availabilityZone?: string,
 ): autoscaling.AutoScalingGroup => {
   if (instanceTypeNames.length === 0) {
     throw new Error("instanceTypeNames must not be empty.");
@@ -168,15 +163,11 @@ export const createEc2Asg = (
     instanceType: new ec2.InstanceType(typeName),
   }));
 
-  const vpcSubnets = availabilityZone
-    ? {subnetType: ec2.SubnetType.PRIVATE_ISOLATED, availabilityZones: [availabilityZone]}
-    : {subnetType: ec2.SubnetType.PRIVATE_ISOLATED};
-
   return new autoscaling.AutoScalingGroup(scope, id, {
     vpc: vpc,
     minCapacity: minCapacity,
     maxCapacity: maxCapacity,
-    vpcSubnets,
+    vpcSubnets: {subnets: [specificSubnet]},
     newInstancesProtectedFromScaleIn: false,
     mixedInstancesPolicy: {
       instancesDistribution: {

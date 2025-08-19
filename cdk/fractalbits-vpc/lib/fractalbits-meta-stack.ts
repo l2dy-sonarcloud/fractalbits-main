@@ -49,7 +49,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         autoDeleteObjects: true,                  // Empty bucket before deletion
       });
       const nssInstanceType = new ec2.InstanceType(props.nssInstanceType ?? 'm7gd.4xlarge');
-      const instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, ec2.SubnetType.PRIVATE_ISOLATED, nssInstanceType, sg, ec2Role);
+      const instance = createInstance(this, this.vpc, `${props.serviceName}_bench`, this.vpc.isolatedSubnets[0], nssInstanceType, sg, ec2Role);
       const ebsVolume = createEbsVolume(this, 'MultiAttachVolume', az, instance.instanceId);
       const nssBootstrapOptions = `nss_server --bucket=${bucket.bucketName} --volume_id=${ebsVolume.volumeId} --iam_role=${ec2Role.roleName} --meta_stack_testing`;
       instance.addUserData(createUserData(this, nssBootstrapOptions).render());
@@ -70,6 +70,7 @@ export class FractalbitsMetaStack extends cdk.Stack {
         this,
         'BssAsg',
         this.vpc,
+        this.vpc.isolatedSubnets[0], // Use first isolated subnet
         sg,
         ec2Role,
         bssInstanceTypes,

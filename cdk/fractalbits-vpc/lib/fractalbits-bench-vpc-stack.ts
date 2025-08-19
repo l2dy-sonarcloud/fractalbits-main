@@ -64,14 +64,15 @@ export class FractalbitsBenchVpcStack extends cdk.Stack {
     privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(7761), 'Allow incoming on port 7761 from VPC');
 
     // Bench Server Instance
-    const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', ec2.SubnetType.PRIVATE_ISOLATED, ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
+    const benchServerInstance = createInstance(this, this.vpc, 'BenchServerInstance', this.vpc.isolatedSubnets[0], ec2.InstanceType.of(ec2.InstanceClass.C7G, ec2.InstanceSize.MEDIUM), privateSg, ec2Role);
 
-    // Bench Client ASG
+    // Bench Client ASG - use the first private subnet
     const benchClientBootstrapOptions = `bench_client`;
     const benchClientAsg = createEc2Asg(
       this,
       'BenchClientAsg',
       this.vpc,
+      this.vpc.isolatedSubnets[0], // Use first isolated subnet
       privateSg,
       ec2Role,
       ['c7g.medium'],

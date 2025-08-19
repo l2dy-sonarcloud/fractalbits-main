@@ -25,7 +25,11 @@ ALL_INSTANCE_IDS="$DIRECT_INSTANCE_IDS $ASG_INSTANCE_IDS"
 # Display all instances in a single table
 if [ -n "$ALL_INSTANCE_IDS" ]; then
     echo "=== All EC2 Instances in Stack: $STACK_NAME ==="
-    aws ec2 describe-instances --instance-ids $ALL_INSTANCE_IDS --query 'Reservations[].Instances[].{InstanceId:InstanceId,Name:Tags[?Key==`Name`]|[0].Value,InstanceType:InstanceType,AvailabilityZone:Placement.AvailabilityZone,State:State.Name}' --output table
+    echo "Name                                          | InstanceId           | State    | InstanceType    | AvailabilityZone"
+    echo "----------------------------------------------+----------------------+----------+-----------------+-------------"
+    aws ec2 describe-instances --instance-ids $ALL_INSTANCE_IDS --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,State.Name,InstanceType,Placement.AvailabilityZone]' --output text | while read -r name id state type az; do
+        printf "%-45s | %-20s | %-8s | %-15s | %-12s\n" "$name" "$id" "$state" "$type" "$az"
+    done
 else
     echo "No EC2 instances found in stack: $STACK_NAME"
 fi

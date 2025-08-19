@@ -29,20 +29,29 @@ export class FractalbitsVpcStack extends cdk.Stack {
 
     // === VPC Configuration ===
     const azPair = props.azPair.split(',');
-    // Map zone IDs to availability zones
-    const zoneIdToAzMapping: Record<string, string> = {
-      'usw2-az1': 'us-west-2b',
-      'usw2-az2': 'us-west-2a',
-      'usw2-az3': 'us-west-2c',
-      'usw2-az4': 'us-west-2d',
-    };
-    const az1 = zoneIdToAzMapping[azPair[0]];
-    const az2 = zoneIdToAzMapping[azPair[1]];
 
-    if (!az1 || !az2) {
-      throw new Error(`Invalid azPair: ${azPair}. Must use valid zone IDs: usw2-az1, usw2-az2, usw2-az3, usw2-az4`);
+    // Validate zone IDs
+    const validZoneIds = ['usw2-az1', 'usw2-az2', 'usw2-az3', 'usw2-az4'];
+    if (!validZoneIds.includes(azPair[0]) || !validZoneIds.includes(azPair[1])) {
+      throw new Error(`Invalid azPair: ${azPair}. Must use valid zone IDs: ${validZoneIds.join(', ')}`);
     }
 
+    // Helper function to map zone IDs to actual zone names using CloudFormation functions
+    const getAzFromZoneId = (zoneId: string): string => {
+      // Extract index from suffix: usw2-az3 → 3 → index 2
+      const match = zoneId.match(/-az(\d+)$/);
+      if (!match) {
+        throw new Error(`Invalid zone ID format: ${zoneId}. Expected format like 'usw2-az1'`);
+      }
+      const zoneIndex = parseInt(match[1]) - 1; // Convert to 0-based index
+      return cdk.Fn.select(zoneIndex, cdk.Fn.getAzs(cdk.Aws.REGION));
+    };
+
+    // Initialize az1 and az2 using resolved zone names
+    const az1 = getAzFromZoneId(azPair[0]);
+    const az2 = getAzFromZoneId(azPair[1]);
+
+    // Create VPC with specific availability zones using resolved zone names
     this.vpc = new ec2.Vpc(this, 'FractalbitsVpc', {
       vpcName: 'fractalbits-vpc',
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
@@ -73,6 +82,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       description: 'Allow inbound on port 8088 (e.g., from internal sources), and all outbound',
       allowAllOutbound: true,
     });
+    privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(80), 'Allow access to port 80 from within VPC');
     privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(8088), 'Allow access to port 8088 from within VPC');
     privateSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(9999), 'Allow access to port 9999 from within VPC');
     if (props.benchType == "external") {
@@ -131,11 +141,19 @@ export class FractalbitsVpcStack extends cdk.Stack {
     const rssInstanceType = new ec2.InstanceType('c7g.medium');
     const benchInstanceType = new ec2.InstanceType('c7g.large');
     const bucketName = bucket.bucketName;
+
+    // Get specific subnets for instances to ensure correct AZ placement
+    const privateSubnets = this.vpc.isolatedSubnets;
+    const publicSubnets = this.vpc.publicSubnets;
+    const subnet1 = privateSubnets[0]; // First AZ (private)
+    const subnet2 = privateSubnets[1]; // Second AZ (private)
+    const publicSubnet1 = publicSubnets[0]; // First AZ (public)
+
     const instanceConfigs = [
-      {id: 'rss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg, az: az1},
-      {id: 'rss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: rssInstanceType, sg: privateSg, az: az2},
-      {id: 'nss-A', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg, az: az1},
-      {id: 'nss-B', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: nssInstanceType, sg: privateSg, az: az2},
+      {id: 'rss-A', instanceType: rssInstanceType, specificSubnet: subnet1, sg: privateSg},
+      {id: 'rss-B', instanceType: rssInstanceType, specificSubnet: subnet2, sg: privateSg},
+      {id: 'nss-A', instanceType: nssInstanceType, specificSubnet: subnet1, sg: privateSg},
+      {id: 'nss-B', instanceType: nssInstanceType, specificSubnet: subnet2, sg: privateSg},
     ];
 
     if (props.browserIp) {
@@ -146,31 +164,31 @@ export class FractalbitsVpcStack extends cdk.Stack {
         allowAllOutbound: true,
       });
       guiServerSg.addIngressRule(ec2.Peer.ipv4(`${props.browserIp}/32`), ec2.Port.tcp(80), 'Allow access to port 80 from specific IP');
-      instanceConfigs.push({id: 'gui_server', subnet: ec2.SubnetType.PUBLIC, instanceType: new ec2.InstanceType('c8g.large'), sg: guiServerSg, az: az1});
+      instanceConfigs.push({id: 'gui_server', instanceType: new ec2.InstanceType('c8g.large'), specificSubnet: publicSubnet1, sg: guiServerSg});
     }
 
     let benchClientAsg: autoscaling.AutoScalingGroup | undefined;
     if (props.benchType === "external") {
       // Create bench_server
-      instanceConfigs.push({id: 'bench_server', subnet: ec2.SubnetType.PRIVATE_ISOLATED, instanceType: benchInstanceType, sg: privateSg, az: az1});
+      instanceConfigs.push({id: 'bench_server', instanceType: benchInstanceType, specificSubnet: subnet1, sg: privateSg});
       // Create bench_clients in a ASG group
       const benchClientBootstrapOptions = `bench_client`;
       benchClientAsg = createEc2Asg(
         this,
         'benchClientAsg',
         this.vpc,
+        subnet1,
         privateSg,
         ec2Role,
         ['c8g.xlarge'],
         benchClientBootstrapOptions,
         props.numBenchClients,
-        props.numBenchClients,
-        az1
+        props.numBenchClients
       );
     }
     const instances: Record<string, ec2.Instance> = {};
-    instanceConfigs.forEach(({id, subnet, instanceType, sg, az}) => {
-      instances[id] = createInstance(this, this.vpc, id, subnet, instanceType, sg, ec2Role, az);
+    instanceConfigs.forEach(({id, instanceType, sg, specificSubnet}) => {
+      instances[id] = createInstance(this, this.vpc, id, specificSubnet, instanceType, sg, ec2Role);
     });
 
     // Create bss_server in a ASG group only for hybrid mode
@@ -181,13 +199,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
         this,
         'BssAsg',
         this.vpc,
+        subnet1,
         privateSg,
         ec2Role,
         props.bssInstanceTypes.split(','),
         bssBootstrapOptions,
         1,
-        1,
-        az1
+        1
       );
     }
 
@@ -218,13 +236,13 @@ export class FractalbitsVpcStack extends cdk.Stack {
       this,
       'ApiServerAsg',
       this.vpc,
-      publicSg,
+      subnet1,
+      privateSg,
       ec2Role,
       ['c8g.xlarge'],
       apiServerBootstrapOptions,
       props.numApiServers,
-      props.numApiServers,
-      az1
+      props.numApiServers
     );
 
     // NLB for API servers - always create regardless of benchType
@@ -241,9 +259,9 @@ export class FractalbitsVpcStack extends cdk.Stack {
       targets: [apiServerAsg],
     });
 
-    // Create EBS Volumes for nss_servers
-    const ebsVolumeA = createEbsVolume(this, 'MultiAttachVolumeA', az1, instances['nss-A'].instanceId);
-    const ebsVolumeB = createEbsVolume(this, 'MultiAttachVolumeB', az2, instances['nss-B'].instanceId);
+    // Create EBS Volumes for nss_servers using resolved zone names
+    const ebsVolumeA = createEbsVolume(this, 'MultiAttachVolumeA', subnet1.availabilityZone, instances['nss-A'].instanceId);
+    const ebsVolumeB = createEbsVolume(this, 'MultiAttachVolumeB', subnet2.availabilityZone, instances['nss-B'].instanceId);
 
     // Create UserData: we need to make it a separate step since we want to get the instance/volume ids
     const nssA = instances['nss-A'].instanceId;
