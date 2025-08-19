@@ -98,7 +98,7 @@ rpc_timeout_seconds = 4
 allow_missing_or_bad_signature = false
 
 [blob_storage]
-backend = "s3_express_multi_az_with_tracking"
+backend = "s3_express_multi_az"
 
 [blob_storage.s3_express_multi_az]
 local_az_host = "http://s3.{aws_region}.amazonaws.com"
