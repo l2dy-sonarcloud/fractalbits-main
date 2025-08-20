@@ -225,16 +225,29 @@ impl BlobStorage for S3ExpressMultiAzStorage {
             .record(body.len() as f64);
 
         let start = Instant::now();
-        let local_start = Instant::now();
-        let remote_start = Instant::now();
-
         let s3_key = blob_key(blob_id, block_number);
 
         // Write to both buckets concurrently
-        let (local_result, remote_result) = tokio::join!(
-            self.put_object_with_retry(&self.local_az_bucket, &s3_key, body.clone()),
-            self.put_object_with_retry(&self.remote_az_bucket, &s3_key, body.clone())
-        );
+        let local_future = async {
+            let local_start = Instant::now();
+            let result = self
+                .put_object_with_retry(&self.local_az_bucket, &s3_key, body.clone())
+                .await;
+            let duration = local_start.elapsed();
+            (result, duration)
+        };
+
+        let remote_future = async {
+            let remote_start = Instant::now();
+            let result = self
+                .put_object_with_retry(&self.remote_az_bucket, &s3_key, body.clone())
+                .await;
+            let duration = remote_start.elapsed();
+            (result, duration)
+        };
+
+        let ((local_result, local_duration), (remote_result, remote_duration)) =
+            tokio::join!(local_future, remote_future);
 
         // Record bucket-specific metrics
         let local_success = local_result.is_ok();
@@ -242,9 +255,9 @@ impl BlobStorage for S3ExpressMultiAzStorage {
 
         // Record duration for each bucket operation
         histogram!("rpc_duration_nanos", "type" => "s3_express_multi_az", "name" => "put_blob", "bucket_type" => "local_az")
-            .record(local_start.elapsed().as_nanos() as f64);
+            .record(local_duration.as_nanos() as f64);
         histogram!("rpc_duration_nanos", "type" => "s3_express_multi_az", "name" => "put_blob", "bucket_type" => "remote_az")
-            .record(remote_start.elapsed().as_nanos() as f64);
+            .record(remote_duration.as_nanos() as f64);
 
         // Record success/failure counters
         counter!("s3_express_operations_total", "operation" => "put", "bucket_type" => "local_az", "result" => if local_success { "success" } else { "failure" })
