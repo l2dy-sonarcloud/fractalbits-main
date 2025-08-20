@@ -1,6 +1,6 @@
-const { ServiceDiscoveryClient, ListInstancesCommand, DeregisterInstanceCommand } = require('@aws-sdk/client-servicediscovery');
-const { AutoScalingClient, CompleteLifecycleActionCommand } = require("@aws-sdk/client-auto-scaling");
-const servicediscovery = new ServiceDiscoveryClient({});
+const {DynamoDBClient, UpdateItemCommand} = require('@aws-sdk/client-dynamodb');
+const {AutoScalingClient, CompleteLifecycleActionCommand} = require("@aws-sdk/client-auto-scaling");
+const dynamodb = new DynamoDBClient({});
 const autoscaling = new AutoScalingClient({});
 exports.handler = async (event) => {
   console.log('Event: ', JSON.stringify(event, null, 2));
@@ -10,36 +10,40 @@ exports.handler = async (event) => {
   const lifecycleActionToken = message.LifecycleActionToken;
   const ec2InstanceId = message.EC2InstanceId;
   const serviceId = process.env.SERVICE_ID;
+  const tableName = process.env.TABLE_NAME || 'fractalbits-service-discovery';
   if (!serviceId) {
-    console.error('serviceId not found in the event message.');
+    console.error('SERVICE_ID not found in environment variables.');
     await completeLifecycleAction(lifecycleHookName, autoScalingGroupName, lifecycleActionToken, 'ABANDON', ec2InstanceId);
     return;
   }
   try {
-    let cloudMapInstanceId;
-    let nextToken;
-    do {
-      const command = new ListInstancesCommand({ ServiceId: serviceId, NextToken: nextToken });
-      const data = await servicediscovery.send(command);
-      const instance = data.Instances.find(
-        (inst) => inst.Id === ec2InstanceId
-      );
-      if (instance) {
-        cloudMapInstanceId = instance.Id;
-        break;
+    console.log(`Deregistering instance ${ec2InstanceId} from service ${serviceId} in DynamoDB table ${tableName}`);
+
+    // Remove the instance from the instances map in DynamoDB
+    const params = {
+      TableName: tableName,
+      Key: {
+        'service_id': {S: serviceId}
+      },
+      UpdateExpression: 'REMOVE instances.#instance_id',
+      ExpressionAttributeNames: {
+        '#instance_id': ec2InstanceId
+      },
+      ConditionExpression: 'attribute_exists(instances.#instance_id)',
+      ReturnValues: 'UPDATED_NEW'
+    };
+
+    try {
+      const result = await dynamodb.send(new UpdateItemCommand(params));
+      console.log('Successfully deregistered instance from DynamoDB:', result);
+    } catch (error) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        console.log(`Instance ${ec2InstanceId} not found in service ${serviceId}, nothing to deregister. It might have been deregistered already.`);
+      } else {
+        throw error;
       }
-      nextToken = data.NextToken;
-    } while (nextToken);
-    if (cloudMapInstanceId) {
-      console.log(`Deregistering instance ${cloudMapInstanceId} (EC2 instance ${ec2InstanceId}) from service ${serviceId}`);
-      await servicediscovery.send(new DeregisterInstanceCommand({
-        ServiceId: serviceId,
-        InstanceId: cloudMapInstanceId,
-      }));
-      console.log('Deregistration successful.');
-    } else {
-      console.log(`Instance ${ec2InstanceId} not found in service ${serviceId}, nothing to deregister. It might have been deregistered already.`);
     }
+
     await completeLifecycleAction(lifecycleHookName, autoScalingGroupName, lifecycleActionToken, 'CONTINUE', ec2InstanceId);
   } catch (error) {
     console.error('Error during deregistration process:', error);

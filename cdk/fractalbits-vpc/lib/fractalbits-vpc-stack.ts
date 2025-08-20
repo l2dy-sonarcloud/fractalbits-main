@@ -6,7 +6,7 @@ import * as s3express from 'aws-cdk-lib/aws-s3express';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 
-import {createInstance, createUserData, createEc2Asg, createEbsVolume, createDynamoDbTable, createEc2Role, createVpcEndpoints, createPrivateLinkNlb} from './ec2-utils';
+import {createInstance, createUserData, createEc2Asg, createEbsVolume, createDynamoDbTable, createEc2Role, createVpcEndpoints, createPrivateLinkNlb, addAsgDynamoDbDeregistrationLifecycleHook} from './ec2-utils';
 
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
@@ -185,6 +185,14 @@ export class FractalbitsVpcStack extends cdk.Stack {
         props.numBenchClients,
         props.numBenchClients
       );
+      // Add lifecycle hook for bench_client ASG
+      addAsgDynamoDbDeregistrationLifecycleHook(
+        this,
+        'BenchClient',
+        benchClientAsg,
+        'bench-client',
+        'fractalbits-service-discovery'
+      );
     }
     const instances: Record<string, ec2.Instance> = {};
     instanceConfigs.forEach(({id, instanceType, sg, specificSubnet}) => {
@@ -206,6 +214,14 @@ export class FractalbitsVpcStack extends cdk.Stack {
         bssBootstrapOptions,
         1,
         1
+      );
+      // Add lifecycle hook for bss_server ASG
+      addAsgDynamoDbDeregistrationLifecycleHook(
+        this,
+        'BssServer',
+        bssAsg,
+        'bss-server',
+        'fractalbits-service-discovery'
       );
     }
 
@@ -243,6 +259,15 @@ export class FractalbitsVpcStack extends cdk.Stack {
       apiServerBootstrapOptions,
       props.numApiServers,
       props.numApiServers
+    );
+
+    // Add lifecycle hook for api_server ASG
+    addAsgDynamoDbDeregistrationLifecycleHook(
+      this,
+      'ApiServer',
+      apiServerAsg,
+      'api-server',
+      'fractalbits-service-discovery'
     );
 
     // NLB for API servers - always create regardless of benchType

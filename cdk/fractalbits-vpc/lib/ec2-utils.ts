@@ -240,6 +240,45 @@ export function addAsgDeregistrationLifecycleHook(
   });
 }
 
+export function addAsgDynamoDbDeregistrationLifecycleHook(
+  scope: Construct,
+  id: string,
+  asg: autoscaling.AutoScalingGroup,
+  serviceId: string,
+  tableName: string = 'fractalbits-service-discovery',
+) {
+  const deregisterLambdaRole = new iam.Role(scope, `${id}DdbDeregisterRole`, {
+    assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+    managedPolicies: [
+      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
+    ],
+  });
+
+  deregisterLambdaRole.addToPolicy(new iam.PolicyStatement({
+    actions: ['autoscaling:CompleteLifecycleAction'],
+    resources: [asg.autoScalingGroupArn],
+  }));
+
+  const deregisterInstanceLambda = new lambda.Function(scope, `${id}DdbDeregisterInstanceLifecycleLambda`, {
+    runtime: lambda.Runtime.NODEJS_20_X,
+    handler: 'index.handler',
+    code: lambda.Code.fromAsset(path.join(__dirname, 'lambda/deregister-instance-lifecycle')),
+    environment: {
+      SERVICE_ID: serviceId,
+      TABLE_NAME: tableName,
+    },
+    role: deregisterLambdaRole,
+  });
+
+  new autoscaling.LifecycleHook(scope, `${id}DdbLifecycleHook`, {
+    autoScalingGroup: asg,
+    lifecycleTransition: autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
+    heartbeatTimeout: cdk.Duration.minutes(5),
+    notificationTarget: new hooktargets.FunctionHook(deregisterInstanceLambda),
+  });
+}
+
 export interface PrivateLinkSetup {
   nlb: elbv2.NetworkLoadBalancer;
   endpointService: ec2.VpcEndpointService;
