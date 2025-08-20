@@ -113,13 +113,13 @@ remote_az = "{remote_az}"
 force_path_style = false
 
 [blob_storage.s3_express_multi_az.ratelimit]
-enabled = true
+enabled = false
 put_qps = 7000
 get_qps = 10000
 delete_qps = 5000
 
 [blob_storage.s3_express_multi_az.retry_config]
-enabled = true
+enabled = false
 max_attempts = 15
 initial_backoff_us = 50
 max_backoff_us = 500
@@ -153,13 +153,13 @@ az = "{aws_az}"
 force_path_style = false
 
 [blob_storage.s3_express_single_az.ratelimit]
-enabled = true
+enabled = false
 put_qps = 7000
 get_qps = 10000
 delete_qps = 5000
 
 [blob_storage.s3_express_single_az.retry_config]
-enabled = true
+enabled = false
 max_attempts = 15
 initial_backoff_us = 50
 max_backoff_us = 500
