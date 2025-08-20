@@ -505,7 +505,7 @@ WorkingDirectory={pwd}/data
 
         wait_new_bucket_secs += 1;
         if wait_new_bucket_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket {bucket_name}");
+            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
         }
 
         info!("waiting for newly created bucket {bucket_name}: {wait_new_bucket_secs}s");
@@ -564,7 +564,7 @@ WorkingDirectory={pwd}/data
 
         wait_new_bucket_secs += 1;
         if wait_new_bucket_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket {bucket_name}");
+            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
         }
 
         info!("waiting for newly created bucket {bucket_name}: {wait_new_bucket_secs}s");
@@ -623,7 +623,7 @@ WorkingDirectory={pwd}/data
 
         wait_new_bucket_secs += 1;
         if wait_new_bucket_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket {bucket_name}");
+            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
         }
 
         info!("waiting for newly created bucket {bucket_name}: {wait_new_bucket_secs}s");
@@ -862,7 +862,7 @@ fn check_pids(service: ServiceName, pids: &str) -> CmdResult {
     if pids.split_whitespace().count() > 1 {
         error!("Multiple processes were found: {pids}, stopping services ...");
         stop_service(service)?;
-        cmd_die!("Multiple processes were found: {pids}");
+        cmd_die!("Multiple processes were found: ${pids}");
     }
     Ok(())
 }

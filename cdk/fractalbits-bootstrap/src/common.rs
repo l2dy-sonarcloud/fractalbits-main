@@ -477,7 +477,7 @@ pub fn get_service_ips(service_id: &str, expected_min_count: usize) -> Vec<Strin
     let timeout = Duration::from_secs(300);
     loop {
         if start_time.elapsed() > timeout {
-            cmd_die!("Timeout waiting for {service_id} service(s)");
+            cmd_die!("Timeout waiting for ${service_id} service(s)");
         }
         let key = format!(r#"{{"service_id":{{"S":"{service_id}"}}}}"#);
         let res = run_fun! {
