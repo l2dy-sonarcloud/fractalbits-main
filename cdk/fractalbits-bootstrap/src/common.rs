@@ -182,10 +182,9 @@ pub fn get_instance_id() -> FunResult {
 }
 
 pub fn get_s3_express_bucket_name(az: &str) -> FunResult {
-    // Generate bucket name in format: fractalbits-data-{account}-{region}--{az}--x-s3
-    let region = get_current_aws_region()?;
+    // Generate bucket name in format: fractalbits-data-{account}--{az}--x-s3
     let account = get_account_id()?;
-    Ok(format!("fractalbits-data-{account}-{region}--{az}--x-s3"))
+    Ok(format!("fractalbits-data-{account}--{az}--x-s3"))
 }
 
 pub fn get_current_aws_az_id() -> FunResult {

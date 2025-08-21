@@ -8,10 +8,10 @@ set -e
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 BUCKETS=(
-    "fractalbits-data-$ACCOUNT_ID-us-west-2--usw2-az3--x-s3"
-    "fractalbits-data-$ACCOUNT_ID-us-west-2--usw2-az4--x-s3"
-    "fractalbits-data-$ACCOUNT_ID-us-east-1--use1-az4--x-s3"
-    "fractalbits-data-$ACCOUNT_ID-us-east-1--use1-az6--x-s3"
+    "fractalbits-data-$ACCOUNT_ID--usw2-az3--x-s3"
+    "fractalbits-data-$ACCOUNT_ID--usw2-az4--x-s3"
+    "fractalbits-data-$ACCOUNT_ID--use1-az4--x-s3"
+    "fractalbits-data-$ACCOUNT_ID--use1-az6--x-s3"
 )
 
 # Process each bucket in parallel
