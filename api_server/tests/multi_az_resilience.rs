@@ -284,12 +284,12 @@ async fn test_extended_remote_az_outage() {
 
 // Helper functions for service management
 fn stop_remote_az_service() -> Result<(), Box<dyn std::error::Error>> {
-    run_cmd!(cd ..; cargo xtask service stop minio_remote_az)?;
+    run_cmd!(cd ..; cargo xtask service stop minio_az2)?;
     Ok(())
 }
 
 fn start_remote_az_service() -> Result<(), Box<dyn std::error::Error>> {
-    run_cmd!(cd ..; cargo xtask service start minio_remote_az)?;
+    run_cmd!(cd ..; cargo xtask service start minio_az2)?;
     Ok(())
 }
 

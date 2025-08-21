@@ -75,7 +75,7 @@ pub fn build_client() -> Client {
     #[allow(deprecated)]
     let config = Config::builder()
         .endpoint_url(format!("http://127.0.0.1:{DEFAULT_PORT}"))
-        .region(Region::from_static("us-west-1"))
+        .region(Region::from_static("localdev"))
         .credentials_provider(credentials)
         .behavior_version(BehaviorVersion::v2024_03_28())
         .build();

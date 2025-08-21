@@ -91,7 +91,7 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
         }?;
 
         // Initialize AZ status in service-discovery table (using mock AZ names for local testing)
-        let az_status_item = r#"{"service_id":{"S":"az_status"},"status":{"M":{"az1":{"S":"Normal"},"az2":{"S":"Normal"}}}}"#;
+        let az_status_item = r#"{"service_id":{"S":"az_status"},"status":{"M":{"local-az1":{"S":"Normal"},"local-az2":{"S":"Normal"}}}}"#;
 
         run_cmd! {
             info "Initializing AZ status in service-discovery table ...";
@@ -149,8 +149,8 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
     };
     let init_nss_role_agent = || -> CmdResult { Ok(()) };
     let init_minio = || run_cmd!(mkdir -p data/s3);
-    let init_minio_local_az = || run_cmd!(mkdir -p data/s3-local-az);
-    let init_minio_remote_az = || run_cmd!(mkdir -p data/s3-remote-az);
+    let init_minio_dev_az1 = || run_cmd!(mkdir -p data/s3-localdev-az1);
+    let init_minio_dev_az2 = || run_cmd!(mkdir -p data/s3-localdev-az2);
     let init_bss = || create_dirs_for_bss_server();
     let init_mirrord = || -> CmdResult {
         let pwd = run_fun!(pwd)?;
@@ -175,8 +175,8 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
         ServiceName::ApiServer => {}
         ServiceName::DdbLocal => init_ddb_local()?,
         ServiceName::Minio => init_minio()?,
-        ServiceName::MinioLocalAz => init_minio_local_az()?,
-        ServiceName::MinioRemoteAz => init_minio_remote_az()?,
+        ServiceName::MinioAz1 => init_minio_dev_az1()?,
+        ServiceName::MinioAz2 => init_minio_dev_az2()?,
         ServiceName::Bss => init_bss()?,
         ServiceName::Rss => init_rss()?,
         ServiceName::Nss => init_nss()?,
@@ -190,8 +190,8 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
             init_nss()?;
             init_mirrord()?;
             init_minio()?;
-            init_minio_local_az()?;
-            init_minio_remote_az()?;
+            init_minio_dev_az1()?;
+            init_minio_dev_az2()?;
         }
     }
     Ok(())
@@ -210,8 +210,8 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
             ServiceName::DdbLocal.as_ref().to_owned(),
             // Stop minio services last
             ServiceName::Minio.as_ref().to_owned(),
-            ServiceName::MinioLocalAz.as_ref().to_owned(),
-            ServiceName::MinioRemoteAz.as_ref().to_owned(),
+            ServiceName::MinioAz1.as_ref().to_owned(),
+            ServiceName::MinioAz2.as_ref().to_owned(),
         ],
         single_service => vec![single_service.as_ref().to_owned()],
     };
@@ -249,8 +249,8 @@ pub fn show_service_status(service: ServiceName, data_blob_storage: DataBlobStor
                 ServiceName::Mirrord,
                 ServiceName::DdbLocal,
                 ServiceName::Minio,
-                ServiceName::MinioLocalAz,
-                ServiceName::MinioRemoteAz,
+                ServiceName::MinioAz1,
+                ServiceName::MinioAz2,
             ];
 
             for svc in all_services {
@@ -328,8 +328,8 @@ pub fn start_services(
         }
         ServiceName::All => start_all_services(build_mode, for_gui, data_blob_storage)?,
         ServiceName::Minio => start_minio_service()?,
-        ServiceName::MinioLocalAz => start_minio_local_az_service()?,
-        ServiceName::MinioRemoteAz => start_minio_remote_az_service()?,
+        ServiceName::MinioAz1 => start_minio_az1_service()?,
+        ServiceName::MinioAz2 => start_minio_az2_service()?,
         ServiceName::DdbLocal => start_ddb_local_service()?,
         ServiceName::Mirrord => start_mirrord_service(build_mode)?,
     }
@@ -483,6 +483,7 @@ WantedBy=default.target
 
 [Service]
 Type=simple
+Environment="MINIO_REGION=localdev"
 ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server s3/
 Restart=always
 WorkingDirectory={pwd}/data
@@ -528,9 +529,9 @@ WorkingDirectory={pwd}/data
     Ok(())
 }
 
-pub fn start_minio_local_az_service() -> CmdResult {
+pub fn start_minio_az1_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
-    let service_file = "etc/minio_local_az.service";
+    let service_file = "etc/minio_az1.service";
     let service_file_content = format!(
         r##"[Unit]
 Description=Local AZ S3 service (minio)
@@ -540,13 +541,14 @@ WantedBy=default.target
 
 [Service]
 Type=simple
-ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9001 s3-local-az/
+Environment="MINIO_REGION=localdev"
+ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9001 s3-localdev-az1/
 Restart=always
 WorkingDirectory={pwd}/data
 "##
     );
     let minio_url = "http://localhost:9001";
-    let bucket_name = "fractalbits-local-az-data-bucket";
+    let bucket_name = "fractalbits-localdev-az1-data-bucket";
     let bucket = format!("s3://{bucket_name}");
 
     run_cmd! {
@@ -554,9 +556,9 @@ WorkingDirectory={pwd}/data
         echo $service_file_content > $service_file;
         info "Linking $service_file into ~/.config/systemd/user";
         systemctl --user link $service_file --force --quiet;
-        systemctl --user start minio_local_az.service;
+        systemctl --user start minio_az1.service;
     }?;
-    wait_for_service_ready(ServiceName::MinioLocalAz, 10)?;
+    wait_for_service_ready(ServiceName::MinioAz1, 10)?;
 
     run_cmd! {
         info "Creating local AZ bucket (\"$bucket_name\") ...";
@@ -587,9 +589,9 @@ WorkingDirectory={pwd}/data
     Ok(())
 }
 
-pub fn start_minio_remote_az_service() -> CmdResult {
+pub fn start_minio_az2_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
-    let service_file = "etc/minio_remote_az.service";
+    let service_file = "etc/minio_az2.service";
     let service_file_content = format!(
         r##"[Unit]
 Description=Remote AZ S3 service (minio)
@@ -599,13 +601,14 @@ WantedBy=default.target
 
 [Service]
 Type=simple
-ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9002 s3-remote-az/
+Environment="MINIO_REGION=localdev"
+ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9002 s3-localdev-az2/
 Restart=always
 WorkingDirectory={pwd}/data
 "##
     );
     let minio_url = "http://localhost:9002";
-    let bucket_name = "fractalbits-remote-az-data-bucket";
+    let bucket_name = "fractalbits-localdev-az2-data-bucket";
     let bucket = format!("s3://{bucket_name}");
 
     run_cmd! {
@@ -613,9 +616,9 @@ WorkingDirectory={pwd}/data
         echo $service_file_content > $service_file;
         info "Linking $service_file into ~/.config/systemd/user";
         systemctl --user link $service_file --force --quiet;
-        systemctl --user start minio_remote_az.service;
+        systemctl --user start minio_az2.service;
     }?;
-    wait_for_service_ready(ServiceName::MinioRemoteAz, 10)?;
+    wait_for_service_ready(ServiceName::MinioAz2, 10)?;
 
     run_cmd! {
         info "Creating remote AZ bucket (\"$bucket_name\") ...";
@@ -722,8 +725,8 @@ pub fn start_all_services(
     start_ddb_local_service()?;
     start_minio_service()?; // Original minio for NSS metadata (port 9000)
     if matches!(data_blob_storage, DataBlobStorage::S3ExpressMultiAz) {
-        start_minio_local_az_service()?; // Local AZ data blobs (port 9001)
-        start_minio_remote_az_service()?; // Remote AZ data blobs (port 9002)
+        start_minio_az1_service()?; // Local AZ data blobs (port 9001)
+        start_minio_az2_service()?; // Remote AZ data blobs (port 9002)
     }
 
     wait_for_service_ready(ServiceName::DdbLocal, 10)?;
@@ -933,8 +936,8 @@ fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdResult 
             let port_ready = match service {
                 ServiceName::DdbLocal => check_port_ready(8000),
                 ServiceName::Minio => check_port_ready(9000),
-                ServiceName::MinioLocalAz => check_port_ready(9001),
-                ServiceName::MinioRemoteAz => check_port_ready(9002),
+                ServiceName::MinioAz1 => check_port_ready(9001),
+                ServiceName::MinioAz2 => check_port_ready(9002),
                 ServiceName::Rss => check_port_ready(8086),
                 ServiceName::Bss => check_port_ready(8088),
                 ServiceName::Nss => check_port_ready(8087),

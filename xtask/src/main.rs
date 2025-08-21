@@ -158,8 +158,8 @@ pub enum ServiceName {
     DataBlobResyncServer,
     All,
     Minio,
-    MinioLocalAz,
-    MinioRemoteAz,
+    MinioAz1,
+    MinioAz2,
     DdbLocal,
 }
 

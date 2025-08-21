@@ -13,6 +13,7 @@ use aws_sdk_s3::{
 use bytes::Bytes;
 use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use metrics::{counter, histogram};
+use moka::future::Cache;
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
 use std::sync::Arc;
@@ -50,6 +51,7 @@ pub struct S3ExpressMultiAzWithTracking {
     retry_config: S3RetryConfig,
     _prewarming_service: Option<Arc<SessionPrewarmingService>>,
     _prewarming_task: Option<tokio::task::JoinHandle<()>>,
+    az_status_cache: Arc<Cache<String, String>>,
 }
 
 impl From<DataBlobTrackingError> for BlobStorageError {
@@ -64,6 +66,7 @@ impl S3ExpressMultiAzWithTracking {
         data_blob_tracker: Arc<DataBlobTracker>,
         rss_client: Arc<RpcClientRss>,
         nss_client: Arc<RpcClientNss>,
+        az_status_cache: Arc<Cache<String, String>>,
     ) -> Result<Self, BlobStorageError> {
         info!(
             "Initializing S3 Express One Zone storage with tracking for buckets: {} (local) and {} (remote) in AZ: {} (rate_limit_enabled: {}, retry_enabled: {})",
@@ -128,6 +131,7 @@ impl S3ExpressMultiAzWithTracking {
             retry_config: config.retry_config.clone(),
             _prewarming_service: prewarming_service,
             _prewarming_task: prewarming_task,
+            az_status_cache,
         })
     }
 
@@ -239,16 +243,37 @@ impl S3ExpressMultiAzWithTracking {
         }
     }
 
-    /// Check current AZ status from RSS service discovery
+    /// Check current AZ status from RSS service discovery with caching
     async fn get_local_az_status(&self) -> String {
+        let cache_key = format!("az_status:{}", self.local_az);
+
+        // Check cache first
+        if let Some(cached) = self.az_status_cache.get(&cache_key).await {
+            return cached;
+        }
+
+        // Cache miss - fetch from RSS
         match self.rss_client.get_az_status(None).await {
-            Ok(status_map) => status_map
-                .az_status
-                .get(&self.local_az)
-                .unwrap_or(&"Normal".to_string())
-                .clone(),
+            Ok(status_map) => {
+                let status = status_map
+                    .az_status
+                    .get(&self.local_az)
+                    .unwrap_or(&"Normal".to_string())
+                    .clone();
+
+                // Cache the result
+                self.az_status_cache.insert(cache_key, status.clone()).await;
+
+                status
+            }
             Err(e) => {
                 warn!("Failed to get AZ status: {}, defaulting to Normal", e);
+
+                // Cache the default value as well to avoid repeated failures
+                self.az_status_cache
+                    .insert(cache_key, "Normal".to_string())
+                    .await;
+
                 "Normal".to_string()
             }
         }
@@ -260,6 +285,10 @@ impl S3ExpressMultiAzWithTracking {
             .set_az_status(az_id, status, None)
             .await
             .map_err(|e| BlobStorageError::S3(format!("Failed to set AZ status: {e}")))?;
+
+        // Invalidate cache entry for this AZ
+        let cache_key = format!("az_status:{}", az_id);
+        self.az_status_cache.invalidate(&cache_key).await;
 
         info!("AZ status changed - {}: {}", az_id, status);
         Ok(())

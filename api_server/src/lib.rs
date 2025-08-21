@@ -94,6 +94,13 @@ impl AppState {
             (None, None)
         };
 
+        let cache = Arc::new(
+            Cache::builder()
+                .time_to_idle(Duration::from_secs(300))
+                .max_capacity(10_000)
+                .build(),
+        );
+
         let blob_client = Arc::new(
             BlobClient::new(
                 &config.blob_storage,
@@ -102,16 +109,10 @@ impl AppState {
                 Some(data_blob_tracker.clone()),
                 rss_client_for_blob,
                 nss_client_for_blob,
+                cache.clone(),
             )
             .await
             .expect("Failed to initialize blob client"),
-        );
-
-        let cache = Arc::new(
-            Cache::builder()
-                .time_to_idle(Duration::from_secs(300))
-                .max_capacity(10_000)
-                .build(),
         );
         Self {
             config,
@@ -223,6 +224,7 @@ impl BlobClient {
         data_blob_tracker: Option<Arc<DataBlobTracker>>,
         rss_client: Option<Arc<RpcClientRss>>,
         nss_client: Option<Arc<RpcClientNss>>,
+        _cache: Arc<Cache<String, Versioned<String>>>,
     ) -> Result<Self, BlobStorageError> {
         let storage = match &blob_storage_config.backend {
             BlobStorageBackend::BssOnlySingleAz => {
@@ -325,12 +327,22 @@ impl BlobClient {
                     retry_config: s3_express_config.retry_config.clone(),
                     prewarming_config: blob_storage::SessionPrewarmingConfig::default(),
                 };
+
+                // Create a separate cache for AZ status
+                let az_status_cache = Arc::new(
+                    Cache::builder()
+                        .time_to_idle(std::time::Duration::from_secs(30)) // Shorter TTL for AZ status
+                        .max_capacity(100) // Small cache size
+                        .build(),
+                );
+
                 BlobStorageImpl::S3ExpressMultiAzWithTracking(
                     S3ExpressMultiAzWithTracking::new(
                         &express_config,
                         data_blob_tracker,
                         rss_client,
                         nss_client,
+                        az_status_cache,
                     )
                     .await?,
                 )
