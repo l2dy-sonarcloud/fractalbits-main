@@ -14,10 +14,29 @@ const benchType = app.node.tryGetContext('benchType') ?? null;
 const bssInstanceTypes = app.node.tryGetContext('bssInstanceTypes') ?? "i8g.xlarge,i8g.2xlarge,i8g.4xlarge";
 const browserIp = app.node.tryGetContext('browserIp') ?? null;
 const dataBlobStorage = app.node.tryGetContext('dataBlobStorage') ?? "s3ExpressMultiAz";
-const azPair = app.node.tryGetContext('azPair') ?? "usw2-az3,usw2-az4";
+
+// Get the current region - CDK will auto-detect from AWS config/credentials
+const env = {
+  account: process.env.CDK_DEFAULT_ACCOUNT,
+  region: process.env.CDK_DEFAULT_REGION,
+};
+
+// Set default azPair based on region
+let defaultAzPair: string;
+if (env.region === "us-east-1") {
+  defaultAzPair = "use1-az4,use1-az6";
+} else if (env.region === "us-west-2") {
+  defaultAzPair = "usw2-az3,usw2-az4";
+} else {
+  // Fallback for other regions or when region is not detected
+  defaultAzPair = "usw2-az3,usw2-az4";
+  console.warn(`Warning: No default AZ pair configured for region ${env.region}, using us-west-2 defaults`);
+}
+
+const azPair = app.node.tryGetContext('azPair') ?? defaultAzPair;
 
 const vpcStack = new FractalbitsVpcStack(app, 'FractalbitsVpcStack', {
-  env: {},
+  env: env,
   browserIp: browserIp,
   numApiServers: numApiServers,
   numBenchClients: numBenchClients,
@@ -31,7 +50,7 @@ if (benchType === "service_endpoint") {
   const benchClientCount = app.node.tryGetContext('benchClientCount') ?? 1;
 
   const benchVpcStack = new FractalbitsBenchVpcStack(app, 'FractalbitsBenchVpcStack', {
-    env: {},
+    env: env,
     serviceEndpoint: vpcStack.nlbLoadBalancerDnsName,
     benchClientCount: benchClientCount,
     benchType: benchType,
@@ -40,7 +59,7 @@ if (benchType === "service_endpoint") {
   new PeeringStack(app, 'PeeringStack', {
     vpcA: vpcStack.vpc,
     vpcB: benchVpcStack.vpc,
-    env: {},
+    env: env,
   });
 }
 
@@ -58,5 +77,5 @@ new FractalbitsMetaStack(app, 'FractalbitsMetaStack-Bss', {
 
 // === VpcWithPrivateLinkStack ===
 new VpcWithPrivateLinkStack(app, 'VpcWithPrivateLinkStack', {
-  env: {},
+  env: env,
 });

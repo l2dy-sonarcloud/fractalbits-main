@@ -1,16 +1,16 @@
 use crate::*;
 
 pub fn bootstrap(
-    bucket_name: &str,
-    remote_bucket: Option<&str>,
+    bucket: Option<&str>,
     nss_endpoint: &str,
     rss_endpoint: &str,
+    remote_az: Option<&str>,
     for_bench: bool,
 ) -> CmdResult {
     download_binaries(&["api_server"])?;
 
-    // Check if we're using S3 Express One Zone by looking at bucket name
-    let is_s3_express = bucket_name.ends_with("--x-s3");
+    // Check if we're using S3 Express by checking if remote_az is provided
+    let is_s3_express = remote_az.is_some();
 
     let bss_ip = if is_s3_express {
         info!("Using S3 Express One Zone storage, skipping BSS server");
@@ -43,13 +43,7 @@ pub fn bootstrap(
         }
     }
 
-    create_config(
-        bucket_name,
-        remote_bucket,
-        &bss_ip,
-        nss_endpoint,
-        rss_endpoint,
-    )?;
+    create_config(bucket, &bss_ip, nss_endpoint, rss_endpoint, remote_az)?;
 
     if for_bench {
         // Try to download tools for micro-benchmarking
@@ -65,24 +59,19 @@ pub fn bootstrap(
 }
 
 pub fn create_config(
-    bucket_name: &str,
-    remote_bucket: Option<&str>,
+    bucket: Option<&str>,
     bss_ip: &str,
     nss_endpoint: &str,
     rss_endpoint: &str,
+    remote_az: Option<&str>,
 ) -> CmdResult {
     let aws_region = get_current_aws_region()?;
-    let aws_az = get_current_aws_az()?;
     let num_cores = run_fun!(nproc)?;
-    let is_s3_express = bucket_name.ends_with("--x-s3");
-    let is_multi_az = remote_bucket.is_some();
-    let config_content = if is_s3_express && is_multi_az {
+    let config_content = if let Some(remote_az) = remote_az {
         // S3 Express Multi-AZ configuration
-        let remote_bucket = remote_bucket.unwrap();
-
-        // Extract AZ IDs from bucket names (format: name--azid--x-s3)
-        let local_az = bucket_name.rsplit("--").nth(1).unwrap_or("az1");
-        let remote_az = remote_bucket.rsplit("--").nth(1).unwrap_or("az2");
+        let local_az = get_current_aws_az_id()?;
+        let local_bucket = get_s3_express_bucket_name(&local_az)?;
+        let remote_bucket = get_s3_express_bucket_name(remote_az)?;
 
         format!(
             r##"nss_addr = "{nss_endpoint}:8088"
@@ -106,7 +95,7 @@ local_az_port = 80
 remote_az_host = "http://s3.{aws_region}.amazonaws.com"
 remote_az_port = 80
 s3_region = "{aws_region}"
-local_az_bucket = "{bucket_name}"
+local_az_bucket = "{local_bucket}"
 remote_az_bucket = "{remote_bucket}"
 local_az = "{local_az}"
 remote_az = "{remote_az}"
@@ -126,48 +115,10 @@ max_backoff_us = 500
 backoff_multiplier = 1.0
 "##
         )
-    } else if is_s3_express {
-        // S3 Express Single-AZ configuration
-        format!(
-            r##"nss_addr = "{nss_endpoint}:8088"
-rss_addr = "{rss_endpoint}:8088"
-nss_conn_num = {num_cores}
-rss_conn_num = 1
-region = "{aws_region}"
-port = 80
-root_domain = ".localhost"
-with_metrics = true
-http_request_timeout_seconds = 5
-rpc_timeout_seconds = 4
-allow_missing_or_bad_signature = false
-
-[blob_storage]
-backend = "s3_express_single_az"
-
-[blob_storage.s3_express_single_az]
-s3_host = "http://s3.{aws_region}.amazonaws.com"
-s3_port = 80
-s3_region = "{aws_region}"
-s3_bucket = "{bucket_name}"
-az = "{aws_az}"
-force_path_style = false
-
-[blob_storage.s3_express_single_az.ratelimit]
-enabled = false
-put_qps = 7000
-get_qps = 10000
-delete_qps = 5000
-
-[blob_storage.s3_express_single_az.retry_config]
-enabled = false
-max_attempts = 15
-initial_backoff_us = 50
-max_backoff_us = 500
-backoff_multiplier = 1.0
-"##
-        )
     } else {
         // Hybrid single az configuration
+        let bucket_name =
+            bucket.ok_or_else(|| std::io::Error::other("Bucket name required for hybrid mode"))?;
         format!(
             r##"bss_addr = "{bss_ip}:8088"
 nss_addr = "{nss_endpoint}:8088"

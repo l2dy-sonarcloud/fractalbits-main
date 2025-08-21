@@ -1,68 +1,78 @@
-import * as cdk from 'aws-cdk-lib';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
-import {Construct} from 'constructs';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as hooktargets from 'aws-cdk-lib/aws-autoscaling-hooktargets';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
-import * as path from 'path';
+import * as cdk from "aws-cdk-lib";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
+import { Construct } from "constructs";
+import * as servicediscovery from "aws-cdk-lib/aws-servicediscovery";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as hooktargets from "aws-cdk-lib/aws-autoscaling-hooktargets";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as elbv2_targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
+import * as path from "path";
 
 export const createVpcEndpoints = (vpc: ec2.Vpc) => {
   // Add Gateway Endpoint for S3
-  vpc.addGatewayEndpoint('S3Endpoint', {
+  vpc.addGatewayEndpoint("S3Endpoint", {
     service: ec2.GatewayVpcEndpointAwsService.S3,
   });
 
   // Add Gateway Endpoint for S3 Express One Zone
   // S3 Express requires a separate gateway endpoint for optimal performance
-  vpc.addGatewayEndpoint('S3ExpressEndpoint', {
-    service: new ec2.GatewayVpcEndpointAwsService('s3express'),
+  vpc.addGatewayEndpoint("S3ExpressEndpoint", {
+    service: new ec2.GatewayVpcEndpointAwsService("s3express"),
   });
 
   // Add Gateway Endpoint for DynamoDB
-  vpc.addGatewayEndpoint('DynamoDbEndpoint', {
+  vpc.addGatewayEndpoint("DynamoDbEndpoint", {
     service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
   });
 
   // Add Interface Endpoint for EC2, SSM, and CloudWatch
-  ['SSM', 'SSM_MESSAGES', 'EC2', 'EC2_MESSAGES', 'CLOUDWATCH', 'CLOUDWATCH_LOGS'].forEach(service => {
+  [
+    "SSM",
+    "SSM_MESSAGES",
+    "EC2",
+    "EC2_MESSAGES",
+    "CLOUDWATCH",
+    "CLOUDWATCH_LOGS",
+  ].forEach((service) => {
     vpc.addInterfaceEndpoint(`${service}Endpoint`, {
       service: (ec2.InterfaceVpcEndpointAwsService as any)[service],
-      subnets: {subnetType: ec2.SubnetType.PRIVATE_ISOLATED},
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       privateDnsEnabled: true,
     });
   });
 };
 
 export const createEc2Role = (scope: Construct): iam.Role => {
-  const role = new iam.Role(scope, 'InstanceRole', {
-    assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+  const role = new iam.Role(scope, "InstanceRole", {
+    assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
     managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMFullAccess'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMFullAccess"),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3FullAccess"),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDynamoDBFullAccess_v2"),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonEC2FullAccess"),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchAgentServerPolicy"),
     ],
   });
 
   // Add S3 Express One Zone permissions
-  role.addToPolicy(new iam.PolicyStatement({
-    effect: iam.Effect.ALLOW,
-    actions: [
-      's3express:CreateSession',
-      's3express:DeleteSession',
-      's3express:PutObject',
-      's3express:GetObject',
-      's3express:DeleteObject',
-      's3express:ListBucket'
-    ],
-    resources: ['*']
-  }));
+  role.addToPolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        "s3express:CreateBucket",
+        "s3express:CreateSession",
+        "s3express:DeleteSession",
+        "s3express:PutObject",
+        "s3express:GetObject",
+        "s3express:DeleteObject",
+        "s3express:ListBucket",
+      ],
+      resources: ["*"],
+    }),
+  );
 
   return role;
 };
@@ -72,7 +82,7 @@ export const createDynamoDbTable = (
   id: string,
   tableName: string,
   partitionKeyName: string,
-  partitionKeyType: dynamodb.AttributeType = dynamodb.AttributeType.STRING
+  partitionKeyType: dynamodb.AttributeType = dynamodb.AttributeType.STRING,
 ): dynamodb.Table => {
   return new dynamodb.Table(scope, id, {
     partitionKey: {
@@ -98,23 +108,27 @@ export const createInstance = (
     vpc: vpc,
     instanceType: instanceType,
     machineImage: ec2.MachineImage.latestAmazonLinux2023({
-      cpuType: instanceType.architecture === ec2.InstanceArchitecture.ARM_64
-        ? ec2.AmazonLinuxCpuType.ARM_64
-        : ec2.AmazonLinuxCpuType.X86_64
+      cpuType:
+        instanceType.architecture === ec2.InstanceArchitecture.ARM_64
+          ? ec2.AmazonLinuxCpuType.ARM_64
+          : ec2.AmazonLinuxCpuType.X86_64,
     }),
-    vpcSubnets: {subnets: [specificSubnet]},
+    vpcSubnets: { subnets: [specificSubnet] },
     securityGroup: sg,
     role: role,
   });
 };
 
-export const createUserData = (scope: Construct, bootstrapOptions: string): ec2.UserData => {
+export const createUserData = (
+  scope: Construct,
+  bootstrapOptions: string,
+): ec2.UserData => {
   const region = cdk.Stack.of(scope).region;
   const userData = ec2.UserData.forLinux();
   userData.addCommands(
-    'set -ex',
+    "set -ex",
     `aws s3 cp --no-progress s3://fractalbits-builds-${region}/$(arch)/fractalbits-bootstrap /opt/fractalbits/bin/`,
-    'chmod +x /opt/fractalbits/bin/fractalbits-bootstrap',
+    "chmod +x /opt/fractalbits/bin/fractalbits-bootstrap",
     `/opt/fractalbits/bin/fractalbits-bootstrap ${bootstrapOptions}`,
   );
   return userData;
@@ -137,29 +151,33 @@ export const createEc2Asg = (
   }
 
   const isArmInstance = (name: string): boolean => {
-    const family = name.split('.')[0];
+    const family = name.split(".")[0];
     // Graviton (arm) instances have a 'g' after the generation number, e.g. m6g, t4g, c7g.
     // The 'a1' family is also arm.
     // G-family instances (e.g. g4dn) are for GPU, not graviton, and are x86, but g5g is arm.
-    return family === 'a1' || /\d[g]/.test(family);
+    return family === "a1" || /\d[g]/.test(family);
   };
 
   const isArm = instanceTypeNames.every(isArmInstance);
-  const isX86 = instanceTypeNames.every(name => !isArmInstance(name));
+  const isX86 = instanceTypeNames.every((name) => !isArmInstance(name));
   if (!isArm && !isX86) {
-    console.error("Error: both x86 and arm instance types are found, which is not supported for now.");
+    console.error(
+      "Error: both x86 and arm instance types are found, which is not supported for now.",
+    );
     process.exit(1);
   }
 
-  const cpuType = isArm ? ec2.AmazonLinuxCpuType.ARM_64 : ec2.AmazonLinuxCpuType.X86_64;
+  const cpuType = isArm
+    ? ec2.AmazonLinuxCpuType.ARM_64
+    : ec2.AmazonLinuxCpuType.X86_64;
   const launchTemplate = new ec2.LaunchTemplate(scope, `${id}Template`, {
     instanceType: new ec2.InstanceType(instanceTypeNames[0]),
-    machineImage: ec2.MachineImage.latestAmazonLinux2023({cpuType}),
+    machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType }),
     securityGroup: sg,
     role: role,
     userData: createUserData(scope, bootstrapOptions),
   });
-  const launchTemplateOverrides = instanceTypeNames.map(typeName => ({
+  const launchTemplateOverrides = instanceTypeNames.map((typeName) => ({
     instanceType: new ec2.InstanceType(typeName),
   }));
 
@@ -167,7 +185,7 @@ export const createEc2Asg = (
     vpc: vpc,
     minCapacity: minCapacity,
     maxCapacity: maxCapacity,
-    vpcSubnets: {subnets: [specificSubnet]},
+    vpcSubnets: { subnets: [specificSubnet] },
     newInstancesProtectedFromScaleIn: false,
     mixedInstancesPolicy: {
       instancesDistribution: {
@@ -196,7 +214,7 @@ export const createEbsVolume = (
 
   new ec2.CfnVolumeAttachment(scope, `${id}Attachment`, {
     instanceId: instanceId,
-    device: '/dev/xvdf',
+    device: "/dev/xvdf",
     volumeId: ebsVolume.volumeId,
   });
 
@@ -210,27 +228,37 @@ export function addAsgDeregistrationLifecycleHook(
   service: servicediscovery.Service,
 ) {
   const deregisterLambdaRole = new iam.Role(scope, `${id}DeregisterRole`, {
-    assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudMapFullAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "service-role/AWSLambdaBasicExecutionRole",
+      ),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AWSCloudMapFullAccess"),
     ],
   });
 
-  deregisterLambdaRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['autoscaling:CompleteLifecycleAction'],
-    resources: [asg.autoScalingGroupArn],
-  }));
+  deregisterLambdaRole.addToPolicy(
+    new iam.PolicyStatement({
+      actions: ["autoscaling:CompleteLifecycleAction"],
+      resources: [asg.autoScalingGroupArn],
+    }),
+  );
 
-  const deregisterInstanceLambda = new lambda.Function(scope, `${id}DeregisterInstanceLifecycleLambda`, {
-    runtime: lambda.Runtime.NODEJS_20_X,
-    handler: 'index.handler',
-    code: lambda.Code.fromAsset(path.join(__dirname, 'lambda/deregister-instance-lifecycle')),
-    environment: {
-      SERVICE_ID: service.serviceId,
+  const deregisterInstanceLambda = new lambda.Function(
+    scope,
+    `${id}DeregisterInstanceLifecycleLambda`,
+    {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: "index.handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "lambda/deregister-instance-lifecycle"),
+      ),
+      environment: {
+        SERVICE_ID: service.serviceId,
+      },
+      role: deregisterLambdaRole,
     },
-    role: deregisterLambdaRole,
-  });
+  );
 
   new autoscaling.LifecycleHook(scope, `${id}LifecycleHook`, {
     autoScalingGroup: asg,
@@ -245,31 +273,41 @@ export function addAsgDynamoDbDeregistrationLifecycleHook(
   id: string,
   asg: autoscaling.AutoScalingGroup,
   serviceId: string,
-  tableName: string = 'fractalbits-service-discovery',
+  tableName: string = "fractalbits-service-discovery",
 ) {
   const deregisterLambdaRole = new iam.Role(scope, `${id}DdbDeregisterRole`, {
-    assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess_v2'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "service-role/AWSLambdaBasicExecutionRole",
+      ),
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDynamoDBFullAccess_v2"),
     ],
   });
 
-  deregisterLambdaRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['autoscaling:CompleteLifecycleAction'],
-    resources: [asg.autoScalingGroupArn],
-  }));
+  deregisterLambdaRole.addToPolicy(
+    new iam.PolicyStatement({
+      actions: ["autoscaling:CompleteLifecycleAction"],
+      resources: [asg.autoScalingGroupArn],
+    }),
+  );
 
-  const deregisterInstanceLambda = new lambda.Function(scope, `${id}DdbDeregisterInstanceLifecycleLambda`, {
-    runtime: lambda.Runtime.NODEJS_20_X,
-    handler: 'index.handler',
-    code: lambda.Code.fromAsset(path.join(__dirname, 'lambda/deregister-instance-lifecycle')),
-    environment: {
-      SERVICE_ID: serviceId,
-      TABLE_NAME: tableName,
+  const deregisterInstanceLambda = new lambda.Function(
+    scope,
+    `${id}DdbDeregisterInstanceLifecycleLambda`,
+    {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: "index.handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "lambda/deregister-instance-lifecycle"),
+      ),
+      environment: {
+        SERVICE_ID: serviceId,
+        TABLE_NAME: tableName,
+      },
+      role: deregisterLambdaRole,
     },
-    role: deregisterLambdaRole,
-  });
+  );
 
   new autoscaling.LifecycleHook(scope, `${id}DdbLifecycleHook`, {
     autoScalingGroup: asg,
@@ -300,22 +338,28 @@ export function createPrivateLinkNlb(
     crossZoneEnabled: true,
     vpcSubnets: {
       subnets: vpc.isolatedSubnets,
-    }
+    },
   });
 
   // Add listener and targets
-  const listener = nlb.addListener(`${id}Listener`, {port: servicePort});
+  const listener = nlb.addListener(`${id}Listener`, { port: servicePort });
   listener.addTargets(`${id}Targets`, {
     port: servicePort,
-    targets: targetInstances.map(instance => new elbv2_targets.InstanceTarget(instance)),
+    targets: targetInstances.map(
+      (instance) => new elbv2_targets.InstanceTarget(instance),
+    ),
   });
 
   // Create VPC Endpoint Service
-  const endpointService = new ec2.VpcEndpointService(scope, `${id}EndpointService`, {
-    vpcEndpointServiceLoadBalancers: [nlb],
-    allowedPrincipals: [new iam.AccountRootPrincipal()],
-    acceptanceRequired: false,
-  });
+  const endpointService = new ec2.VpcEndpointService(
+    scope,
+    `${id}EndpointService`,
+    {
+      vpcEndpointServiceLoadBalancers: [nlb],
+      allowedPrincipals: [new iam.AccountRootPrincipal()],
+      acceptanceRequired: false,
+    },
+  );
 
   // Create VPC Endpoint
   const endpoint = new ec2.InterfaceVpcEndpoint(scope, `${id}Endpoint`, {
@@ -332,7 +376,7 @@ export function createPrivateLinkNlb(
 
   // Extract endpoint DNS name
   const endpointDnsEntry = cdk.Fn.select(0, endpoint.vpcEndpointDnsEntries);
-  const endpointDns = cdk.Fn.select(1, cdk.Fn.split(':', endpointDnsEntry));
+  const endpointDns = cdk.Fn.select(1, cdk.Fn.split(":", endpointDnsEntry));
 
   return {
     nlb,
@@ -341,4 +385,3 @@ export function createPrivateLinkNlb(
     endpointDns,
   };
 }
-

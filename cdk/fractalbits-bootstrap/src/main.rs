@@ -40,11 +40,14 @@ struct CommonOpts {
 enum Command {
     #[clap(about = "Run on api_server instance to bootstrap fractalbits service(s)")]
     ApiServer {
-        #[clap(long, long_help = "S3 bucket name for fractalbits service")]
-        bucket: String,
+        #[clap(
+            long,
+            long_help = "S3 bucket name for fractalbits service (for hybrid mode)"
+        )]
+        bucket: Option<String>,
 
-        #[clap(long, long_help = "S3 remote bucket name used in multi-az setup")]
-        remote_bucket: Option<String>,
+        #[clap(long, long_help = "Remote AZ for S3 Express multi-AZ setup")]
+        remote_az: Option<String>,
 
         #[clap(long, long_help = "primary nss_server endpoint")]
         nss_endpoint: String,
@@ -55,11 +58,14 @@ enum Command {
 
     #[clap(about = "Run on api_server instance to bootstrap fractalbits service(s)")]
     GuiServer {
-        #[clap(long, long_help = "S3 bucket name for fractalbits service")]
-        bucket: String,
+        #[clap(
+            long,
+            long_help = "S3 bucket name for fractalbits service (for hybrid mode)"
+        )]
+        bucket: Option<String>,
 
-        #[clap(long, long_help = "S3 remote bucket name, used in multi-az setup")]
-        remote_bucket: Option<String>,
+        #[clap(long, long_help = "Remote AZ for S3 Express multi-AZ setup")]
+        remote_az: Option<String>,
 
         #[clap(long, long_help = "primary nss_server endpoint")]
         nss_endpoint: String,
@@ -111,6 +117,9 @@ enum Command {
 
         #[clap(long, long_help = "Follower instance ID for root server")]
         follower_id: Option<String>,
+
+        #[clap(long, long_help = "Remote AZ for S3 Express multi-AZ setup")]
+        remote_az: Option<String>,
     },
 
     #[clap(
@@ -179,26 +188,26 @@ fn main() -> CmdResult {
     match opts.command {
         Command::ApiServer {
             bucket,
-            remote_bucket,
+            remote_az,
             nss_endpoint,
             rss_endpoint,
         } => api_server::bootstrap(
-            &bucket,
-            remote_bucket.as_deref(),
+            bucket.as_deref(),
             &nss_endpoint,
             &rss_endpoint,
+            remote_az.as_deref(),
             for_bench,
         )?,
         Command::GuiServer {
             bucket,
-            remote_bucket,
+            remote_az,
             nss_endpoint,
             rss_endpoint,
         } => gui_server::bootstrap(
-            &bucket,
-            remote_bucket.as_deref(),
+            bucket.as_deref(),
             &nss_endpoint,
             &rss_endpoint,
+            remote_az.as_deref(),
         )?,
         Command::BssServer { meta_stack_testing } => {
             bss_server::bootstrap(meta_stack_testing, for_bench)?
@@ -225,12 +234,14 @@ fn main() -> CmdResult {
             volume_a_id,
             volume_b_id,
             follower_id,
+            remote_az,
         } => root_server::bootstrap(
             &nss_a_id,
             &nss_b_id,
             &volume_a_id,
             &volume_b_id,
             follower_id.as_deref(),
+            remote_az.as_deref(),
             for_bench,
         )?,
         Command::FormatNss {

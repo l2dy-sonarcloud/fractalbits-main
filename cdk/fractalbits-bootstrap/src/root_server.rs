@@ -12,6 +12,7 @@ pub fn bootstrap(
     volume_a_id: &str,
     volume_b_id: &str,
     follower_id: Option<&str>,
+    remote_az: Option<&str>,
     for_bench: bool,
 ) -> CmdResult {
     // download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
@@ -28,6 +29,16 @@ pub fn bootstrap(
 
     // Initialize NSS formatting and root server startup if follower_id is provided
     if let Some(follower_id) = follower_id {
+        // Create S3 Express buckets if remote_az is provided
+        if let Some(remote_az) = remote_az {
+            // Create local S3 Express bucket
+            let local_az = get_current_aws_az_id()?;
+            create_s3_express_bucket(&local_az, S3EXPRESS_LOCAL_BUCKET_CONFIG)?;
+
+            // Create remote S3 Express bucket
+            create_s3_express_bucket(remote_az, S3EXPRESS_REMOTE_BUCKET_CONFIG)?;
+        }
+
         for (nss_id, volume_id, role) in [
             (nss_b_id, volume_b_id, "standby"),
             (nss_a_id, volume_a_id, "active"),
