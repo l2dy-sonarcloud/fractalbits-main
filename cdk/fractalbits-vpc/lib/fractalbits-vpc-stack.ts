@@ -47,7 +47,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
           this.region ||
           process.env.AWS_REGION ||
           process.env.AWS_DEFAULT_REGION ||
-          "us-east-1";
+          "us-west-2";
         const result = execSync(
           `aws ec2 describe-availability-zones --region ${region} --zone-ids ${azId} --query 'AvailabilityZones[0].ZoneName' --output text`,
           { encoding: "utf-8" },

@@ -19,16 +19,29 @@ if [ -n "$ASG_NAMES" ]; then
     done
 fi
 
-# Combine all instance IDs
-ALL_INSTANCE_IDS="$DIRECT_INSTANCE_IDS $ASG_INSTANCE_IDS"
+# Get instances by CloudFormation stack tag
+TAGGED_INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK_NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query 'Reservations[].Instances[].InstanceId' --output text)
+
+# Get instances by Name tag prefix (fallback for instances not tagged with stack name)
+NAME_PREFIX_INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${STACK_NAME}/*" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query 'Reservations[].Instances[].InstanceId' --output text)
+
+# Combine all instance IDs and remove duplicates
+ALL_INSTANCE_IDS=$(echo "$DIRECT_INSTANCE_IDS $ASG_INSTANCE_IDS $TAGGED_INSTANCE_IDS $NAME_PREFIX_INSTANCE_IDS" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+# Get zone name to zone ID mapping
+declare -A ZONE_MAP
+while IFS=$'\t' read -r zone_name zone_id; do
+    ZONE_MAP["$zone_name"]="$zone_id"
+done < <(aws ec2 describe-availability-zones --query 'AvailabilityZones[].[ZoneName,ZoneId]' --output text)
 
 # Display all instances in a single table
 if [ -n "$ALL_INSTANCE_IDS" ]; then
     echo "=== All EC2 Instances in Stack: $STACK_NAME ==="
-    echo "Name                                          | InstanceId           | State    | InstanceType    | AvailabilityZone"
-    echo "----------------------------------------------+----------------------+----------+-----------------+-------------"
+    echo "Name                                          | InstanceId           | State    | InstanceType    | AvailabilityZone | ZoneId     "
+    echo "----------------------------------------------+----------------------+----------+-----------------+------------------+------------"
     aws ec2 describe-instances --instance-ids $ALL_INSTANCE_IDS --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,State.Name,InstanceType,Placement.AvailabilityZone]' --output text | while read -r name id state type az; do
-        printf "%-45s | %-20s | %-8s | %-15s | %-12s\n" "$name" "$id" "$state" "$type" "$az"
+        zone_id="${ZONE_MAP[$az]:-N/A}"
+        printf "%-45s | %-20s | %-8s | %-15s | %-16s | %-10s\n" "$name" "$id" "$state" "$type" "$az" "$zone_id"
     done
 else
     echo "No EC2 instances found in stack: $STACK_NAME"
