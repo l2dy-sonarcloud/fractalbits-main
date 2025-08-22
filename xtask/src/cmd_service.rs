@@ -471,12 +471,18 @@ WorkingDirectory={working_dir}
     Ok(())
 }
 
-pub fn start_minio_service() -> CmdResult {
+fn start_minio_service_common(
+    service_enum: ServiceName,
+    port: u16,
+    data_dir: &str,
+    bucket_name: &str,
+) -> CmdResult {
     let pwd = run_fun!(pwd)?;
-    let service_file = "etc/minio.service";
+    let service_name = service_enum.as_ref();
+
     let service_file_content = format!(
         r##"[Unit]
-Description=Simulated s3 service (minio)
+Description={service_name}
 
 [Install]
 WantedBy=default.target
@@ -484,34 +490,36 @@ WantedBy=default.target
 [Service]
 Type=simple
 Environment="MINIO_REGION=localdev"
-ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server s3/
+ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :{port} {data_dir}/
 Restart=always
 WorkingDirectory={pwd}/data
 "##
     );
-    let minio_url = "http://localhost:9000";
+    let minio_url = format!("http://localhost:{port}");
+
+    let service_file = format!("{service_name}.service");
     run_cmd! {
         mkdir -p etc;
-        echo $service_file_content > $service_file;
-        info "Linking $service_file into ~/.config/systemd/user";
-        systemctl --user link $service_file --force --quiet;
-        systemctl --user start minio.service;
+        echo $service_file_content > etc/$service_file;
+        info "Linking etc/$service_file into ~/.config/systemd/user";
+        systemctl --user link etc/$service_file --force --quiet;
+        systemctl --user start $service_file;
     }?;
-    wait_for_service_ready(ServiceName::Minio, 10)?;
+    wait_for_service_ready(service_enum, 10)?;
 
-    let bucket_name = "fractalbits-bucket";
+    let bucket = format!("s3://{bucket_name}");
     run_cmd! {
-        info "Creating s3 buckets (\"$bucket_name\") in minio ...";
-        ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb "s3://${bucket_name}" &>/dev/null;
+        info "Creating s3 bucket (\"$bucket_name\") in $service_name ...";
+        ignore AWS_DEFAULT_REGION=localdev AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
+            aws s3 mb $bucket --region localdev &>/dev/null;
     }?;
 
     let mut wait_new_bucket_secs = 0;
     const TIMEOUT_SECS: i32 = 5;
     loop {
         let bucket_ready = run_cmd! (
-            AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3api head-bucket --bucket $bucket_name &>/dev/null
+            AWS_DEFAULT_REGION=localdev AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
+            aws s3api head-bucket --bucket $bucket_name --region localdev &>/dev/null
         ).is_ok();
 
         if bucket_ready {
@@ -527,126 +535,28 @@ WorkingDirectory={pwd}/data
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
     Ok(())
+}
+
+pub fn start_minio_service() -> CmdResult {
+    start_minio_service_common(ServiceName::Minio, 9000, "s3", "fractalbits-bucket")
 }
 
 pub fn start_minio_az1_service() -> CmdResult {
-    let pwd = run_fun!(pwd)?;
-    let service_file = "etc/minio_az1.service";
-    let service_file_content = format!(
-        r##"[Unit]
-Description=Local AZ S3 service (minio)
-
-[Install]
-WantedBy=default.target
-
-[Service]
-Type=simple
-Environment="MINIO_REGION=localdev"
-ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9001 s3-localdev-az1/
-Restart=always
-WorkingDirectory={pwd}/data
-"##
-    );
-    let minio_url = "http://localhost:9001";
-    let bucket_name = "fractalbits-localdev-az1-data-bucket";
-    let bucket = format!("s3://{bucket_name}");
-
-    run_cmd! {
-        mkdir -p etc;
-        echo $service_file_content > $service_file;
-        info "Linking $service_file into ~/.config/systemd/user";
-        systemctl --user link $service_file --force --quiet;
-        systemctl --user start minio_az1.service;
-    }?;
-    wait_for_service_ready(ServiceName::MinioAz1, 10)?;
-
-    run_cmd! {
-        info "Creating local AZ bucket (\"$bucket_name\") ...";
-        ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb $bucket &>/dev/null;
-    }?;
-
-    let mut wait_new_bucket_secs = 0;
-    const TIMEOUT_SECS: i32 = 5;
-    loop {
-        let bucket_ready = run_cmd! (
-            AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3api head-bucket --bucket $bucket_name &>/dev/null
-        ).is_ok();
-
-        if bucket_ready {
-            break;
-        }
-
-        wait_new_bucket_secs += 1;
-        if wait_new_bucket_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
-        }
-
-        info!("waiting for newly created bucket {bucket_name}: {wait_new_bucket_secs}s");
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    Ok(())
+    start_minio_service_common(
+        ServiceName::MinioAz1,
+        9001,
+        "s3-localdev-az1",
+        "fractalbits-localdev-az1-data-bucket",
+    )
 }
 
 pub fn start_minio_az2_service() -> CmdResult {
-    let pwd = run_fun!(pwd)?;
-    let service_file = "etc/minio_az2.service";
-    let service_file_content = format!(
-        r##"[Unit]
-Description=Remote AZ S3 service (minio)
-
-[Install]
-WantedBy=default.target
-
-[Service]
-Type=simple
-Environment="MINIO_REGION=localdev"
-ExecStart=/home/linuxbrew/.linuxbrew/opt/minio/bin/minio server --address :9002 s3-localdev-az2/
-Restart=always
-WorkingDirectory={pwd}/data
-"##
-    );
-    let minio_url = "http://localhost:9002";
-    let bucket_name = "fractalbits-localdev-az2-data-bucket";
-    let bucket = format!("s3://{bucket_name}");
-
-    run_cmd! {
-        mkdir -p etc;
-        echo $service_file_content > $service_file;
-        info "Linking $service_file into ~/.config/systemd/user";
-        systemctl --user link $service_file --force --quiet;
-        systemctl --user start minio_az2.service;
-    }?;
-    wait_for_service_ready(ServiceName::MinioAz2, 10)?;
-
-    run_cmd! {
-        info "Creating remote AZ bucket (\"$bucket_name\") ...";
-        ignore AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3 mb $bucket &>/dev/null;
-    }?;
-
-    let mut wait_new_bucket_secs = 0;
-    const TIMEOUT_SECS: i32 = 5;
-    loop {
-        let bucket_ready = run_cmd! (
-            AWS_ENDPOINT_URL_S3=$minio_url AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-            aws s3api head-bucket --bucket $bucket_name &>/dev/null
-        ).is_ok();
-
-        if bucket_ready {
-            break;
-        }
-
-        wait_new_bucket_secs += 1;
-        if wait_new_bucket_secs >= TIMEOUT_SECS {
-            cmd_die!("timeout waiting for newly created bucket ${bucket_name}");
-        }
-
-        info!("waiting for newly created bucket {bucket_name}: {wait_new_bucket_secs}s");
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    Ok(())
+    start_minio_service_common(
+        ServiceName::MinioAz2,
+        9002,
+        "s3-localdev-az2",
+        "fractalbits-localdev-az2-data-bucket",
+    )
 }
 
 fn create_api_server_systemd_unit_file(
