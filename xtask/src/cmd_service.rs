@@ -834,6 +834,68 @@ fn create_dirs_for_bss_server() -> CmdResult {
     Ok(())
 }
 
+// Test instance management for leader election tests
+pub fn start_test_root_server_instance(
+    instance_id: &str,
+    config_path: &str,
+    log_path: &str,
+) -> Result<cmd_lib::CmdChildren, std::io::Error> {
+    info!("Starting test root_server instance: {instance_id}");
+
+    let ddb_endpoint = "http://localhost:8000";
+    let proc = spawn! {
+        RUST_LOG=info,root_server=debug
+        AWS_ACCESS_KEY_ID=fakeMyKeyId
+        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+        cargo run --bin root_server --
+          --region fakeRegion
+          --ddb-endpoint $ddb_endpoint
+          --instance-id $instance_id
+          -c $config_path
+          |& ts -m "%b %d %H:%M:%.S" > $log_path
+    }?;
+
+    // Give the instance a moment to start
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    Ok(proc)
+}
+
+pub fn cleanup_test_root_server_instances(instance_pattern: &str) -> CmdResult {
+    info!("Cleaning up test root_server instances matching: {instance_pattern}");
+
+    // Find processes matching the pattern
+    let pattern = format!("root_server.*--instance-id.*{instance_pattern}");
+    let pgrep_result = run_fun!(pgrep -f $pattern);
+
+    if let Ok(pids_str) = pgrep_result {
+        if !pids_str.trim().is_empty() {
+            info!("Found processes to clean up: {}", pids_str.trim());
+
+            // First try SIGTERM
+            run_cmd!(pkill -f $pattern)?;
+
+            // Wait for graceful shutdown
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Check if any are still running and force kill if needed
+            let still_running = run_fun!(pgrep -f $pattern);
+            if let Ok(remaining_pids) = still_running {
+                if !remaining_pids.trim().is_empty() {
+                    info!(
+                        "Force killing remaining processes: {}",
+                        remaining_pids.trim()
+                    );
+                    run_cmd!(pkill -9 -f $pattern)?;
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdResult {
     use std::time::{Duration, Instant};
 
