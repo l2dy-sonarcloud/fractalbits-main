@@ -489,7 +489,7 @@ impl BlobStorage for S3ExpressMultiAzWithTracking {
                     ));
                 }
 
-                if !remote_result.is_ok() {
+                if remote_result.is_err() {
                     warn!("Remote AZ failed, switching to degraded mode");
                     self.set_az_status(&self.remote_az, "Degraded").await?;
                     let metadata = self.remote_az.as_bytes();

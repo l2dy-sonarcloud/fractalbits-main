@@ -222,6 +222,11 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
             continue;
         }
 
+        // Deregister api_server from service discovery before stopping
+        if service == "api_server" {
+            deregister_local_api_server()?;
+        }
+
         run_cmd!(systemctl --user stop $service.service)?;
 
         // make sure the process is really killed
@@ -686,6 +691,10 @@ pub fn start_api_server(
     let api_server_pid = run_fun!(pidof api_server)?;
     check_pids(ServiceName::ApiServer, &api_server_pid)?;
     info!("api server (pid={api_server_pid}) started");
+
+    // Register local api_server with service discovery
+    register_local_api_server()?;
+
     Ok(())
 }
 
@@ -963,4 +972,77 @@ fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdResult 
 
 fn check_port_ready(port: u16) -> bool {
     run_cmd!(nc -z localhost $port).is_ok()
+}
+
+fn register_local_api_server() -> CmdResult {
+    info!("Registering local api_server with service discovery");
+
+    // Create the JSON item for DynamoDB
+    let item_json = r#"{
+        "service_id": {"S": "api-server"},
+        "instances": {
+            "M": {
+                "local-dev": {"S": "127.0.0.1:8080"}
+            }
+        }
+    }"#;
+
+    // Try to update existing item first, if it doesn't exist, create it
+    let key_json = "{\"service_id\": {\"S\": \"api-server\"}}";
+    let attr_names = "{\"#instances\": \"instances\", \"#local\": \"local-dev\"}";
+    let attr_values = "{\":ip\": {\"S\": \"127.0.0.1:8080\"}}";
+
+    if run_cmd!(
+        AWS_DEFAULT_REGION=fakeRegion
+        AWS_ACCESS_KEY_ID=fakeMyKeyId
+        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+        AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+        aws dynamodb update-item
+            --table-name fractalbits-service-discovery
+            --key $key_json
+            --update-expression "SET #instances.#local = :ip"
+            --expression-attribute-names $attr_names
+            --expression-attribute-values $attr_values
+            --condition-expression "attribute_exists(service_id)" 2>/dev/null
+    )
+    .is_err()
+    {
+        // Item doesn't exist, create it
+        run_cmd!(
+            AWS_DEFAULT_REGION=fakeRegion
+            AWS_ACCESS_KEY_ID=fakeMyKeyId
+            AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+            AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+            aws dynamodb put-item
+                --table-name fractalbits-service-discovery
+                --item $item_json
+        )?;
+    }
+
+    info!("Local api_server registered in service discovery");
+    Ok(())
+}
+
+fn deregister_local_api_server() -> CmdResult {
+    info!("Deregistering local api_server from service discovery");
+
+    let key_json = "{\"service_id\": {\"S\": \"api-server\"}}";
+    let attr_names = "{\"#local\": \"local-dev\"}";
+
+    // Remove the local-dev instance from the api-server service entry
+    run_cmd!(
+        ignore AWS_DEFAULT_REGION=fakeRegion
+        AWS_ACCESS_KEY_ID=fakeMyKeyId
+        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+        AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+        aws dynamodb update-item
+            --table-name fractalbits-service-discovery
+            --key $key_json
+            --update-expression "REMOVE instances.#local"
+            --condition-expression "attribute_exists(instances.#local)"
+            --expression-attribute-names $attr_names
+            2>/dev/null
+    )?;
+
+    Ok(())
 }

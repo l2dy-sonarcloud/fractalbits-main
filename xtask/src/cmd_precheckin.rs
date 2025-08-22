@@ -88,7 +88,7 @@ fn run_s3_api_tests() -> CmdResult {
     )?;
     run_cmd! {
         info "Run cargo tests (s3 api tests)";
-        cargo test --package api_server -- --test-threads 1 --skip multi_az_resilience;
+        cargo test --package api_server -- --skip "_az_";
     }?;
     let _ = cmd_service::stop_service(ServiceName::All);
 

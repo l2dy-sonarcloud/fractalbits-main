@@ -221,9 +221,8 @@ async fn any_handler_inner(
                 api_key,
                 content_sha256_header: signature::ContentSha256Header::UnsignedPayload,
             }
-        } else {
-            let auth_unwrapped = auth.unwrap();
-            match verify_request(app.clone(), request, &auth_unwrapped).await {
+        } else if let Some(auth) = auth {
+            match verify_request(app.clone(), request, &auth).await {
                 Ok(res) => res,
                 Err(signature::error::Error::SignatureError(e, request_wrapper)) => {
                     let request = request_wrapper.into_inner();
@@ -234,7 +233,7 @@ async fn any_handler_inner(
                         _ => {
                             tracing::warn!(
                                 "allowed bad signature for {:?}, falling back to 'test_api_key'",
-                                auth_unwrapped
+                                auth
                             );
                             let access_key = "test_api_key";
                             let api_key =
@@ -255,10 +254,12 @@ async fn any_handler_inner(
                     return Err(S3Error::InternalError);
                 }
             }
+        } else {
+            return Err(S3Error::InvalidSignature);
         }
     } else {
-        let auth_unwrapped = auth.ok_or(S3Error::InvalidSignature)?;
-        match verify_request(app.clone(), request, &auth_unwrapped).await {
+        let auth = auth.ok_or(S3Error::InvalidSignature)?;
+        match verify_request(app.clone(), request, &auth).await {
             Ok(res) => res,
             Err(signature::error::Error::SignatureError(e, _)) => match *e {
                 signature::error::Error::RpcErrorRss(RpcErrorRss::NotFound) => {
