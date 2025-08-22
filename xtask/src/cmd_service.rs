@@ -202,8 +202,8 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
         ServiceName::All => vec![
             ServiceName::ApiServer.as_ref().to_owned(),
             ServiceName::NssRoleAgentA.as_ref().to_owned(),
-            ServiceName::NssRoleAgentB.as_ref().to_owned(),
             ServiceName::Nss.as_ref().to_owned(),
+            ServiceName::NssRoleAgentB.as_ref().to_owned(),
             ServiceName::Mirrord.as_ref().to_owned(),
             ServiceName::Bss.as_ref().to_owned(),
             ServiceName::Rss.as_ref().to_owned(),
@@ -220,11 +220,6 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
     for service in services {
         if run_cmd!(systemctl --user is-active --quiet $service.service).is_err() {
             continue;
-        }
-
-        // Deregister api_server from service discovery before stopping
-        if service == "api_server" {
-            deregister_local_api_server()?;
         }
 
         run_cmd!(systemctl --user stop $service.service)?;
@@ -1020,29 +1015,5 @@ fn register_local_api_server() -> CmdResult {
     }
 
     info!("Local api_server registered in service discovery");
-    Ok(())
-}
-
-fn deregister_local_api_server() -> CmdResult {
-    info!("Deregistering local api_server from service discovery");
-
-    let key_json = "{\"service_id\": {\"S\": \"api-server\"}}";
-    let attr_names = "{\"#local\": \"local-dev\"}";
-
-    // Remove the local-dev instance from the api-server service entry
-    run_cmd!(
-        ignore AWS_DEFAULT_REGION=fakeRegion
-        AWS_ACCESS_KEY_ID=fakeMyKeyId
-        AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
-        AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
-        aws dynamodb update-item
-            --table-name fractalbits-service-discovery
-            --key $key_json
-            --update-expression "REMOVE instances.#local"
-            --condition-expression "attribute_exists(instances.#local)"
-            --expression-attribute-names $attr_names
-            2>/dev/null
-    )?;
-
     Ok(())
 }
