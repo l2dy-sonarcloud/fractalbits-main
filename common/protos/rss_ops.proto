@@ -1,0 +1,222 @@
+syntax = "proto3";
+
+package rss_ops;
+
+import "google/protobuf/empty.proto";
+
+enum Command {
+  Invalid = 0;
+  Put = 1;
+  PutWithExtra = 2;
+  Get = 3;
+  Delete = 4;
+  DeleteWithExtra = 5;
+  List = 6;
+
+  // Health agent commands
+  // RegisterInstance = 7;
+  Heartbeat = 8;
+  // GetInstanceState = 9;
+  // PromoteToActive = 10;
+  // DemoteToStandby = 11;
+
+  // NSS role management
+  GetNssRole = 22;
+
+  // AZ status management
+  GetAzStatus = 25;
+  SetAzStatus = 26;
+}
+
+// Put
+message PutRequest {
+  int64 version = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message PutResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    google.protobuf.Empty err_retry = 2;
+    string err_others = 3;
+  }
+}
+
+// PutWithExtra
+message PutWithExtraRequest {
+  int64 version = 1;
+  string key = 2;
+  string value = 3;
+  int64 extra_version = 4;
+  string extra_key = 5;
+  string extra_value = 6;
+}
+
+message PutWithExtraResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    google.protobuf.Empty err_retry = 2;
+    string err_others = 3;
+  }
+}
+
+// Get
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  oneof result {
+    ValueWithVersion ok = 1;
+    google.protobuf.Empty err_not_found = 2;
+    string err_others = 3;
+  }
+}
+
+message ValueWithVersion {
+  int64 version = 1;
+  string value = 2;
+}
+
+// Delete
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    string err = 2;
+  }
+}
+
+// DeleteWithExtra
+message DeleteWithExtraRequest {
+  string key = 1;
+  int64 extra_version = 2;
+  string extra_key = 3;
+  string extra_value = 4;
+}
+
+message DeleteWithExtraResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    google.protobuf.Empty err_retry = 2;
+    string err_others = 3;
+  }
+}
+
+// List
+message ListRequest {
+  string prefix = 1;
+}
+
+message ListResponse {
+  oneof result {
+    ListKeyValues ok = 1;
+    string err = 2;
+  }
+}
+
+message ListKeyValues {
+  repeated string kvs = 3;
+}
+
+// Health agent commands
+// message RegisterInstanceRequest {
+//   string instance_id = 1;
+//   string ip_address = 2;
+//   uint32 port = 3;
+//   string peer_instance_id = 4;
+//   string ec2_instance_id = 5;
+//   string availability_zone = 6;
+// }
+
+// message RegisterInstanceResponse {
+//   oneof result {
+//     google.protobuf.Empty ok = 1;
+//     string error = 2;
+//   }
+// }
+
+message HeartbeatRequest {
+  string instance_id = 1;
+}
+
+message HeartbeatResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    string error = 2;
+  }
+}
+
+// message GetStateRequest {
+//   string instance_id = 1;
+// }
+
+// message GetStateResponse {
+//   oneof result {
+//     string state = 1;
+//     string error = 2;
+//   }
+// }
+
+// message PromoteToActiveRequest {
+//   string instance_id = 1;
+// }
+
+// message PromoteToActiveResponse {
+//   oneof result {
+//     google.protobuf.Empty ok = 1;
+//     string error = 2;
+//   }
+// }
+
+// message DemoteToStandbyRequest {
+//   string instance_id = 1;
+// }
+
+// message DemoteToStandbyResponse {
+//   oneof result {
+//     google.protobuf.Empty ok = 1;
+//     string error = 2;
+//   }
+// }
+
+// GetNssRole - Query NSS instance role from service-discovery table
+message GetNssRoleRequest {
+  string instance_id = 1;  // "nss-A" or "nss-B"
+}
+
+message GetNssRoleResponse {
+  oneof result {
+    string role = 1;  // "active", "standby", "solo", or "dead"
+    string error = 2;
+  }
+}
+
+// GetAzStatus - Query AZ availability status from service-discovery table
+message GetAzStatusResponse {
+  oneof result {
+    AzStatusMap status_map = 1;
+    string error = 2;
+  }
+}
+
+message AzStatusMap {
+  map<string, string> az_status = 1;  // Key: AZ name (e.g. "use1-az4"), Value: status ("Normal", "Degraded", "Resync", "Sanitize")
+}
+
+// SetAzStatus - Update AZ availability status in service-discovery table
+message SetAzStatusRequest {
+  string az_id = 1;   // AZ name (e.g. "use1-az4")
+  string status = 2;  // Status ("Normal", "Degraded", "Resync", "Sanitize")
+}
+
+message SetAzStatusResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    string error = 2;
+  }
+}

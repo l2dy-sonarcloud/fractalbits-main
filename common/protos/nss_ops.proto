@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package nss_ops;
+
+import "google/protobuf/empty.proto";
+
+enum Command {
+  Invalid = 0;
+  PutInode = 1;
+  GetInode = 2;
+  ListInodes = 3;
+  DeleteInode = 4;
+  CreateRootInode = 5;
+  DeleteRootInode = 6;
+  Rename = 7;
+}
+
+// PutInode
+message PutInodeRequest {
+  string root_blob_name = 1;
+  string key = 2;
+  bytes value = 3;
+}
+
+message PutInodeResponse {
+  oneof result {
+    bytes ok = 1;
+    string err = 2;
+  }
+}
+
+// GetInode
+message GetInodeRequest {
+  string root_blob_name = 1;
+  string key = 2;
+}
+
+message GetInodeResponse {
+  oneof result {
+    bytes ok = 1;
+    google.protobuf.Empty err_not_found = 2;
+    string err_others = 3;
+  }
+}
+
+// ListInodes
+message ListInodesRequest {
+  string root_blob_name = 1;
+  uint32 max_keys = 2;
+  string prefix = 3;
+  string delimiter = 4;
+  string start_after = 5;
+  bool skip_mpu_parts = 6;
+}
+
+message ListInodesResponse {
+  oneof result {
+    Inodes ok = 1;
+    string err = 2;
+  }
+
+  message Inodes {
+    repeated Inode inodes = 3;
+  }
+
+  message Inode {
+    string key = 4;
+    bytes inode = 5;
+  }
+}
+
+// DeleteInode
+message DeleteInodeRequest {
+  string root_blob_name = 1;
+  string key = 2;
+}
+
+message DeleteInodeResponse {
+  oneof result {
+    bytes ok = 1;
+    google.protobuf.Empty err_not_found = 2;
+    google.protobuf.Empty err_already_deleted = 3;
+    string err_others = 4;
+  }
+}
+
+// CreateRootInode
+message CreateRootInodeRequest {
+  string bucket = 1;
+}
+
+message CreateRootInodeResponse {
+  oneof result {
+    string ok = 1;
+    string err = 2;
+  }
+}
+
+// DeleteRootInode
+message DeleteRootInodeRequest {
+  string root_blob_name = 1;
+}
+
+message DeleteRootInodeResponse {
+  oneof result {
+    string ok = 1;
+    google.protobuf.Empty err_not_empty = 2;
+    string err_others = 3;
+  }
+}
+
+// Rename
+message RenameRequest {
+  string root_blob_name = 1;
+  string src_path = 2;
+  string dst_path = 3;
+}
+
+message RenameResponse {
+  oneof result {
+    string ok = 1;
+    google.protobuf.Empty err_src_nonexisted = 2;
+    google.protobuf.Empty err_dst_existed = 3;
+    string err_others = 4;
+  }
+}

@@ -6,18 +6,18 @@ members = [
     "api_server/bucket_tables",
     "api_server/kv_client_traits",
     "cdk/fractalbits-bootstrap",
-    "data_blob_tracking",
+    "common/crates/data_blob_tracking",
     "data_blob_resync_server",
     "nss_role_agent",
     "root_server",
     "root_server/admin",
     # "root_server/ebs-failover",
-    "rpc_clients/bss",
-    "rpc_clients/common",
-    "rpc_clients/nss",
-    "rpc_clients/rss",
-    "rpc_clients/slotmap_conn_pool",
-    "test_common",
+    "common/crates/rpc_clients/bss",
+    "common/crates/rpc_clients/common",
+    "common/crates/rpc_clients/nss",
+    "common/crates/rpc_clients/rss",
+    "common/crates/rpc_clients/slotmap_conn_pool",
+    "common/crates/test_common",
     "xtask",
     "xtask/tools",
 ]
@@ -26,13 +26,13 @@ resolver = "2"
 [workspace.dependencies]
 bucket_tables = { path = "api_server/bucket_tables" }
 kv_client_traits = { path = "api_server/kv_client_traits" }
-data_blob_tracking = { path = "data_blob_tracking" }
-rpc_client_common = { path = "rpc_clients/common" }
-rpc_client_bss = { path = "rpc_clients/bss" }
-rpc_client_nss = { path = "rpc_clients/nss" }
-rpc_client_rss = { path = "rpc_clients/rss" }
-slotmap_conn_pool = { path = "rpc_clients/slotmap_conn_pool" }
-test_common = { path = "test_common" }
+data_blob_tracking = { path = "common/crates/data_blob_tracking" }
+rpc_client_common = { path = "common/crates/rpc_clients/common" }
+rpc_client_bss = { path = "common/crates/rpc_clients/bss" }
+rpc_client_nss = { path = "common/crates/rpc_clients/nss" }
+rpc_client_rss = { path = "common/crates/rpc_clients/rss" }
+slotmap_conn_pool = { path = "common/crates/rpc_clients/slotmap_conn_pool" }
+test_common = { path = "common/crates/test_common" }
 xtask_tools = { path = "xtask/tools" }
 
 tokio-util = { version = "0.7.12", features = ["codec"] }

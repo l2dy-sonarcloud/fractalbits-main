@@ -1,0 +1,8 @@
+[package]
+name = "test_common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-sdk-s3.workspace = true
+cmd_lib.workspace = true
