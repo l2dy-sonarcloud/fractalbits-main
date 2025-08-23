@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::*;
 use colored::*;
 
@@ -222,6 +224,12 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
             continue;
         }
 
+        if service == ServiceName::Mirrord.as_ref() {
+            while run_cmd!(systemctl --user is-active --quiet nss.service).is_ok() {
+                // waiting for nss to stop at first, or it may crash nss due to journal mirroring failure
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
         run_cmd!(systemctl --user stop $service.service)?;
 
         // make sure the process is really killed
