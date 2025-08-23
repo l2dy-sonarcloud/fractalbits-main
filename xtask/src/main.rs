@@ -118,10 +118,8 @@ enum Cmd {
     GrantBuildBucket,
 
     #[clap(about = "Run various test suites")]
-    RunTests {
-        #[clap(long_help = "Tests types to run")]
-        test_type: TestType,
-    },
+    #[command(subcommand)]
+    RunTests(TestType),
 }
 
 #[derive(Clone, AsRefStr, EnumString)]
@@ -196,12 +194,21 @@ impl std::fmt::Display for NssRole {
     }
 }
 
-#[derive(Parser, Clone, EnumString, clap::ValueEnum)]
-#[strum(serialize_all = "snake_case")]
+#[derive(Parser, Clone)]
 #[clap(rename_all = "snake_case")]
 pub enum TestType {
-    MultiAz,
+    MultiAz {
+        #[clap(subcommand)]
+        subcommand: MultiAzTestType,
+    },
     LeaderElection,
+}
+
+#[derive(Parser, Clone, EnumString)]
+#[strum(serialize_all = "snake_case")]
+#[clap(rename_all = "snake_case")]
+pub enum MultiAzTestType {
+    DataBlobTracking,
 }
 
 #[derive(Parser, Clone)]
@@ -297,7 +304,7 @@ async fn main() -> CmdResult {
             bootstrap_only,
         )?,
         Cmd::GrantBuildBucket => cmd_deploy::update_builds_bucket_access_policy()?,
-        Cmd::RunTests { test_type } => cmd_run_tests::run_tests(test_type).await?,
+        Cmd::RunTests(test_type) => cmd_run_tests::run_tests(test_type).await?,
     }
     Ok(())
 }
