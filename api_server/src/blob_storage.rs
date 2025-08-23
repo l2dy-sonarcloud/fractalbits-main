@@ -4,7 +4,6 @@ mod retry;
 mod s3_express_multi_az_storage;
 mod s3_express_multi_az_with_tracking;
 mod s3_express_single_az_storage;
-mod session_prewarming;
 
 pub use bss_only_single_az_storage::BssOnlySingleAzStorage;
 pub use hybrid_single_az_storage::HybridSingleAzStorage;
@@ -14,7 +13,6 @@ pub use s3_express_multi_az_with_tracking::{
     S3ExpressMultiAzWithTracking, S3ExpressWithTrackingConfig,
 };
 pub use s3_express_single_az_storage::{S3ExpressSingleAzConfig, S3ExpressSingleAzStorage};
-pub use session_prewarming::{SessionPrewarmingConfig, SessionPrewarmingService};
 
 // Rate limiting types are defined in this module
 
