@@ -209,6 +209,7 @@ pub enum TestType {
 #[clap(rename_all = "snake_case")]
 pub enum MultiAzTestType {
     DataBlobTracking,
+    DataBlobResyncing,
 }
 
 #[derive(Parser, Clone)]
