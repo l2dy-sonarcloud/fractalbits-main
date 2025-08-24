@@ -103,6 +103,7 @@ fn create_nss_config(bucket_name: &str, volume_dev: &str, iam_role: &str) -> Cmd
     let config_content = format!(
         r##"working_dir = "/data"
 server_port = 8088
+health_port = 19999
 net_worker_thread_count = {net_worker_thread_count}
 art_thread_count = {art_thread_count}
 art_thread_dataop_count = {art_thread_dataop_count}
@@ -133,6 +134,7 @@ fn create_mirrord_config(volume_dev: &str) -> CmdResult {
     let config_content = format!(
         r##"working_dir = "/data"
 server_port = 9999
+health_port = 19999
 num_threads = {num_cores}
 log_level = "info"
 art_journal_segment_size = {art_journal_segment_size}
