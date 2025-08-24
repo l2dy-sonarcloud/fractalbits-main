@@ -5,6 +5,7 @@ use rpc_client_rss::{RpcClientRss, RpcErrorRss};
 use slotmap_conn_pool::ConnPool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -454,6 +455,28 @@ impl DataBlobTracker {
             .unwrap()
             .as_secs();
         timestamp.to_le_bytes().to_vec()
+    }
+
+    /// Get AZ status from RSS service discovery
+    pub async fn get_az_status(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<rpc_client_rss::rpc::AzStatusMap, DataBlobTrackingError> {
+        rss_rpc_retry!(self, get_az_status(timeout))
+            .await
+            .map_err(|e| e.into())
+    }
+
+    /// Set AZ status in RSS service discovery
+    pub async fn set_az_status(
+        &self,
+        az_id: &str,
+        status: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(), DataBlobTrackingError> {
+        rss_rpc_retry!(self, set_az_status(az_id, status, timeout))
+            .await
+            .map_err(|e| e.into())
     }
 }
 

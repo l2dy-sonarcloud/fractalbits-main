@@ -14,7 +14,6 @@ use bytes::Bytes;
 use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use metrics::{counter, histogram};
 use moka::future::Cache;
-use rpc_client_rss::RpcClientRss;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info, warn};
@@ -41,7 +40,6 @@ pub struct S3ExpressMultiAzWithTracking {
     local_az_bucket: String,
     remote_az_bucket: String,
     data_blob_tracker: Arc<DataBlobTracker>,
-    rss_client: Arc<RpcClientRss>,
     local_az: String,
     remote_az: String,
     retry_config: S3RetryConfig,
@@ -58,7 +56,6 @@ impl S3ExpressMultiAzWithTracking {
     pub async fn new(
         config: &S3ExpressWithTrackingConfig,
         data_blob_tracker: Arc<DataBlobTracker>,
-        rss_client: Arc<RpcClientRss>,
         az_status_cache: Arc<Cache<String, String>>,
     ) -> Result<Self, BlobStorageError> {
         info!(
@@ -125,7 +122,6 @@ impl S3ExpressMultiAzWithTracking {
             local_az_bucket: config.local_az_bucket.clone(),
             remote_az_bucket: config.remote_az_bucket.clone(),
             data_blob_tracker,
-            rss_client,
             local_az: config.local_az.clone(),
             remote_az: config.remote_az.clone(),
             retry_config: config.retry_config.clone(),
@@ -244,7 +240,7 @@ impl S3ExpressMultiAzWithTracking {
         }
 
         // Cache miss - fetch from RSS
-        match self.rss_client.get_az_status(None).await {
+        match self.data_blob_tracker.get_az_status(None).await {
             Ok(status_map) => {
                 let status = status_map
                     .az_status
@@ -272,7 +268,7 @@ impl S3ExpressMultiAzWithTracking {
 
     /// Set AZ status for a specific AZ in RSS service discovery
     async fn set_az_status(&self, az_id: &str, status: &str) -> Result<(), BlobStorageError> {
-        self.rss_client
+        self.data_blob_tracker
             .set_az_status(az_id, status, None)
             .await
             .map_err(|e| BlobStorageError::S3(format!("Failed to set AZ status: {e}")))?;
