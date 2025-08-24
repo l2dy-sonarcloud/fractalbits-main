@@ -19,7 +19,6 @@ pub enum DataBlobTrackingError {
     Internal(String),
 }
 
-
 /// Helper struct for managing data blob tracking operations
 pub struct DataBlobTracker {
     /// RSS connection pool for reuse across operations
@@ -353,65 +352,31 @@ impl DataBlobTracker {
     }
 
     /// List all buckets with their tracking root blob names
-    /// This method gets bucket keys from RSS list, then retrieves each bucket's data
+    /// Uses efficient RSS list operation that now returns bucket values directly
     pub async fn list_buckets_with_tracking(
         &self,
     ) -> Result<Vec<(String, String)>, DataBlobTrackingError> {
-        // First, list all bucket keys from RSS using the same prefix as BucketTable
         let prefix = "/buckets/";
-        let bucket_keys = rss_rpc_retry!(self, list(prefix, None)).await?;
-
-        tracing::debug!("Found {} bucket keys from RSS list", bucket_keys.len());
+        let bucket_values = rss_rpc_retry!(self, list(prefix, None)).await?;
 
         let mut buckets_with_tracking = Vec::new();
-
-        // For each bucket key, get the actual bucket data
-        for bucket_key in bucket_keys {
-            tracing::debug!("Processing bucket key: '{}'", bucket_key);
-
-            // Get the bucket data using RSS get
-            match rss_rpc_retry!(self, get(&bucket_key, None)).await {
-                Ok((version, bucket_data)) => {
-                    tracing::debug!(
-                        "Retrieved bucket data for key '{}': '{}' (length: {}, version: {})",
-                        bucket_key,
-                        bucket_data,
-                        bucket_data.len(),
-                        version
-                    );
-
-                    // Parse the bucket JSON data - use the actual Bucket struct from bucket_tables
-                    match serde_json::from_str::<bucket_tables::bucket_table::Bucket>(&bucket_data) {
-                        Ok(bucket) => {
-                            tracing::debug!(
-                                "Successfully parsed bucket: {} -> {}",
-                                bucket.bucket_name,
-                                bucket.tracking_root_blob_name
-                            );
-                            buckets_with_tracking
-                                .push((bucket.bucket_name, bucket.tracking_root_blob_name));
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to parse bucket data for key '{}': {} (data: '{}')",
-                                bucket_key,
-                                e,
-                                bucket_data
-                            );
-                        }
-                    }
+        for bucket_value in bucket_values {
+            // Parse the bucket JSON data directly from RSS list response
+            match serde_json::from_str::<bucket_tables::bucket_table::Bucket>(&bucket_value) {
+                Ok(bucket) => {
+                    buckets_with_tracking
+                        .push((bucket.bucket_name, bucket.tracking_root_blob_name));
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to get bucket data for key '{}': {}", bucket_key, e);
+                    tracing::warn!(
+                        "Failed to parse bucket data: {} (data: '{}')",
+                        e,
+                        bucket_value
+                    );
                 }
             }
         }
 
-        tracing::info!(
-            "Found {} buckets with tracking: {:?}",
-            buckets_with_tracking.len(),
-            buckets_with_tracking
-        );
         Ok(buckets_with_tracking)
     }
 
@@ -447,7 +412,6 @@ impl DataBlobTracker {
             .map_err(|e| e.into())
     }
 }
-
 
 impl Default for DataBlobTracker {
     fn default() -> Self {
