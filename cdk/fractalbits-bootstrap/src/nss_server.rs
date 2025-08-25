@@ -48,7 +48,7 @@ pub fn bootstrap(
     // until EBS/nss formatted from root_server
     if meta_stack_testing {
         let volume_dev = get_volume_dev(volume_id);
-        format_nss(volume_dev, true)?;
+        format_nss(volume_dev)?;
     }
     Ok(())
 }
@@ -184,7 +184,7 @@ fn create_ebs_udev_rule(volume_id: &str, service_name: &str) -> CmdResult {
     Ok(())
 }
 
-pub fn format_nss(ebs_dev: String, testing_mode: bool) -> CmdResult {
+pub fn format_nss(ebs_dev: String) -> CmdResult {
     run_cmd! {
         info "Disabling udev rules for EBS";
         ln -sf /dev/null /etc/udev/rules.d/99-ebs.rules;
@@ -224,15 +224,6 @@ pub fn format_nss(ebs_dev: String, testing_mode: bool) -> CmdResult {
         info "Running format for nss_server";
         /opt/fractalbits/bin/nss_server format -c ${ETC_PATH}${NSS_SERVER_CONFIG};
     }?;
-
-    if testing_mode {
-        run_cmd! {
-            cd /data;
-
-            info "Running nss fbs";
-            /opt/fractalbits/bin/fbs -c ${ETC_PATH}${NSS_SERVER_CONFIG} --new_tree $TEST_BUCKET_ROOT_BLOB_NAME;
-        }?;
-    }
 
     run_cmd! {
         info "Enabling udev rules for EBS";

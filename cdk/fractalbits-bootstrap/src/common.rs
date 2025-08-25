@@ -17,7 +17,6 @@ pub const DDB_SERVICE_DISCOVERY_TABLE: &str = "fractalbits-service-discovery";
 pub const NETWORK_TUNING_SYS_CONFIG: &str = "99-network-tuning.conf";
 #[allow(dead_code)]
 pub const CLOUDWATCH_AGENT_CONFIG: &str = "cloudwatch_agent_config.json";
-pub const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 pub const CLOUD_INIT_LOG: &str = "/var/log/cloud-init-output.log";
 pub const EXT4_MKFS_OPTS: [&str; 4] = ["-O", "bigalloc", "-C", "16384"];
 pub const S3EXPRESS_LOCAL_BUCKET_CONFIG: &str = "s3express-local-bucket-config.json";

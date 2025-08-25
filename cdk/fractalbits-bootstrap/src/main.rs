@@ -126,13 +126,6 @@ enum Command {
         about = "Run on nss_server instance to format itself when receiving ssm command from root_server"
     )]
     FormatNss {
-        #[clap(
-            long,
-            default_value = "false",
-            long_help = "Testing mode (create testing art tree)"
-        )]
-        testing_mode: bool,
-
         #[clap(long, long_help = "EBS device")]
         ebs_dev: String,
     },
@@ -245,9 +238,8 @@ fn main() -> CmdResult {
             for_bench,
         )?,
         Command::FormatNss {
-            testing_mode,
             ebs_dev,
-        } => nss_server::format_nss(ebs_dev, testing_mode)?,
+        } => nss_server::format_nss(ebs_dev)?,
         Command::BenchServer {
             api_server_endpoint,
             bench_client_num,

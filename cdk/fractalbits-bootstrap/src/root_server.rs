@@ -52,7 +52,7 @@ pub fn bootstrap(
             // Format EBS with SSM
             let ebs_dev = get_volume_dev(volume_id);
             wait_for_ssm_ready(nss_id);
-            let extra_opt = if for_bench { "--testing_mode" } else { "" };
+            let extra_opt = if for_bench { "" } else { "" };
             let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
             info!("Running format_nss on {nss_id} ({role}) with device {ebs_dev}");
             run_cmd_with_ssm(
