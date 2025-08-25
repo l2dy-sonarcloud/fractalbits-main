@@ -9,5 +9,9 @@ pub async fn run_multi_az_tests(test_type: MultiAzTestType) -> CmdResult {
         MultiAzTestType::DataBlobResyncing => {
             data_blob_resyncing::run_data_blob_resyncing_tests().await
         }
+        MultiAzTestType::All => {
+            data_blob_tracking::run_multi_az_tests().await?;
+            data_blob_resyncing::run_data_blob_resyncing_tests().await
+        }
     }
 }
