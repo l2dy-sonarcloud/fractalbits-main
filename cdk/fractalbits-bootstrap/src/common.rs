@@ -60,7 +60,6 @@ pub fn create_systemd_unit_file_with_extra_opts(
     extra_start_opts: &str,
     enable_now: bool,
 ) -> CmdResult {
-    let aws_region = get_current_aws_region()?;
     let working_dir = "/data";
     let mut requires = "";
     let mut env_settings = String::new();
@@ -86,7 +85,7 @@ Environment="RUST_LOG=info""##
             env_settings = r##"
 Environment="RUST_LOG=info""##
                 .to_string();
-            format!("{BIN_PATH}{service_name} -r {aws_region} -c {ETC_PATH}{ROOT_SERVER_CONFIG}")
+            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{ROOT_SERVER_CONFIG}")
         }
         "bss_server" => {
             requires = "data-local.mount";

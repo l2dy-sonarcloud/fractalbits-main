@@ -1,15 +1,44 @@
 pub mod leader_election;
 pub mod multi_az;
 
-use crate::{CmdResult, TestType};
+use crate::{
+    cmd_build::{self, BuildMode},
+    cmd_service::{self, cleanup_test_root_server_instances},
+    CmdResult, DataBlobStorage, MultiAzTestType, ServiceName, TestType,
+};
 
 pub async fn run_tests(test_type: TestType) -> CmdResult {
+    let test_multi_az = |subcommand: MultiAzTestType| async {
+        cmd_service::start_services(
+            ServiceName::All,
+            BuildMode::Debug,
+            false,
+            DataBlobStorage::S3ExpressMultiAz,
+        )?;
+        multi_az::run_multi_az_tests(subcommand).await
+    };
+    let test_leader_election = || async {
+        cmd_service::start_services(
+            ServiceName::DdbLocal,
+            BuildMode::Debug,
+            false,
+            DataBlobStorage::default(),
+        )?;
+        leader_election::run_leader_election_tests().await?;
+        cleanup_test_root_server_instances()?;
+        Ok(())
+    };
+
+    // prepare
+    cmd_service::stop_service(ServiceName::All)?;
+    cmd_build::build_rust_servers(BuildMode::Debug)?;
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug)?;
     match test_type {
-        TestType::MultiAz { subcommand } => multi_az::run_multi_az_tests(subcommand).await,
-        TestType::LeaderElection => leader_election::run_leader_election_tests().await,
+        TestType::MultiAz { subcommand } => test_multi_az(subcommand).await,
+        TestType::LeaderElection => test_leader_election().await,
         TestType::All => {
-            leader_election::run_leader_election_tests().await?;
-            multi_az::run_multi_az_tests(crate::MultiAzTestType::All).await
+            test_leader_election().await?;
+            test_multi_az(MultiAzTestType::All).await
         }
     }
 }

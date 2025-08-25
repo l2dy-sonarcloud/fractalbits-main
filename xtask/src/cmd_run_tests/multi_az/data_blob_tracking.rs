@@ -58,20 +58,6 @@ fn dump_single_copy_blobs_list() -> Result<ResyncResult, std::io::Error> {
 pub async fn run_multi_az_tests() -> CmdResult {
     info!("Running multi-AZ resilience tests...");
 
-    // Initialize and start all required services for multi-AZ testing
-    info!("Initializing and starting services for multi-AZ testing...");
-    crate::cmd_service::stop_service(ServiceName::All)?;
-    crate::cmd_build::build_rust_servers(BuildMode::Debug)?;
-    crate::cmd_service::init_service(ServiceName::All, BuildMode::Debug)?;
-    crate::cmd_service::start_services(
-        ServiceName::All,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::S3ExpressMultiAz,
-    )?;
-
-    info!("All services started successfully");
-
     // Run all three test scenarios
     println!(
         "\n{}",

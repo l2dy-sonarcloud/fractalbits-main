@@ -1,8 +1,4 @@
-use crate::cmd_service::{
-    cleanup_test_root_server_instances, init_service, start_services,
-    start_test_root_server_instance,
-};
-use crate::{BuildMode, CmdResult, DataBlobStorage, ServiceName};
+use crate::cmd_service::{cleanup_test_root_server_instances, start_test_root_server_instance};
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::types::{
     AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ProvisionedThroughput,
@@ -16,15 +12,6 @@ use tokio::time::sleep;
 
 pub async fn run_leader_election_tests() -> CmdResult {
     info!("Running leader election tests...");
-
-    // Initialize DDB local service
-    init_service(ServiceName::DdbLocal, BuildMode::Debug)?;
-    start_services(
-        ServiceName::DdbLocal,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
 
     // Run all leader election test scenarios
     println!(
@@ -234,37 +221,19 @@ fn start_test_instance(
     table_name: &str,
     process_tracker: &mut TestProcessTracker,
 ) -> CmdResult {
-    let config_content = format!(
-        r#"server_port = {server_port}
-health_port = {health_port}
-api_server_mgmt_port = 18080
-metrics_port = {metrics_port}
-
-[leader_election]
-table_name = "{table_name}"
-leader_key = "{LEADER_KEY}"
-lease_duration_secs = 15
-heartbeat_interval_secs = 5
-"#
-    );
-
     let working_dir = run_fun!(pwd)?;
-    let config_path = format!(
-        "{working_dir}/etc/rss_test_config_{instance_id}_{}.toml",
-        table_name.replace("-", "_")
-    );
-    run_cmd! {
-        mkdir -p ${working_dir}/data/logs;
-        mkdir -p ${working_dir}/etc;
-        echo $config_content > $config_path;
-    }?;
-
     let leader_election_test_log =
         format!("{working_dir}/data/logs/leader_election_test_{instance_id}.log");
 
-    let process =
-        start_test_root_server_instance(instance_id, &config_path, &leader_election_test_log)
-            .map_err(|e| std::io::Error::other(format!("Failed to start test instance: {e}")))?;
+    let process = start_test_root_server_instance(
+        instance_id,
+        server_port,
+        health_port,
+        metrics_port,
+        table_name,
+        &leader_election_test_log,
+    )
+    .map_err(|e| std::io::Error::other(format!("Failed to start test instance: {e}")))?;
 
     // Get the PIDs from the spawned process
     let pids = process.pids();
@@ -284,7 +253,7 @@ async fn test_single_instance_becomes_leader() -> CmdResult {
     let mut process_tracker = TestProcessTracker::new();
 
     // Clean up any existing test instances first
-    cleanup_test_root_server_instances("single-instance-1")?;
+    cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
     sleep(Duration::from_secs(2)).await;
@@ -336,7 +305,7 @@ async fn test_leader_failover() -> CmdResult {
     let mut process_tracker = TestProcessTracker::new();
 
     // Clean up any existing test instances first
-    cleanup_test_root_server_instances("failover-instance")?;
+    cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
     sleep(Duration::from_secs(2)).await;
@@ -354,8 +323,8 @@ async fn test_leader_failover() -> CmdResult {
         &mut process_tracker,
     )?;
 
-    // Wait for first instance to become leader
-    sleep(Duration::from_secs(12)).await;
+    // Wait for first instance to become leader (may take up to lease duration)
+    sleep(Duration::from_secs(15)).await;
     assert_eq!(
         get_current_leader(&client, &table_name).await,
         Some("failover-instance-1".to_string())
@@ -365,8 +334,9 @@ async fn test_leader_failover() -> CmdResult {
     process_tracker.kill_process("failover-instance-1")?;
 
     // Wait for lease to expire before starting second instance
-    // This avoids metrics port conflict
-    sleep(Duration::from_secs(20)).await;
+    // With a 20-second lease, wait 25 seconds to ensure expiration
+    // This also avoids metrics port conflict
+    sleep(Duration::from_secs(25)).await;
 
     // Now start second instance after first is dead
     start_test_instance(
@@ -400,7 +370,7 @@ async fn test_leader_failover() -> CmdResult {
 
 async fn test_fence_token_prevents_split_brain() -> CmdResult {
     // Clean up any existing test instances first
-    cleanup_test_root_server_instances("fence-token-instance")?;
+    cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
     sleep(Duration::from_secs(2)).await;
@@ -466,7 +436,7 @@ async fn test_fence_token_prevents_split_brain() -> CmdResult {
 
 async fn test_clock_skew_detection() -> CmdResult {
     // Clean up any existing test instances first
-    cleanup_test_root_server_instances("clock-skew-instance")?;
+    cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
     sleep(Duration::from_secs(2)).await;

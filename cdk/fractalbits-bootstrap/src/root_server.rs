@@ -294,14 +294,22 @@ fencing_timeout_seconds = 300                  # Max time to wait for instance t
 }
 
 fn create_rss_config(nss_endpoint: &str) -> CmdResult {
+    let region = get_current_aws_region()?;
+    let instance_id = get_instance_id()?;
     let config_content = format!(
         r##"# Root Server Configuration
+
+# AWS region
+region = "{region}"
 
 # Server port
 server_port = 8088
 
 # Server health port
 health_port = 18088
+
+# Metrics port
+metrics_port = 18087
 
 # API Server management port
 api_server_mgmt_port = 18088
@@ -311,6 +319,12 @@ nss_addr = "{nss_endpoint}:8088"
 
 # Leader Election Configuration
 [leader_election]
+# Whether leader election is disabled
+disabled = false
+
+# Instance ID for this root server
+instance_id = "{instance_id}"
+
 # DynamoDB table name for leader election
 table_name = "fractalbits-leader-election"
 

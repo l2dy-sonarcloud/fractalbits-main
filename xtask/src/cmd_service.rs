@@ -738,7 +738,7 @@ Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
 Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
                 .to_string();
             env_settings += env_rust_log(build_mode);
-            format!("{pwd}/target/{build}/root_server -r fakeRegion")
+            format!("{pwd}/target/{build}/root_server")
         }
         ServiceName::ApiServer => {
             env_settings += env_rust_log(build_mode);
@@ -845,22 +845,26 @@ fn create_dirs_for_bss_server() -> CmdResult {
 // Test instance management for leader election tests
 pub fn start_test_root_server_instance(
     instance_id: &str,
-    config_path: &str,
+    server_port: u16,
+    health_port: u16,
+    metrics_port: u16,
+    table_name: &str,
     log_path: &str,
 ) -> Result<cmd_lib::CmdChildren, std::io::Error> {
     info!("Starting test root_server instance: {instance_id}");
 
-    let ddb_endpoint = "http://localhost:8000";
     let proc = spawn! {
         RUST_LOG=info,root_server=debug
         AWS_ACCESS_KEY_ID=fakeMyKeyId
         AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
-        cargo run --bin root_server --
-          --region fakeRegion
-          --ddb-endpoint $ddb_endpoint
-          --instance-id $instance_id
-          -c $config_path
-          |& ts -m "%b %d %H:%M:%.S" > $log_path
+        INSTANCE_ID=$instance_id
+        RSS_SERVER_PORT=$server_port
+        RSS_HEALTH_PORT=$health_port
+        RSS_METRICS_PORT=$metrics_port
+        LEADER_TABLE_NAME=$table_name
+        LEADER_KEY=test-leader
+        LEADER_LEASE_DURATION=20
+        ./target/debug/root_server |& ts -m "%b %d %H:%M:%.S" > $log_path
     }?;
 
     // Give the instance a moment to start
@@ -869,38 +873,8 @@ pub fn start_test_root_server_instance(
     Ok(proc)
 }
 
-pub fn cleanup_test_root_server_instances(instance_pattern: &str) -> CmdResult {
-    info!("Cleaning up test root_server instances matching: {instance_pattern}");
-
-    // Find processes matching the pattern
-    let pattern = format!("root_server.*--instance-id.*{instance_pattern}");
-    let pgrep_result = run_fun!(pgrep -f $pattern);
-
-    if let Ok(pids_str) = pgrep_result {
-        if !pids_str.trim().is_empty() {
-            info!("Found processes to clean up: {}", pids_str.trim());
-
-            // First try SIGTERM
-            run_cmd!(pkill -f $pattern)?;
-
-            // Wait for graceful shutdown
-            std::thread::sleep(std::time::Duration::from_secs(2));
-
-            // Check if any are still running and force kill if needed
-            let still_running = run_fun!(pgrep -f $pattern);
-            if let Ok(remaining_pids) = still_running {
-                if !remaining_pids.trim().is_empty() {
-                    info!(
-                        "Force killing remaining processes: {}",
-                        remaining_pids.trim()
-                    );
-                    run_cmd!(pkill -9 -f $pattern)?;
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-            }
-        }
-    }
-
+pub fn cleanup_test_root_server_instances() -> CmdResult {
+    run_cmd!(ignore pkill root_server)?;
     Ok(())
 }
 
