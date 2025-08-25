@@ -5,6 +5,7 @@ import { FractalbitsBenchVpcStack } from "../lib/fractalbits-bench-vpc-stack";
 import { PeeringStack } from "../lib/fractalbits-peering-stack";
 import { FractalbitsMetaStack } from "../lib/fractalbits-meta-stack";
 import { VpcWithPrivateLinkStack } from "../lib/vpc-with-private-link-stack";
+import { S3ExpressCrossAzTestStack } from "../lib/s3express-cross-az-test-stack";
 
 const app = new cdk.App();
 
@@ -87,4 +88,13 @@ new FractalbitsMetaStack(app, "FractalbitsMetaStack-Bss", {
 // === VpcWithPrivateLinkStack ===
 new VpcWithPrivateLinkStack(app, "VpcWithPrivateLinkStack", {
   env: env,
+});
+
+// === S3ExpressCrossAzTestStack ===
+new S3ExpressCrossAzTestStack(app, "S3ExpressCrossAzTestStack", {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: "us-east-2",
+  },
+  targetAz: "use2-az1",
 });

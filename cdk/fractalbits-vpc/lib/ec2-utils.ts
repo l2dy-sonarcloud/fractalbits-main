@@ -10,6 +10,32 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as elbv2_targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
 import * as path from "path";
+import { execSync } from "child_process";
+
+export const getAzNameFromIdAtBuildTime = (
+  azId: string,
+  region?: string,
+): string => {
+  try {
+    const targetRegion =
+      region ||
+      process.env.AWS_REGION ||
+      process.env.AWS_DEFAULT_REGION ||
+      "us-west-2";
+    const result = execSync(
+      `aws ec2 describe-availability-zones --region ${targetRegion} --zone-ids ${azId} --query 'AvailabilityZones[0].ZoneName' --output text`,
+      { encoding: "utf-8" },
+    ).trim();
+    if (!result || result === "None") {
+      throw new Error(`Could not find AZ name for zone ID: ${azId}`);
+    }
+    console.log(`Resolved AZ ID ${azId} to AZ name ${result}`);
+    return result;
+  } catch (error) {
+    console.error(`Error resolving AZ ID ${azId}:`, error);
+    throw error;
+  }
+};
 
 export const createVpcEndpoints = (vpc: ec2.Vpc) => {
   // Add Gateway Endpoint for S3
@@ -63,6 +89,7 @@ export const createEc2Role = (scope: Construct): iam.Role => {
       effect: iam.Effect.ALLOW,
       actions: [
         "s3express:CreateBucket",
+        "s3express:DeleteBucket",
         "s3express:CreateSession",
         "s3express:DeleteSession",
         "s3express:PutObject",

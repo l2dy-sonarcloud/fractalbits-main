@@ -21,5 +21,10 @@
     "us-west-2b",
     "us-west-2c",
     "us-west-2d"
+  ],
+  "availability-zones:account=ACCOUNT_ID_OWNER:region=us-east-2": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
   ]
 }
