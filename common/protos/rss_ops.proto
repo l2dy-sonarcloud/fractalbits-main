@@ -26,6 +26,9 @@ enum Command {
   // AZ status management
   GetAzStatus = 25;
   SetAzStatus = 26;
+
+  // Bucket management
+  CreateBucket = 27;
 }
 
 // Put
@@ -215,6 +218,19 @@ message SetAzStatusRequest {
 }
 
 message SetAzStatusResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    string error = 2;
+  }
+}
+
+// CreateBucket - Create a new bucket (stub for NSS integration)
+message CreateBucketRequest {
+  string bucket_name = 1;
+  bool enable_versioning = 2;
+}
+
+message CreateBucketResponse {
   oneof result {
     google.protobuf.Empty ok = 1;
     string error = 2;
