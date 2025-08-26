@@ -24,7 +24,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[clap(name = "api_server", about = "API server")]
 struct Opt {
     #[clap(short = 'c', long = "config", long_help = "Config file path")]
-    config_file: PathBuf,
+    config_file: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -59,13 +59,21 @@ async fn main() {
     );
 
     let opt = Opt::parse();
-    let config: Config = config::Config::builder()
-        .add_source(config::File::from(opt.config_file).required(true))
-        .add_source(config::Environment::with_prefix("APP"))
-        .build()
-        .unwrap()
-        .try_deserialize()
-        .unwrap();
+    let config = match opt.config_file {
+        Some(config_file) => config::Config::builder()
+            .add_source(config::File::from(config_file).required(true))
+            .add_source(config::Environment::with_prefix("APP"))
+            .build()
+            .unwrap()
+            .try_deserialize()
+            .unwrap(),
+        None => config::Config::builder()
+            .add_source(config::Environment::with_prefix("APP"))
+            .build()
+            .unwrap()
+            .try_deserialize()
+            .unwrap_or_else(|_| Config::default()),
+    };
 
     if config.with_metrics {
         #[cfg(feature = "metrics_statsd")]
