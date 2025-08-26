@@ -3,8 +3,7 @@ pub mod multi_az;
 
 use crate::{
     cmd_build::{self, BuildMode},
-    cmd_service::{self, cleanup_test_root_server_instances},
-    CmdResult, DataBlobStorage, MultiAzTestType, ServiceName, TestType,
+    cmd_service, CmdResult, DataBlobStorage, MultiAzTestType, ServiceName, TestType,
 };
 
 pub async fn run_tests(test_type: TestType) -> CmdResult {
@@ -18,14 +17,9 @@ pub async fn run_tests(test_type: TestType) -> CmdResult {
         multi_az::run_multi_az_tests(subcommand).await
     };
     let test_leader_election = || async {
-        cmd_service::start_services(
-            ServiceName::DdbLocal,
-            BuildMode::Debug,
-            false,
-            DataBlobStorage::default(),
-        )?;
+        cmd_service::start_ddb_local_service()?;
         leader_election::run_leader_election_tests().await?;
-        cleanup_test_root_server_instances()?;
+        cmd_service::cleanup_test_root_server_instances()?;
         Ok(())
     };
 

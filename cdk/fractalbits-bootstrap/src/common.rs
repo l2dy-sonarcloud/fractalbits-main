@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 pub const BIN_PATH: &str = "/opt/fractalbits/bin/";
 pub const ETC_PATH: &str = "/opt/fractalbits/etc/";
-pub const WEB_ROOT: &str = "/opt/fractalbits/www/";
+pub const GUI_WEB_ROOT: &str = "/opt/fractalbits/www/";
 pub const API_SERVER_CONFIG: &str = "api_server_cloud_config.toml";
 pub const BSS_SERVER_CONFIG: &str = "bss_server_cloud_config.toml";
 pub const NSS_SERVER_CONFIG: &str = "nss_server_cloud_config.toml";
@@ -52,14 +52,6 @@ fn download_binary(file_name: &str) -> CmdResult {
 }
 
 pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResult {
-    create_systemd_unit_file_with_extra_opts(service_name, "", enable_now)
-}
-
-pub fn create_systemd_unit_file_with_extra_opts(
-    service_name: &str,
-    extra_start_opts: &str,
-    enable_now: bool,
-) -> CmdResult {
     let working_dir = "/data";
     let mut requires = "";
     let mut env_settings = String::new();
@@ -69,7 +61,15 @@ pub fn create_systemd_unit_file_with_extra_opts(
             env_settings = r##"
 Environment="RUST_LOG=info""##
                 .to_string();
-            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG} {extra_start_opts}")
+            format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}")
+        }
+        "gui_server" => {
+            env_settings = r##"
+Environment="RUST_LOG=info"
+Environment="GUI_WEB_ROOT={GUI_WEB_ROOT}"
+"##
+            .to_string();
+            format!("{BIN_PATH}api_server -c {ETC_PATH}{API_SERVER_CONFIG}")
         }
         "nss" => {
             managed_service = true;

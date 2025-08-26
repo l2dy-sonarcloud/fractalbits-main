@@ -174,7 +174,7 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
     };
 
     match service {
-        ServiceName::ApiServer => {}
+        ServiceName::ApiServer | ServiceName::GuiServer => {}
         ServiceName::DdbLocal => init_ddb_local()?,
         ServiceName::Minio => init_minio()?,
         ServiceName::MinioAz1 => init_minio_dev_az1()?,
@@ -330,7 +330,8 @@ pub fn start_services(
             start_nss_role_agent_service(build_mode, ServiceName::NssRoleAgentB)?
         }
         ServiceName::Rss => start_rss_service(build_mode)?,
-        ServiceName::ApiServer => start_api_server(build_mode, data_blob_storage, for_gui)?,
+        ServiceName::ApiServer => start_api_server(build_mode, data_blob_storage, false)?,
+        ServiceName::GuiServer => start_api_server(build_mode, data_blob_storage, true)?,
         ServiceName::DataBlobResyncServer => {
             info!("DataBlobResyncServer is a standalone CLI tool, not a service. Use 'cargo run -p data_blob_resync_server' instead.");
         }
@@ -442,7 +443,7 @@ pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
     Ok(())
 }
 
-fn start_ddb_local_service() -> CmdResult {
+pub fn start_ddb_local_service() -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let service_file = "etc/ddb_local.service";
     let java = run_fun!(bash -c "command -v java")?;
@@ -572,21 +573,17 @@ fn create_api_server_systemd_unit_file(
     data_blob_storage: DataBlobStorage,
     for_gui: bool,
 ) -> CmdResult {
-    let extra_start_opts = match for_gui {
-        false => "",
-        true => "--gui ui/dist",
-    };
     let config_file = match data_blob_storage {
         DataBlobStorage::HybridSingleAz => "etc/api_server_hybrid_single_az.toml".into(),
         DataBlobStorage::S3ExpressMultiAz => "etc/api_server_s3_express_multi_az.toml".into(),
         DataBlobStorage::S3ExpressSingleAz => "etc/api_server_s3_express_single_az.toml".into(),
     };
-    create_systemd_unit_file_with_extra_start_opts(
-        ServiceName::ApiServer,
-        build_mode,
-        Some(config_file),
-        extra_start_opts,
-    )?;
+    let service = if for_gui {
+        ServiceName::GuiServer
+    } else {
+        ServiceName::ApiServer
+    };
+    create_systemd_unit_file(service, build_mode, Some(config_file))?;
 
     Ok(())
 }
@@ -686,15 +683,6 @@ fn create_systemd_unit_file(
     build_mode: BuildMode,
     config_file: Option<String>,
 ) -> CmdResult {
-    create_systemd_unit_file_with_extra_start_opts(service, build_mode, config_file, "")
-}
-
-fn create_systemd_unit_file_with_extra_start_opts(
-    service: ServiceName,
-    build_mode: BuildMode,
-    config_file: Option<String>,
-    extra_start_opts: &str,
-) -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let build = build_mode.as_ref();
     let service_name = service.as_ref();
@@ -742,7 +730,13 @@ Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
         }
         ServiceName::ApiServer => {
             env_settings += env_rust_log(build_mode);
-            format!("{pwd}/target/{build}/api_server {extra_start_opts}")
+            format!("{pwd}/target/{build}/api_server")
+        }
+        ServiceName::GuiServer => {
+            env_settings += env_rust_log(build_mode);
+            env_settings += r##"
+Environment="GUI_WEB_ROOT=ui/dist""##;
+            format!("{pwd}/target/{build}/api_server")
         }
         _ => unreachable!(),
     };
@@ -762,7 +756,7 @@ Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
         ServiceName::NssRoleAgentB => "After=rss.service\nWants=rss.service\n",
         ServiceName::Rss => "After=ddb_local.service\nWants=ddb_local.service\n",
         ServiceName::Nss => "After=minio.service\nWants=minio.service\n",
-        ServiceName::ApiServer => "After=rss.service nss.service\nWants=rss.service nss.service\n",
+        ServiceName::ApiServer | ServiceName::GuiServer => "After=rss.service nss.service\nWants=rss.service nss.service\n",
         _ => "",
     };
 
@@ -781,9 +775,7 @@ WantedBy=multi-user.target
 "##
     );
     let service_file = match service {
-        ServiceName::NssRoleAgentA => "nss_role_agent_a.service".to_string(),
-        ServiceName::NssRoleAgentB => "nss_role_agent_b.service".to_string(),
-        ServiceName::Nss => "nss.service".to_string(),
+        ServiceName::GuiServer => "api_server.service".to_string(),
         _ => format!("{service_name}.service"),
     };
 
@@ -900,7 +892,7 @@ pub fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdRes
                 ServiceName::Bss => check_port_ready(8088),
                 ServiceName::Nss => check_port_ready(8087),
                 ServiceName::Mirrord => check_port_ready(9999),
-                ServiceName::ApiServer => check_port_ready(8080),
+                ServiceName::ApiServer | ServiceName::GuiServer => check_port_ready(8080),
                 ServiceName::NssRoleAgentA => check_port_ready(8087), // Check managed nss_server
                 ServiceName::NssRoleAgentB => check_port_ready(9999), // check managed mirrord
                 ServiceName::DataBlobResyncServer => true,            // CLI tool, not a service

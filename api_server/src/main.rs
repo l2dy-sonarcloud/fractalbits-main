@@ -25,9 +25,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 struct Opt {
     #[clap(short = 'c', long = "config", long_help = "Config file path")]
     config_file: PathBuf,
-
-    #[clap(long = "gui", long_help = "Web root serve as gui server")]
-    gui_web_root: Option<String>,
 }
 
 #[tokio::main]
@@ -122,7 +119,8 @@ async fn main() {
         .route("/cache/clear", post(cache_mgmt::clear_cache));
 
     // Main application router
-    let main_router = if let Some(web_root) = opt.gui_web_root {
+    let main_router = if let Ok(web_root) = std::env::var("GUI_WEB_ROOT") {
+        info!(%web_root, "serving ui");
         Router::new()
             .nest_service("/ui", ServeDir::new(web_root))
             .nest("/api_keys", api_key_routes)

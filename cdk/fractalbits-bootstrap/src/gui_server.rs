@@ -9,7 +9,7 @@ pub fn bootstrap(
     download_binaries(&["api_server"])?;
 
     let builds_bucket = format!("s3://fractalbits-builds-{}", get_current_aws_region()?);
-    run_cmd!(aws s3 cp --no-progress $builds_bucket/ui $WEB_ROOT --recursive)?;
+    run_cmd!(aws s3 cp --no-progress $builds_bucket/ui $GUI_WEB_ROOT --recursive)?;
 
     // Check if we're using S3 Express by checking if remote_az is provided
     let is_s3_express = remote_az.is_some();
@@ -53,8 +53,7 @@ pub fn bootstrap(
 
     api_server::create_config(bucket, &bss_ip, nss_endpoint, rss_endpoint, remote_az)?;
     // setup_cloudwatch_agent()?;
-    let extra_start_opts = format!("--gui {WEB_ROOT}");
-    create_systemd_unit_file_with_extra_opts("api_server", &extra_start_opts, true)?;
+    create_systemd_unit_file("gui_server", true)?;
 
     Ok(())
 }

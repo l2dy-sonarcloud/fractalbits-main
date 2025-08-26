@@ -68,7 +68,7 @@ fn setup_configs(
     create_ebs_udev_rule(volume_id, "nss_role_agent")?;
     create_coredump_config()?;
     create_nss_role_agent_config(mirrord_endpoint, rss_endpoint)?;
-    create_systemd_unit_file_with_extra_opts("nss_role_agent", "", false)?;
+    create_systemd_unit_file("nss_role_agent", false)?;
     create_systemd_unit_file("mirrord", false)?;
     create_systemd_unit_file(service_name, false)?;
     create_logrotate_for_stats()?;
