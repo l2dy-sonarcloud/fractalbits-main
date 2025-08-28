@@ -164,9 +164,8 @@ impl AppState {
     }
 }
 
-/// Api key and bucket operations
+// API Key operations
 impl AppState {
-    // API Key operations
     pub async fn get_api_key(&self, key_id: String) -> Result<Versioned<ApiKey>, RpcError> {
         let full_key = format!("api_key:{key_id}");
         if let Some(json) = self.cache.get(&full_key).await {
@@ -228,8 +227,10 @@ impl AppState {
             .map(|x| serde_json::from_slice(x.as_bytes()).unwrap())
             .collect())
     }
+}
 
-    // Bucket operations
+// Bucket operations
+impl AppState {
     pub async fn get_bucket(&self, bucket_name: String) -> Result<Versioned<Bucket>, RpcError> {
         let full_key = format!("bucket:{bucket_name}");
         if let Some(json) = self.cache.get(&full_key).await {
