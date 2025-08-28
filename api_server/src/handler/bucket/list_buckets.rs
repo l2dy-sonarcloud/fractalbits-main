@@ -1,19 +1,13 @@
-use std::sync::Arc;
-
 use axum::{extract::Query, response::Response, RequestPartsExt};
-use data_types::{table::Table, BucketTable};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    handler::{
-        common::{
-            response::xml::{Xml, XmlnsS3},
-            s3_error::S3Error,
-            time::format_timestamp,
-        },
-        BucketRequestContext,
+use crate::handler::{
+    common::{
+        response::xml::{Xml, XmlnsS3},
+        s3_error::S3Error,
+        time::format_timestamp,
     },
-    AppState,
+    BucketRequestContext,
 };
 
 #[allow(dead_code)]
@@ -62,16 +56,6 @@ struct Bucket {
     name: String,
 }
 
-impl Bucket {
-    fn from_table_with_region(bucket: &data_types::Bucket, region: &str) -> Self {
-        Self {
-            bucket_region: region.into(),
-            creation_date: format_timestamp(bucket.creation_date),
-            name: bucket.bucket_name.clone(),
-        }
-    }
-}
-
 #[derive(Default, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct Owner {
@@ -82,13 +66,16 @@ struct Owner {
 
 pub async fn list_buckets_handler(ctx: BucketRequestContext) -> Result<Response, S3Error> {
     let Query(_opts): Query<ListBucketsOptions> = ctx.request.into_parts().0.extract().await?;
-    let bucket_table: Table<Arc<AppState>, BucketTable> =
-        Table::new(ctx.app.clone(), Some(ctx.app.cache.clone()));
-    let buckets: Vec<Bucket> = bucket_table
-        .list(Some(ctx.app.config.rpc_timeout()))
+    let buckets: Vec<Bucket> = ctx
+        .app
+        .list_buckets()
         .await?
         .iter()
-        .map(|bucket| Bucket::from_table_with_region(bucket, &ctx.app.config.region))
+        .map(|bucket| Bucket {
+            bucket_region: ctx.app.config.region.clone(),
+            creation_date: format_timestamp(bucket.creation_date),
+            name: bucket.bucket_name.clone(),
+        })
         .collect();
     Xml(ListAllMyBucketsResult::from(buckets)).try_into()
 }

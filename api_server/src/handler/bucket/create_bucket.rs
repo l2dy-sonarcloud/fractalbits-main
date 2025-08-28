@@ -1,6 +1,5 @@
 use axum::{body::Body, http::header, response::Response};
 use bytes::Buf;
-use rpc_client_common::rpc_retry;
 use rpc_client_common::RpcError;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -68,37 +67,19 @@ pub async fn create_bucket_handler(ctx: BucketRequestContext) -> Result<Response
         }
     }
 
-    let rpc_timeout = ctx.app.config.rpc_timeout();
-
     // Determine if we're in multi-AZ mode based on the blob storage backend
     let is_multi_az = matches!(
         ctx.app.config.blob_storage.backend,
         crate::BlobStorageBackend::S3ExpressMultiAzWithTracking
     );
 
-    // Call root_server to handle the full bucket creation process with retry logic
-    let result = rpc_retry!(
-        ctx.app.rpc_clients_rss,
-        checkout(ctx.app.config.rss_addr.clone()),
-        create_bucket(
-            &ctx.bucket_name,
-            &api_key_id,
-            is_multi_az,
-            Some(rpc_timeout)
-        )
-    )
-    .await;
-
+    let result = ctx
+        .app
+        .create_bucket(&ctx.bucket_name, &api_key_id, is_multi_az)
+        .await;
     match result {
         Ok(_) => {
             info!("Successfully created bucket: {}", ctx.bucket_name);
-
-            // Invalidate API key cache since it now has new bucket permissions
-            ctx.app
-                .cache
-                .invalidate(&format!("api_key:{api_key_id}"))
-                .await;
-
             Ok(Response::builder()
                 .header(header::LOCATION, format!("/{}", ctx.bucket_name))
                 .body(Body::empty())?)

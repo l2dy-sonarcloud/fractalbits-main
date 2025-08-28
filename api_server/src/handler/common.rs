@@ -8,7 +8,7 @@ pub mod signature;
 pub mod time;
 pub mod xheader;
 
-use rpc_client_common::{nss_rpc_retry, rpc_retry};
+use rpc_client_common::nss_rpc_retry;
 use std::collections::BTreeMap;
 
 use crate::{

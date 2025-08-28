@@ -1,6 +1,5 @@
-use rpc_client_common::rpc_retry;
-
 use axum::{body::Body, response::Response};
+use rpc_client_common::RpcError;
 use tracing::info;
 
 use crate::handler::{common::s3_error::S3Error, BucketRequestContext};
@@ -8,7 +7,6 @@ use crate::handler::{common::s3_error::S3Error, BucketRequestContext};
 pub async fn delete_bucket_handler(ctx: BucketRequestContext) -> Result<Response, S3Error> {
     let bucket = ctx.resolve_bucket().await?;
     info!("handling delete_bucket request: {}", bucket.bucket_name);
-    let rpc_timeout = ctx.app.config.rpc_timeout();
 
     let api_key_id = {
         if !ctx
@@ -22,34 +20,19 @@ pub async fn delete_bucket_handler(ctx: BucketRequestContext) -> Result<Response
         ctx.api_key.data.key_id.clone()
     };
 
-    // Send delete bucket RPC to root server
-    let result = rpc_retry!(
-        ctx.app.rpc_clients_rss,
-        checkout(ctx.app.config.rss_addr.clone()),
-        delete_bucket(&bucket.bucket_name, &api_key_id, Some(rpc_timeout))
-    )
-    .await;
-
+    let result = ctx
+        .app
+        .delete_bucket(&bucket.bucket_name, &api_key_id)
+        .await;
     match result {
         Ok(_) => {
             info!("Successfully deleted bucket: {}", bucket.bucket_name);
-
-            // Invalidate both bucket and API key cache
-            ctx.app
-                .cache
-                .invalidate(&format!("bucket:{}", bucket.bucket_name))
-                .await;
-            ctx.app
-                .cache
-                .invalidate(&format!("api_key:{api_key_id}"))
-                .await;
-
             Ok(Response::new(Body::empty()))
         }
         Err(e) => {
             tracing::error!("Failed to delete bucket {}: {}", bucket.bucket_name, e);
             match e {
-                rpc_client_common::RpcError::InternalResponseError(msg) => {
+                RpcError::InternalResponseError(msg) => {
                     if msg.contains("not empty") || msg.contains("not found") {
                         if msg.contains("not empty") {
                             Err(S3Error::BucketNotEmpty)

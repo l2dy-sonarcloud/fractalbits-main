@@ -7,29 +7,23 @@ import "google/protobuf/empty.proto";
 enum Command {
   Invalid = 0;
   Put = 1;
-  PutWithExtra = 2;
-  Get = 3;
-  Delete = 4;
-  DeleteWithExtra = 5;
-  List = 6;
+  Get = 2;
+  Delete = 3;
+  List = 4;
 
   // Health agent commands
-  // RegisterInstance = 7;
-  Heartbeat = 8;
-  // GetInstanceState = 9;
-  // PromoteToActive = 10;
-  // DemoteToStandby = 11;
+  Heartbeat = 5;
 
   // NSS role management
-  GetNssRole = 22;
+  GetNssRole = 6;
 
   // AZ status management
-  GetAzStatus = 25;
-  SetAzStatus = 26;
+  GetAzStatus = 7;
+  SetAzStatus = 8;
 
   // Bucket management
-  CreateBucket = 27;
-  DeleteBucket = 28;
+  CreateBucket = 9;
+  DeleteBucket = 10;
 }
 
 // Put
@@ -47,23 +41,6 @@ message PutResponse {
   }
 }
 
-// PutWithExtra
-message PutWithExtraRequest {
-  int64 version = 1;
-  string key = 2;
-  string value = 3;
-  int64 extra_version = 4;
-  string extra_key = 5;
-  string extra_value = 6;
-}
-
-message PutWithExtraResponse {
-  oneof result {
-    google.protobuf.Empty ok = 1;
-    google.protobuf.Empty err_retry = 2;
-    string err_others = 3;
-  }
-}
 
 // Get
 message GetRequest {
@@ -95,21 +72,6 @@ message DeleteResponse {
   }
 }
 
-// DeleteWithExtra
-message DeleteWithExtraRequest {
-  string key = 1;
-  int64 extra_version = 2;
-  string extra_key = 3;
-  string extra_value = 4;
-}
-
-message DeleteWithExtraResponse {
-  oneof result {
-    google.protobuf.Empty ok = 1;
-    google.protobuf.Empty err_retry = 2;
-    string err_others = 3;
-  }
-}
 
 // List
 message ListRequest {

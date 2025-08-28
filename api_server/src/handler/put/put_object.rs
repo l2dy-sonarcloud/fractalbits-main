@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use metrics::histogram;
-use rpc_client_common::{nss_rpc_retry, rpc_retry};
+use rpc_client_common::nss_rpc_retry;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{

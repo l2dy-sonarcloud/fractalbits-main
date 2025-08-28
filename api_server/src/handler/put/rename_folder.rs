@@ -1,7 +1,7 @@
 use crate::handler::{common::s3_error::S3Error, ObjectRequestContext};
 use axum::response::Response;
 use axum::{extract::Query, response::IntoResponse, RequestPartsExt};
-use rpc_client_common::{nss_rpc_retry, rpc_retry};
+use rpc_client_common::nss_rpc_retry;
 use serde::Deserialize;
 use tracing::{error, info};
 

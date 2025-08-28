@@ -10,31 +10,27 @@ pub use list_buckets::list_buckets_handler;
 
 use super::common::{authorization::Authorization, s3_error::S3Error};
 use crate::AppState;
-use data_types::{
-    table::Table,
-    {Bucket, BucketTable},
-};
+use data_types::Bucket;
 use metrics::histogram;
 use rpc_client_common::RpcError;
 use std::{sync::Arc, time::Instant};
 
 pub async fn resolve_bucket(app: Arc<AppState>, bucket_name: String) -> Result<Bucket, S3Error> {
     let start = Instant::now();
-    let cache = app.cache.clone();
-    let rpc_timeout = app.config.rpc_timeout();
-    let bucket_table: Table<Arc<AppState>, BucketTable> = Table::new(app, Some(cache));
-    let duration = start.elapsed();
-    match bucket_table.get(bucket_name, true, Some(rpc_timeout)).await {
+    match app.get_bucket(bucket_name).await {
         Ok(bucket) => {
+            let duration = start.elapsed();
             histogram!("resolve_bucket_nanos", "status" => "Ok").record(duration.as_nanos() as f64);
             Ok(bucket.data)
         }
         Err(RpcError::NotFound) => {
+            let duration = start.elapsed();
             histogram!("resolve_bucket_nanos", "status" => "Fail_NotFound")
                 .record(duration.as_nanos() as f64);
             Err(S3Error::NoSuchBucket)
         }
         Err(e) => {
+            let duration = start.elapsed();
             histogram!("resolve_bucket_nanos", "status" => "Fail_Others")
                 .record(duration.as_nanos() as f64);
             Err(e.into())

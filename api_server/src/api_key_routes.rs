@@ -8,8 +8,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 use crate::AppState;
-use data_types::table::Table;
-use data_types::{ApiKey, ApiKeyTable, Versioned};
+use data_types::{ApiKey, Versioned};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
@@ -57,20 +56,16 @@ pub async fn create_api_key(
         )
     })?;
 
-    let table: Table<_, ApiKeyTable> = Table::new(app.clone(), None);
-    table
-        .put(&api_key, Some(app.config.rpc_timeout()))
-        .await
-        .map_err(|e| {
-            error!("Failed to put API key to RSS: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    code: "InternalError".to_string(),
-                    message: format!("Failed to put API key to RSS: {e:?}"),
-                }),
-            )
-        })?;
+    app.put_api_key(&api_key).await.map_err(|e| {
+        error!("Failed to put API key to RSS: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "InternalError".to_string(),
+                message: format!("Failed to put API key to RSS: {e:?}"),
+            }),
+        )
+    })?;
 
     Ok(Json(api_key.data.into()))
 }
@@ -81,33 +76,26 @@ pub async fn delete_api_key(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let key_id = key_id.trim_start_matches("api_key:").to_string();
     info!("Deleting API key with key_id: {}", key_id);
-    let table: Table<_, ApiKeyTable> = Table::new(app.clone(), None);
-    let api_key = table
-        .get(key_id, true, Some(app.config.rpc_timeout()))
-        .await
-        .map_err(|e| {
-            error!("Failed to get API key from RSS: {e:?}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    code: "InternalError".to_string(),
-                    message: format!("Failed to get API key from RSS: {e:?}"),
-                }),
-            )
-        })?;
-    table
-        .delete(&api_key.data, Some(app.config.rpc_timeout()))
-        .await
-        .map_err(|e| {
-            error!("Failed to put API key to RSS: {e:?}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    code: "InternalError".to_string(),
-                    message: format!("Failed to put API key to RSS: {e:?}"),
-                }),
-            )
-        })?;
+    let api_key = app.get_api_key(key_id).await.map_err(|e| {
+        error!("Failed to get API key from RSS: {e:?}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "InternalError".to_string(),
+                message: format!("Failed to get API key from RSS: {e:?}"),
+            }),
+        )
+    })?;
+    app.delete_api_key(&api_key.data).await.map_err(|e| {
+        error!("Failed to put API key to RSS: {e:?}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "InternalError".to_string(),
+                message: format!("Failed to put API key to RSS: {e:?}"),
+            }),
+        )
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -116,20 +104,16 @@ pub async fn list_api_keys(
     State(app): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ApiKeyResponse>>, (StatusCode, Json<ErrorResponse>)> {
     info!("Listing API keys");
-    let table: Table<_, ApiKeyTable> = Table::new(app.clone(), None);
-    let api_keys = table
-        .list(Some(app.config.rpc_timeout()))
-        .await
-        .map_err(|e| {
-            error!("Failed to list API keys from RSS: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    code: "InternalError".to_string(),
-                    message: format!("Failed to list API keys from RSS: {e:?}"),
-                }),
-            )
-        })?;
+    let api_keys = app.list_api_keys().await.map_err(|e| {
+        error!("Failed to list API keys from RSS: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "InternalError".to_string(),
+                message: format!("Failed to list API keys from RSS: {e:?}"),
+            }),
+        )
+    })?;
 
     let mut api_key_responses = Vec::new();
     for api_key in api_keys {

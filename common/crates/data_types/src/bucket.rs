@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use super::permission::BucketKeyPerm;
-use super::table::{Entry, TableSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,18 +32,4 @@ impl Bucket {
             tracking_root_blob_name,
         }
     }
-}
-
-impl Entry for Bucket {
-    fn key(&self) -> String {
-        self.bucket_name.clone()
-    }
-}
-
-pub struct BucketTable;
-
-impl TableSchema for BucketTable {
-    const TABLE_NAME: &'static str = "bucket";
-
-    type E = Bucket;
 }

@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use super::permission::BucketKeyPerm;
-use super::table::{Entry, TableSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -64,18 +63,4 @@ impl ApiKey {
     pub fn allow_owner(&self, bucket: &str) -> bool {
         self.bucket_permissions(bucket).allow_owner
     }
-}
-
-impl Entry for ApiKey {
-    fn key(&self) -> String {
-        self.key_id.clone()
-    }
-}
-
-pub struct ApiKeyTable;
-
-impl TableSchema for ApiKeyTable {
-    const TABLE_NAME: &'static str = "api_key";
-
-    type E = ApiKey;
 }

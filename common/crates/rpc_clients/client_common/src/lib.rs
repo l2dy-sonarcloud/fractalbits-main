@@ -108,20 +108,20 @@ macro_rules! rpc_retry {
 #[macro_export]
 macro_rules! bss_rpc_retry {
     ($pool:expr, $method:ident($($args:expr),*)) => {
-        rpc_retry!($pool, checkout_rpc_client_bss(), $method($($args),*))
+        $crate::rpc_retry!($pool, checkout_rpc_client_bss(), $method($($args),*))
     };
 }
 
 #[macro_export]
 macro_rules! nss_rpc_retry {
     ($pool:expr, $method:ident($($args:expr),*)) => {
-        rpc_retry!($pool, checkout_rpc_client_nss(), $method($($args),*))
+        $crate::rpc_retry!($pool, checkout_rpc_client_nss(), $method($($args),*))
     };
 }
 
 #[macro_export]
 macro_rules! rss_rpc_retry {
     ($pool:expr, $method:ident($($args:expr),*)) => {
-        rpc_retry!($pool, checkout_rpc_client_rss(), $method($($args),*))
+        $crate::rpc_retry!($pool, checkout_rpc_client_rss(), $method($($args),*))
     };
 }

@@ -211,7 +211,8 @@ async fn any_handler_inner(
         if auth.is_none() {
             tracing::warn!("allowing anonymous access, falling back to 'test_api_key'");
             let access_key = "test_api_key";
-            let api_key = common::signature::payload::get_api_key(app.clone(), access_key)
+            let api_key = app
+                .get_api_key(access_key.to_string())
                 .await
                 .map_err(|_| S3Error::InvalidAccessKeyId)?;
             VerifiedRequest {
@@ -234,10 +235,10 @@ async fn any_handler_inner(
                                 auth
                             );
                             let access_key = "test_api_key";
-                            let api_key =
-                                common::signature::payload::get_api_key(app.clone(), access_key)
-                                    .await
-                                    .map_err(|_| S3Error::InvalidAccessKeyId)?;
+                            let api_key = app
+                                .get_api_key(access_key.to_string())
+                                .await
+                                .map_err(|_| S3Error::InvalidAccessKeyId)?;
                             VerifiedRequest {
                                 request: request.map(ReqBody::from),
                                 api_key,

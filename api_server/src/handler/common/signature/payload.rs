@@ -7,13 +7,9 @@ use axum::http::header::{HeaderMap, HeaderValue, AUTHORIZATION, HOST};
 use axum::http::{request::Request, Method};
 use axum::RequestExt;
 use chrono::{DateTime, Utc};
-use data_types::{
-    table::Table,
-    Versioned, {ApiKey, ApiKeyTable},
-};
+use data_types::{ApiKey, Versioned};
 use hmac::Mac;
 use itertools::Itertools;
-use rpc_client_common::RpcError;
 use sha2::{Digest, Sha256};
 
 use crate::handler::common::{request::extract::Authentication, xheader};
@@ -273,11 +269,7 @@ pub async fn verify_v4(
     auth: &Authentication,
     payload: &[u8],
 ) -> Result<Option<Versioned<ApiKey>>, Error> {
-    let api_key_table: Table<Arc<AppState>, ApiKeyTable> =
-        Table::new(app.clone(), Some(app.cache.clone()));
-    let key = api_key_table
-        .get(auth.key_id.clone(), true, Some(app.config.rpc_timeout()))
-        .await?;
+    let key = app.get_api_key(auth.key_id.clone()).await?;
 
     let mut hmac = signing_hmac(&auth.date, &key.data.secret_key, &app.config.region)
         .map_err(|_| Error::Other("Unable to build signing HMAC".into()))?;
@@ -288,15 +280,4 @@ pub async fn verify_v4(
     }
 
     Ok(Some(key))
-}
-
-pub async fn get_api_key(
-    app: Arc<AppState>,
-    access_key: &str,
-) -> Result<Versioned<ApiKey>, RpcError> {
-    let api_key_table: Table<Arc<AppState>, ApiKeyTable> =
-        Table::new(app.clone(), Some(app.cache.clone()));
-    api_key_table
-        .get(access_key.to_string(), true, Some(app.config.rpc_timeout()))
-        .await
 }

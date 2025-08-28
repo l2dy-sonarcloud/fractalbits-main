@@ -2,7 +2,7 @@ use super::{BlobStorage, BlobStorageError};
 use bytes::Bytes;
 use metrics::histogram;
 use rpc_client_bss::RpcClientBss;
-use rpc_client_common::{bss_rpc_retry, rpc_retry};
+use rpc_client_common::bss_rpc_retry;
 use slotmap_conn_pool::{ConnPool, Poolable};
 use std::{
     sync::Arc,

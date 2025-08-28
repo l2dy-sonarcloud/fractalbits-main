@@ -1,11 +1,10 @@
 mod api_key;
 mod bucket;
 mod permission;
-pub mod table;
 
 // Re-export the main types for convenience
-pub use api_key::{ApiKey, ApiKeyTable};
-pub use bucket::{Bucket, BucketTable};
+pub use api_key::ApiKey;
+pub use bucket::Bucket;
 pub use permission::BucketKeyPerm;
 
 #[derive(Clone)]

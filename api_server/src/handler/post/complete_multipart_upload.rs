@@ -1,4 +1,4 @@
-use rpc_client_common::{nss_rpc_retry, rpc_retry};
+use rpc_client_common::nss_rpc_retry;
 use std::collections::HashSet;
 use std::hash::Hasher;
 
