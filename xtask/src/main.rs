@@ -33,9 +33,6 @@ enum Cmd {
         #[clap(long, long_help = "Run with perf tool and generate flamegraph")]
         with_flame_graph: bool,
 
-        #[clap(long, long_help = "Nss data on local disks (without s3)")]
-        nss_data_on_local: bool,
-
         #[clap(
             long,
             long_help = "set max number of keys for benchmark",
@@ -63,29 +60,8 @@ enum Cmd {
     },
 
     #[clap(about = "Service stop/init/start/restart")]
-    Service {
-        #[clap(long_help = "stop/int/start/restart")]
-        action: ServiceAction,
-
-        #[clap(
-            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
-            default_value = "all"
-        )]
-        service: ServiceName,
-
-        #[clap(long, long_help = "release build or not")]
-        release: bool,
-
-        #[clap(long, long_help = "start service for gui")]
-        for_gui: bool,
-
-        #[clap(
-            long,
-            long_help = "Data blob storage mode: hybrid_single_az, s3_express_single_az or s3_express_multi_az"
-        )]
-        #[arg(default_value_t)]
-        data_blob_storage: DataBlobStorage,
-    },
+    #[command(subcommand)]
+    Service(ServiceCommand),
 
     #[clap(about = "Run tool related commands (gen_uuids only for now)")]
     #[command(subcommand)]
@@ -212,6 +188,65 @@ impl std::fmt::Display for NssRole {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct InitConfig {
+    pub for_gui: bool,
+    pub data_blob_storage: DataBlobStorage,
+}
+
+#[derive(Parser, Clone)]
+#[clap(rename_all = "snake_case")]
+pub enum ServiceCommand {
+    Init {
+        #[clap(
+            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
+            default_value = "all"
+        )]
+        service: ServiceName,
+
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
+
+        #[clap(long, long_help = "start service for gui")]
+        for_gui: bool,
+
+        #[clap(
+            long,
+            long_help = "Data blob storage mode: hybrid_single_az, s3_express_single_az or s3_express_multi_az"
+        )]
+        #[arg(default_value_t)]
+        data_blob_storage: DataBlobStorage,
+    },
+    Stop {
+        #[clap(
+            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
+            default_value = "all"
+        )]
+        service: ServiceName,
+    },
+    Start {
+        #[clap(
+            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
+            default_value = "all"
+        )]
+        service: ServiceName,
+    },
+    Restart {
+        #[clap(
+            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
+            default_value = "all"
+        )]
+        service: ServiceName,
+    },
+    Status {
+        #[clap(
+            long_help = "all/api_server/bss/nss/nss_role_agent_a/nss_role_agent_b/minio/ddb_local",
+            default_value = "all"
+        )]
+        service: ServiceName,
+    },
+}
+
 #[derive(Parser, Clone)]
 #[clap(rename_all = "snake_case")]
 pub enum TestType {
@@ -269,7 +304,6 @@ async fn main() -> CmdResult {
             service,
             workload,
             with_flame_graph,
-            nss_data_on_local,
             keys_limit,
         } => {
             let mut service_name = ServiceName::All;
@@ -278,36 +312,40 @@ async fn main() -> CmdResult {
                 service,
                 workload,
                 with_flame_graph,
-                nss_data_on_local,
                 keys_limit,
                 &mut service_name,
             )
             .inspect_err(|_| {
-                cmd_service::run_cmd_service(
-                    service_name,
-                    ServiceAction::Stop,
-                    BuildMode::Release,
-                    false,
-                    Default::default(),
-                    NssRole::Solo,
-                )
-                .unwrap();
+                cmd_service::stop_service(service_name).unwrap();
             })?;
         }
-        Cmd::Service {
-            action,
-            service,
-            release,
-            for_gui,
-            data_blob_storage,
-        } => cmd_service::run_cmd_service(
-            service,
-            action,
-            cmd_build::build_mode(release),
-            for_gui,
-            data_blob_storage,
-            NssRole::Solo,
-        )?,
+        Cmd::Service(service_cmd) => match service_cmd {
+            ServiceCommand::Init {
+                service,
+                release,
+                for_gui,
+                data_blob_storage,
+            } => {
+                let init_config = InitConfig {
+                    for_gui,
+                    data_blob_storage,
+                };
+                cmd_service::init_service(service, cmd_build::build_mode(release), init_config)?;
+            }
+            ServiceCommand::Stop { service } => {
+                cmd_service::stop_service(service)?;
+            }
+            ServiceCommand::Start { service } => {
+                cmd_service::start_service(service)?;
+            }
+            ServiceCommand::Restart { service } => {
+                cmd_service::stop_service(service)?;
+                cmd_service::start_service(service)?;
+            }
+            ServiceCommand::Status { service } => {
+                cmd_service::show_service_status(service)?;
+            }
+        },
         Cmd::Tool(tool_kind) => cmd_tool::run_cmd_tool(tool_kind)?,
         Cmd::Deploy {
             use_s3_backend,

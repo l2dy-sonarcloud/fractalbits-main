@@ -3,28 +3,20 @@ use std::time::Duration;
 use crate::*;
 use colored::*;
 
-pub fn run_cmd_service(
+pub fn init_service(
     service: ServiceName,
-    action: ServiceAction,
     build_mode: BuildMode,
-    for_gui: bool,
-    data_blob_storage: DataBlobStorage,
-    _nss_role: NssRole,
+    init_config: crate::InitConfig,
 ) -> CmdResult {
-    match action {
-        ServiceAction::Init => init_service(service, build_mode),
-        ServiceAction::Stop => stop_service(service),
-        ServiceAction::Start => start_services(service, build_mode, for_gui, data_blob_storage),
-        ServiceAction::Restart => {
-            stop_service(service)?;
-            start_services(service, build_mode, for_gui, data_blob_storage)
-        }
-        ServiceAction::Status => show_service_status(service, data_blob_storage),
-    }
-}
-
-pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
     stop_service(service)?;
+
+    // Create systemd unit files for the services being initialized
+    create_systemd_unit_files_for_init(
+        service,
+        build_mode,
+        init_config.for_gui,
+        init_config.data_blob_storage,
+    )?;
 
     let init_ddb_local = || -> CmdResult {
         run_cmd! {
@@ -115,7 +107,7 @@ pub fn init_service(service: ServiceName, build_mode: BuildMode) -> CmdResult {
         }
 
         // Start RSS service since admin now connects via RPC
-        start_rss_service(build_mode)?;
+        start_rss_service()?;
 
         // Initialize api key for testing using RSS RPC
         let build = build_mode.as_ref();
@@ -243,7 +235,7 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
     Ok(())
 }
 
-pub fn show_service_status(service: ServiceName, data_blob_storage: DataBlobStorage) -> CmdResult {
+pub fn show_service_status(service: ServiceName) -> CmdResult {
     match service {
         ServiceName::All => {
             println!("Service Status:");
@@ -282,12 +274,7 @@ pub fn show_service_status(service: ServiceName, data_blob_storage: DataBlobStor
                         Err(_) => {
                             // Command failed, try to get the actual status
                             if run_cmd!(systemctl --user is-failed --quiet $service_to_check.service).is_ok() {
-                                // Check if this is BSS service and it shouldn't be running in current storage mode
-                                if svc == ServiceName::Bss && matches!(data_blob_storage, DataBlobStorage::S3ExpressSingleAz | DataBlobStorage::S3ExpressMultiAz) {
-                                    "not needed".bright_black().to_string()
-                                } else {
-                                    "failed".red().to_string()
-                                }
+                                "failed".red().to_string()
                             } else {
                                 "inactive (dead)".bright_black().to_string()
                             }
@@ -316,54 +303,31 @@ pub fn show_service_status(service: ServiceName, data_blob_storage: DataBlobStor
     Ok(())
 }
 
-pub fn start_services(
-    service: ServiceName,
-    build_mode: BuildMode,
-    for_gui: bool,
-    data_blob_storage: DataBlobStorage,
-) -> CmdResult {
+pub fn start_service(service: ServiceName) -> CmdResult {
     match service {
-        ServiceName::Bss => start_bss_service(build_mode, data_blob_storage)?,
-        ServiceName::Nss => start_nss_service(build_mode, false)?,
-        ServiceName::NssRoleAgentA => {
-            start_nss_role_agent_service(build_mode, ServiceName::NssRoleAgentA)?
-        }
-        ServiceName::NssRoleAgentB => {
-            start_nss_role_agent_service(build_mode, ServiceName::NssRoleAgentB)?
-        }
-        ServiceName::Rss => start_rss_service(build_mode)?,
-        ServiceName::ApiServer => start_api_server(build_mode, data_blob_storage, false)?,
-        ServiceName::GuiServer => start_api_server(build_mode, data_blob_storage, true)?,
+        ServiceName::Bss => start_bss_service()?,
+        ServiceName::Nss => start_nss_service()?,
+        ServiceName::NssRoleAgentA => start_nss_role_agent_service(ServiceName::NssRoleAgentA)?,
+        ServiceName::NssRoleAgentB => start_nss_role_agent_service(ServiceName::NssRoleAgentB)?,
+        ServiceName::Rss => start_rss_service()?,
+        ServiceName::ApiServer => start_api_server()?,
+        ServiceName::GuiServer => start_api_server()?,
         ServiceName::DataBlobResyncServer => {
             info!("DataBlobResyncServer is a standalone CLI tool, not a service. Use 'cargo run -p data_blob_resync_server' instead.");
         }
-        ServiceName::All => start_all_services(build_mode, for_gui, data_blob_storage)?,
+        ServiceName::All => {
+            start_all_services(BuildMode::Debug, false, DataBlobStorage::default())?
+        }
         ServiceName::Minio => start_minio_service()?,
         ServiceName::MinioAz1 => start_minio_az1_service()?,
         ServiceName::MinioAz2 => start_minio_az2_service()?,
         ServiceName::DdbLocal => start_ddb_local_service()?,
-        ServiceName::Mirrord => start_mirrord_service(build_mode)?,
+        ServiceName::Mirrord => start_mirrord_service()?,
     }
     Ok(())
 }
 
-pub fn start_bss_service(build_mode: BuildMode, data_blob_storage: DataBlobStorage) -> CmdResult {
-    match data_blob_storage {
-        DataBlobStorage::S3ExpressMultiAz => {
-            info!("Skipping bss_server in s3_express_multi_az mode");
-            return Ok(());
-        }
-        DataBlobStorage::S3ExpressSingleAz => {
-            info!("Skipping bss_server in s3_express_single_az mode");
-            return Ok(());
-        }
-        DataBlobStorage::HybridSingleAz => {
-            // Continue with normal BSS server startup
-        }
-    }
-
-    create_systemd_unit_file(ServiceName::Bss, build_mode)?;
-
+pub fn start_bss_service() -> CmdResult {
     run_cmd!(systemctl --user start bss.service)?;
     wait_for_service_ready(ServiceName::Bss, 15)?;
 
@@ -373,18 +337,13 @@ pub fn start_bss_service(build_mode: BuildMode, data_blob_storage: DataBlobStora
     Ok(())
 }
 
-pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResult {
-    if !data_on_local {
-        // Start minio to simulate local s3 service
-        if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
-            start_minio_service()?;
-        }
+pub fn start_nss_service() -> CmdResult {
+    // Start minio to simulate local s3 service if not running
+    if run_cmd!(systemctl --user is-active --quiet minio.service).is_err() {
+        start_minio_service()?;
     }
 
-    create_systemd_unit_file(ServiceName::Nss, build_mode)?;
-
-    let nss_service = "nss.service";
-    run_cmd!(systemctl --user start $nss_service)?;
+    run_cmd!(systemctl --user start nss.service)?;
     wait_for_service_ready(ServiceName::Nss, 15)?;
 
     let nss_server_pid = run_fun!(pidof nss_server)?;
@@ -393,9 +352,7 @@ pub fn start_nss_service(build_mode: BuildMode, data_on_local: bool) -> CmdResul
     Ok(())
 }
 
-pub fn start_mirrord_service(build_mode: BuildMode) -> CmdResult {
-    create_systemd_unit_file(ServiceName::Mirrord, build_mode)?;
-
+pub fn start_mirrord_service() -> CmdResult {
     run_cmd!(systemctl --user start mirrord.service)?;
     wait_for_service_ready(ServiceName::Mirrord, 15)?;
 
@@ -405,9 +362,7 @@ pub fn start_mirrord_service(build_mode: BuildMode) -> CmdResult {
     Ok(())
 }
 
-pub fn start_nss_role_agent_service(build_mode: BuildMode, service_name: ServiceName) -> CmdResult {
-    create_systemd_unit_file(service_name, build_mode)?;
-
+pub fn start_nss_role_agent_service(service_name: ServiceName) -> CmdResult {
     let service_file = match service_name {
         ServiceName::NssRoleAgentA => "nss_role_agent_a.service",
         ServiceName::NssRoleAgentB => "nss_role_agent_b.service",
@@ -424,13 +379,12 @@ pub fn start_nss_role_agent_service(build_mode: BuildMode, service_name: Service
     Ok(())
 }
 
-pub fn start_rss_service(build_mode: BuildMode) -> CmdResult {
-    // Start ddb_local service at first if needed, since root server stores infomation in ddb_local
+pub fn start_rss_service() -> CmdResult {
+    // Start ddb_local service at first if needed, since root server stores information in ddb_local
     if run_cmd!(systemctl --user is-active --quiet ddb_local.service).is_err() {
         start_ddb_local_service()?;
     }
 
-    create_systemd_unit_file(ServiceName::Rss, build_mode)?;
     run_cmd!(systemctl --user start rss.service)?;
     wait_for_service_ready(ServiceName::Rss, 15)?;
 
@@ -582,13 +536,7 @@ fn create_api_server_systemd_unit_file(
     Ok(())
 }
 
-pub fn start_api_server(
-    build_mode: BuildMode,
-    data_blob_storage: DataBlobStorage,
-    for_gui: bool,
-) -> CmdResult {
-    create_api_server_systemd_unit_file(build_mode, data_blob_storage, for_gui)?;
-
+pub fn start_api_server() -> CmdResult {
     run_cmd!(systemctl --user start api_server.service)?;
     wait_for_service_ready(ServiceName::ApiServer, 10)?;
 
@@ -644,7 +592,7 @@ pub fn start_all_services(
 
     wait_for_service_ready(ServiceName::DdbLocal, 10)?;
 
-    start_nss_role_agent_service(build_mode, ServiceName::NssRoleAgentB)?;
+    start_nss_role_agent_service(ServiceName::NssRoleAgentB)?;
 
     // Start all main services - systemd dependencies will handle ordering
     match data_blob_storage {
@@ -682,6 +630,101 @@ fn create_systemd_unit_file_with_backend(
     data_blob_storage: DataBlobStorage,
 ) -> CmdResult {
     create_systemd_unit_file_impl(service, build_mode, Some(data_blob_storage))
+}
+
+fn create_systemd_unit_files_for_init(
+    service: ServiceName,
+    build_mode: BuildMode,
+    for_gui: bool,
+    data_blob_storage: DataBlobStorage,
+) -> CmdResult {
+    match service {
+        ServiceName::ApiServer => {
+            if for_gui {
+                create_systemd_unit_file_with_backend(
+                    ServiceName::GuiServer,
+                    build_mode,
+                    data_blob_storage,
+                )?;
+            } else {
+                create_systemd_unit_file_with_backend(
+                    ServiceName::ApiServer,
+                    build_mode,
+                    data_blob_storage,
+                )?;
+            }
+        }
+        ServiceName::GuiServer => {
+            create_systemd_unit_file_with_backend(
+                ServiceName::GuiServer,
+                build_mode,
+                data_blob_storage,
+            )?;
+        }
+        ServiceName::Bss => {
+            create_systemd_unit_file(ServiceName::Bss, build_mode)?;
+        }
+        ServiceName::Nss => {
+            create_systemd_unit_file(ServiceName::Nss, build_mode)?;
+        }
+        ServiceName::NssRoleAgentA => {
+            create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode)?;
+        }
+        ServiceName::NssRoleAgentB => {
+            create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode)?;
+        }
+        ServiceName::Mirrord => {
+            create_systemd_unit_file(ServiceName::Mirrord, build_mode)?;
+        }
+        ServiceName::Rss => {
+            create_systemd_unit_file(ServiceName::Rss, build_mode)?;
+        }
+        ServiceName::DdbLocal => {
+            // DdbLocal creates its systemd unit file in start_ddb_local_service
+        }
+        ServiceName::Minio | ServiceName::MinioAz1 | ServiceName::MinioAz2 => {
+            // Minio services create their systemd unit files in their respective start functions
+        }
+        ServiceName::DataBlobResyncServer => {
+            // DataBlobResyncServer is a CLI tool, not a service
+        }
+        ServiceName::All => {
+            create_systemd_unit_file(ServiceName::Rss, build_mode)?;
+
+            // Only create BSS systemd unit file if we're in hybrid mode
+            match data_blob_storage {
+                DataBlobStorage::HybridSingleAz => {
+                    create_systemd_unit_file(ServiceName::Bss, build_mode)?;
+                }
+                _ => {
+                    info!(
+                        "Skipping BSS systemd unit file creation in {} mode",
+                        data_blob_storage
+                    );
+                }
+            }
+
+            create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode)?;
+            create_systemd_unit_file(ServiceName::Nss, build_mode)?;
+            create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode)?;
+            create_systemd_unit_file(ServiceName::Mirrord, build_mode)?;
+
+            if for_gui {
+                create_systemd_unit_file_with_backend(
+                    ServiceName::GuiServer,
+                    build_mode,
+                    data_blob_storage,
+                )?;
+            } else {
+                create_systemd_unit_file_with_backend(
+                    ServiceName::ApiServer,
+                    build_mode,
+                    data_blob_storage,
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn create_systemd_unit_file_impl(

@@ -1,4 +1,4 @@
-use crate::{cmd_build::*, cmd_service::*, *};
+use crate::{cmd_build::*, cmd_service::*, InitConfig, *};
 
 pub fn prepare_bench(with_flame_graph: bool) -> CmdResult {
     if with_flame_graph && run_cmd!(bash -c "type addr2line" | grep -q .cargo).is_err() {
@@ -15,7 +15,6 @@ pub fn run_cmd_bench(
     service: BenchService,
     workload: BenchWorkload,
     with_flame_graph: bool,
-    nss_data_on_local: bool,
     keys_limit: usize,
     service_name: &mut ServiceName,
 ) -> CmdResult {
@@ -36,14 +35,9 @@ pub fn run_cmd_bench(
             *service_name = ServiceName::All;
             build_rust_servers(build_mode)?;
             build_rewrk()?;
-            run_cmd_service(
-                *service_name,
-                ServiceAction::Restart,
-                BuildMode::Release,
-                false,
-                DataBlobStorage::HybridSingleAz,
-                NssRole::Solo,
-            )?;
+            stop_service(*service_name)?;
+            init_service(*service_name, build_mode, InitConfig::default())?;
+            start_service(*service_name)?;
             uri = "http://mybucket.localhost:8080";
             bench_exe = "./target/release/rewrk";
             bench_opts.extend_from_slice(&[
@@ -60,7 +54,8 @@ pub fn run_cmd_bench(
         BenchService::NssRpc => {
             *service_name = ServiceName::Nss;
             build_rewrk_rpc()?;
-            start_nss_service(build_mode, nss_data_on_local)?;
+            init_service(*service_name, build_mode, InitConfig::default())?;
+            start_nss_service()?;
             uri = "127.0.0.1:8087";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[
@@ -77,7 +72,15 @@ pub fn run_cmd_bench(
         BenchService::BssRpc => {
             *service_name = ServiceName::Bss;
             build_rewrk_rpc()?;
-            start_bss_service(build_mode, DataBlobStorage::HybridSingleAz)?;
+            init_service(
+                *service_name,
+                build_mode,
+                InitConfig {
+                    for_gui: false,
+                    data_blob_storage: DataBlobStorage::HybridSingleAz,
+                },
+            )?;
+            start_bss_service()?;
             uri = "127.0.0.1:8088";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[
@@ -126,14 +129,7 @@ pub fn run_cmd_bench(
     }
 
     // stop service after benchmark to save cpu power
-    run_cmd_service(
-        *service_name,
-        ServiceAction::Stop,
-        BuildMode::Release,
-        false,
-        DataBlobStorage::HybridSingleAz,
-        NssRole::Solo,
-    )?;
+    stop_service(*service_name)?;
 
     Ok(())
 }

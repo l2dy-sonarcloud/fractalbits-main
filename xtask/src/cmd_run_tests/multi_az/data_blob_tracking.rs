@@ -1,5 +1,5 @@
-use crate::cmd_service::{start_services, stop_service, wait_for_service_ready};
-use crate::{BuildMode, CmdResult, DataBlobStorage, ServiceName};
+use crate::cmd_service::{start_service, stop_service, wait_for_service_ready};
+use crate::{CmdResult, ServiceName};
 use aws_sdk_s3::primitives::ByteStream;
 use cmd_lib::*;
 use colored::*;
@@ -213,12 +213,7 @@ async fn test_remote_az_service_interruption_and_recovery() -> CmdResult {
 
     // Simulate remote AZ coming back online
     println!(" Step 4: Bringing remote AZ back online...");
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
 
     // Wait for service to fully start and be ready
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
@@ -325,12 +320,7 @@ async fn test_rapid_remote_az_interruptions() -> CmdResult {
         }
 
         println!("  Cycle {cycle}: Restarting remote AZ");
-        start_services(
-            ServiceName::MinioAz2,
-            BuildMode::Debug,
-            false,
-            DataBlobStorage::default(),
-        )?;
+        start_service(ServiceName::MinioAz2)?;
         wait_for_service_ready(ServiceName::MinioAz2, 15)?;
 
         // Verify data after restart
@@ -446,12 +436,7 @@ async fn test_extended_remote_az_outage() -> CmdResult {
         blob_count
     );
     // Bring remote AZ back online
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
 
     // Verify all objects are still accessible

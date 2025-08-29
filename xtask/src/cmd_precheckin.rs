@@ -10,7 +10,7 @@ pub fn run_cmd_precheckin(s3_api_only: bool) -> CmdResult {
         return run_s3_api_tests();
     }
 
-    cmd_service::init_service(ServiceName::All, BuildMode::Debug)?;
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug, InitConfig::default())?;
     cmd_service::start_minio_service()?;
     run_cmd! {
         info "Formatting nss_server";
@@ -79,13 +79,8 @@ fn run_art_tests() -> CmdResult {
 }
 
 fn run_s3_api_tests() -> CmdResult {
-    cmd_service::init_service(ServiceName::All, BuildMode::Debug)?;
-    cmd_service::start_services(
-        ServiceName::All,
-        BuildMode::Debug,
-        false,
-        Default::default(),
-    )?;
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug, InitConfig::default())?;
+    cmd_service::start_service(ServiceName::All)?;
     run_cmd! {
         info "Run cargo tests (s3 api tests)";
         cargo test --package api_server;

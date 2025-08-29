@@ -1,5 +1,5 @@
-use crate::cmd_service::{start_services, stop_service, wait_for_service_ready};
-use crate::{BuildMode, CmdResult, DataBlobStorage, ServiceName};
+use crate::cmd_service::{start_service, stop_service, wait_for_service_ready};
+use crate::{BuildMode, CmdResult, ServiceName};
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::{Client as S3Client, Config as S3Config};
@@ -18,13 +18,12 @@ pub async fn run_data_blob_resyncing_tests() -> CmdResult {
     info!("Initializing and starting services for resyncing tests...");
     crate::cmd_service::stop_service(ServiceName::All)?;
     crate::cmd_build::build_rust_servers(BuildMode::Debug)?;
-    crate::cmd_service::init_service(ServiceName::All, BuildMode::Debug)?;
-    crate::cmd_service::start_services(
+    crate::cmd_service::init_service(
         ServiceName::All,
         BuildMode::Debug,
-        false,
-        DataBlobStorage::S3ExpressMultiAz,
+        crate::InitConfig::default(),
     )?;
+    crate::cmd_service::start_service(ServiceName::All)?;
 
     info!("All services started successfully");
 
@@ -148,12 +147,7 @@ async fn test_basic_functionality() -> CmdResult {
 
     // Step 5: Bring remote AZ back online
     println!("  Step 5: Bringing remote AZ back online");
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
 
     // Step 6: Run resync operation to copy single-copy blobs
@@ -301,12 +295,7 @@ async fn test_with_deleted_blobs() -> CmdResult {
 
     // Step 5: Restart remote AZ
     println!("  Step 5: Restarting remote AZ");
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
 
     // Step 6: Run resync operation (should handle deleted blobs correctly)
@@ -400,12 +389,7 @@ async fn test_dry_run_mode() -> CmdResult {
 
     // Step 2: Restart remote AZ
     println!("  Step 2: Restarting remote AZ");
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
 
     // Step 3: Run dry-run resync (should not actually copy blobs)
@@ -495,12 +479,7 @@ async fn test_resume_functionality() -> CmdResult {
 
     // Step 2: Restart remote AZ
     println!("  Step 2: Restarting remote AZ");
-    start_services(
-        ServiceName::MinioAz2,
-        BuildMode::Debug,
-        false,
-        DataBlobStorage::default(),
-    )?;
+    start_service(ServiceName::MinioAz2)?;
     wait_for_service_ready(ServiceName::MinioAz2, 30)?;
 
     // Step 3: Run resync starting from a specific key (simulating resume)
