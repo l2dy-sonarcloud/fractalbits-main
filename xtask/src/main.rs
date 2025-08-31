@@ -140,7 +140,6 @@ pub enum ServiceName {
     NssRoleAgentB,
     Mirrord,
     Rss,
-    DataBlobResyncServer,
     All,
     Minio,
     MinioAz1,
@@ -154,7 +153,6 @@ pub enum DataBlobStorage {
     #[default]
     HybridSingleAz,
     S3ExpressMultiAz,
-    S3ExpressSingleAz,
 }
 
 impl std::fmt::Display for DataBlobStorage {

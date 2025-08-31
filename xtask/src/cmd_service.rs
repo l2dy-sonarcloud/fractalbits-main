@@ -72,8 +72,8 @@ pub fn init_service(
 
         // Initialize NSS role states in service-discovery table
         let nss_roles_item = match init_config.data_blob_storage {
-            DataBlobStorage::HybridSingleAz | DataBlobStorage::S3ExpressSingleAz => {
-                r#"{"service_id":{"S":"nss_roles"},"states":{"M":{"nss-A":{"S":"solo"},"nss-B":{"S":"dead"}}}}"#
+            DataBlobStorage::HybridSingleAz => {
+                r#"{"service_id":{"S":"nss_roles"},"states":{"M":{"nss-A":{"S":"solo"}}}}"#
             }
             DataBlobStorage::S3ExpressMultiAz => {
                 r#"{"service_id":{"S":"nss_roles"},"states":{"M":{"nss-A":{"S":"active"},"nss-B":{"S":"standby"}}}}"#
@@ -188,7 +188,6 @@ pub fn init_service(
         ServiceName::NssRoleAgentA => init_nss_role_agent()?,
         ServiceName::NssRoleAgentB => init_nss_role_agent()?,
         ServiceName::Mirrord => init_mirrord()?,
-        ServiceName::DataBlobResyncServer => {}
         ServiceName::All => {
             generate_https_certificates()?;
             init_rss()?;
@@ -204,45 +203,68 @@ pub fn init_service(
 }
 
 pub fn stop_service(service: ServiceName) -> CmdResult {
-    let services: Vec<String> = match service {
-        ServiceName::All => vec![
-            ServiceName::ApiServer.as_ref().to_owned(),
-            ServiceName::NssRoleAgentA.as_ref().to_owned(),
-            ServiceName::Nss.as_ref().to_owned(),
-            ServiceName::NssRoleAgentB.as_ref().to_owned(),
-            ServiceName::Mirrord.as_ref().to_owned(),
-            ServiceName::Bss.as_ref().to_owned(),
-            ServiceName::Rss.as_ref().to_owned(),
-            ServiceName::DdbLocal.as_ref().to_owned(),
-            // Stop minio services last
-            ServiceName::Minio.as_ref().to_owned(),
-            ServiceName::MinioAz1.as_ref().to_owned(),
-            ServiceName::MinioAz2.as_ref().to_owned(),
-        ],
-        single_service => vec![single_service.as_ref().to_owned()],
+    let services: Vec<ServiceName> = match service {
+        ServiceName::All => all_services(get_data_blob_storage_setting()),
+        single_service => vec![single_service],
     };
 
     info!("Killing previous service(s) (if any) ...");
     for service in services {
-        if run_cmd!(systemctl --user is-active --quiet $service.service).is_err() {
+        let service_name = service.as_ref();
+        if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_err() {
             continue;
         }
 
-        if service == ServiceName::Mirrord.as_ref() {
+        if service == ServiceName::Mirrord {
             while run_cmd!(systemctl --user is-active --quiet nss.service).is_ok() {
                 // waiting for nss to stop at first, or it may crash nss due to journal mirroring failure
                 std::thread::sleep(Duration::from_secs(1));
             }
         }
-        run_cmd!(systemctl --user stop $service.service)?;
+        run_cmd!(systemctl --user stop $service_name.service)?;
 
         // make sure the process is really killed
-        if run_cmd!(systemctl --user is-active --quiet $service.service).is_ok() {
-            cmd_die!("Failed to stop $service: service is still running");
+        if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_ok() {
+            cmd_die!("Failed to stop $service_name: service is still running");
         }
     }
 
     Ok(())
+}
+
+fn all_services(data_blob_storage: DataBlobStorage) -> Vec<ServiceName> {
+    match data_blob_storage {
+        DataBlobStorage::HybridSingleAz => vec![
+            ServiceName::ApiServer,
+            ServiceName::NssRoleAgentA,
+            ServiceName::Nss,
+            ServiceName::Bss,
+            ServiceName::Rss,
+            ServiceName::DdbLocal,
+            ServiceName::Minio,
+        ],
+        DataBlobStorage::S3ExpressMultiAz => vec![
+            ServiceName::ApiServer,
+            ServiceName::NssRoleAgentA,
+            ServiceName::Nss,
+            ServiceName::NssRoleAgentB,
+            ServiceName::Mirrord,
+            ServiceName::Bss,
+            ServiceName::Rss,
+            ServiceName::DdbLocal,
+            ServiceName::Minio,
+            ServiceName::MinioAz1,
+            ServiceName::MinioAz2,
+        ],
+    }
+}
+
+fn get_data_blob_storage_setting() -> DataBlobStorage {
+    if run_cmd!(grep -q multi_az etc/api_server.service).is_ok() {
+        DataBlobStorage::S3ExpressMultiAz
+    } else {
+        DataBlobStorage::HybridSingleAz
+    }
 }
 
 pub fn show_service_status(service: ServiceName) -> CmdResult {
@@ -251,39 +273,18 @@ pub fn show_service_status(service: ServiceName) -> CmdResult {
             println!("Service Status:");
             println!("─────────────────────────────────────");
 
-            let all_services = vec![
-                ServiceName::ApiServer,
-                ServiceName::Rss,
-                ServiceName::Bss,
-                ServiceName::Nss,
-                ServiceName::NssRoleAgentA,
-                ServiceName::NssRoleAgentB,
-                ServiceName::Mirrord,
-                ServiceName::DdbLocal,
-                ServiceName::Minio,
-                ServiceName::MinioAz1,
-                ServiceName::MinioAz2,
-            ];
-
-            for svc in all_services {
-                let display_name = match svc {
-                    ServiceName::NssRoleAgentA => "nss_role_agent_a".to_string(),
-                    ServiceName::NssRoleAgentB => "nss_role_agent_b".to_string(),
-                    _ => svc.as_ref().to_string(),
-                };
-
-                let service_to_check = &display_name;
-
-                let status = if run_cmd!(systemctl --user list-unit-files --quiet $service_to_check.service | grep -q $service_to_check).is_ok() {
+            for svc in all_services(get_data_blob_storage_setting()) {
+                let service_name = svc.as_ref();
+                let status = if run_cmd!(systemctl --user list-unit-files --quiet $service_name.service | grep -q $service_name).is_ok() {
                     // Service exists, get its status
-                    match run_fun!(systemctl --user is-active $service_to_check.service 2>/dev/null) {
+                    match run_fun!(systemctl --user is-active $service_name.service 2>/dev/null) {
                         Ok(output) => match output.trim() {
                             "active" => "active".green().to_string(),
                             status => status.yellow().to_string(),
                         },
                         Err(_) => {
                             // Command failed, try to get the actual status
-                            if run_cmd!(systemctl --user is-failed --quiet $service_to_check.service).is_ok() {
+                            if run_cmd!(systemctl --user is-failed --quiet $service_name.service).is_ok() {
                                 "failed".red().to_string()
                             } else {
                                 "inactive (dead)".bright_black().to_string()
@@ -294,18 +295,12 @@ pub fn show_service_status(service: ServiceName) -> CmdResult {
                     "not installed".bright_black().to_string()
                 };
 
-                println!("{display_name:<16}: {status}");
+                println!("{service_name:<16}: {status}");
             }
         }
         single_service => {
             // Show detailed status for a single service
-            let service_name = match single_service {
-                ServiceName::NssRoleAgentA => "nss_role_agent_a",
-                ServiceName::NssRoleAgentB => "nss_role_agent_b",
-                ServiceName::Nss => "nss",
-                _ => single_service.as_ref(),
-            };
-
+            let service_name = single_service.as_ref();
             run_cmd!(systemctl --user status $service_name.service --no-pager)?;
         }
     }
@@ -322,9 +317,6 @@ pub fn start_service(service: ServiceName) -> CmdResult {
         ServiceName::Rss => start_rss_service()?,
         ServiceName::ApiServer => start_api_server()?,
         ServiceName::GuiServer => start_api_server()?,
-        ServiceName::DataBlobResyncServer => {
-            info!("DataBlobResyncServer is a standalone CLI tool, not a service. Use 'cargo run -p data_blob_resync_server' instead.");
-        }
         ServiceName::All => start_all_services()?,
         ServiceName::Minio => start_minio_service()?,
         ServiceName::MinioAz1 => start_minio_az1_service()?,
@@ -593,60 +585,29 @@ fn create_systemd_unit_file_with_backend(
 }
 
 fn create_systemd_unit_files_for_init(
-    service: ServiceName,
+    mut service: ServiceName,
     build_mode: BuildMode,
     for_gui: bool,
     data_blob_storage: DataBlobStorage,
 ) -> CmdResult {
+    if for_gui && service == ServiceName::ApiServer {
+        service = ServiceName::GuiServer;
+    }
     match service {
-        ServiceName::ApiServer => {
-            if for_gui {
-                create_systemd_unit_file_with_backend(
-                    ServiceName::GuiServer,
-                    build_mode,
-                    data_blob_storage,
-                )?;
-            } else {
-                create_systemd_unit_file_with_backend(
-                    ServiceName::ApiServer,
-                    build_mode,
-                    data_blob_storage,
-                )?;
-            }
+        ServiceName::ApiServer | ServiceName::GuiServer => {
+            create_systemd_unit_file_with_backend(service, build_mode, data_blob_storage)?;
         }
-        ServiceName::GuiServer => {
-            create_systemd_unit_file_with_backend(
-                ServiceName::GuiServer,
-                build_mode,
-                data_blob_storage,
-            )?;
-        }
-        ServiceName::Bss => {
-            create_systemd_unit_file(ServiceName::Bss, build_mode)?;
-        }
-        ServiceName::Nss => {
-            create_systemd_unit_file(ServiceName::Nss, build_mode)?;
-        }
-        ServiceName::NssRoleAgentA => {
-            create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode)?;
-        }
-        ServiceName::NssRoleAgentB => {
-            create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode)?;
-        }
-        ServiceName::Mirrord => {
-            create_systemd_unit_file(ServiceName::Mirrord, build_mode)?;
-        }
-        ServiceName::Rss => {
-            create_systemd_unit_file(ServiceName::Rss, build_mode)?;
-        }
-        ServiceName::DdbLocal => {
-            // DdbLocal creates its systemd unit file in start_ddb_local_service
-        }
-        ServiceName::Minio | ServiceName::MinioAz1 | ServiceName::MinioAz2 => {
-            // Minio services create their systemd unit files in their respective start functions
-        }
-        ServiceName::DataBlobResyncServer => {
-            // DataBlobResyncServer is a CLI tool, not a service
+        ServiceName::Bss
+        | ServiceName::Nss
+        | ServiceName::NssRoleAgentA
+        | ServiceName::NssRoleAgentB
+        | ServiceName::Mirrord
+        | ServiceName::Rss
+        | ServiceName::DdbLocal
+        | ServiceName::Minio
+        | ServiceName::MinioAz1
+        | ServiceName::MinioAz2 => {
+            create_systemd_unit_file(service, build_mode)?;
         }
         ServiceName::All => {
             create_systemd_unit_file(ServiceName::Rss, build_mode)?;
@@ -919,7 +880,6 @@ pub fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdRes
                 }
                 ServiceName::NssRoleAgentA => check_port_ready(8087), // Check managed nss_server
                 ServiceName::NssRoleAgentB => check_port_ready(9999), // check managed mirrord
-                ServiceName::DataBlobResyncServer => true,            // CLI tool, not a service
                 ServiceName::All => unreachable!("Should not check readiness for All"),
             };
 
