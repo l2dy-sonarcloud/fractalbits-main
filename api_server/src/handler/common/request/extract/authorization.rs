@@ -1,13 +1,18 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
-use crate::handler::common::s3_error::S3Error;
-use actix_web::dev::Payload;
-use actix_web::http::header::ToStrError;
-use actix_web::FromRequest;
-use actix_web::HttpRequest;
-use chrono::{DateTime, TimeZone, Utc};
+use actix_web::{
+    dev::Payload,
+    http::header::{ToStrError, AUTHORIZATION},
+    FromRequest, HttpRequest,
+};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use futures::future::{ready, Ready};
 use thiserror::Error;
+
+use crate::handler::common::{
+    s3_error::S3Error,
+    time::{LONG_DATETIME, SHORT_DATE},
+};
 
 const SCOPE_ENDING: &str = "aws4_request";
 
@@ -58,13 +63,7 @@ impl FromRequest for AuthFromHeaders {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        use crate::handler::common::request::extract::{AuthError, Authentication};
-        use actix_web::http::header::AUTHORIZATION;
-        use chrono::Utc;
-        use std::collections::HashMap;
-
         const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
-        const _SCOPE_ENDING: &str = "aws4_request";
 
         let result = (|| -> Result<Option<Authentication>, AuthError> {
             let authorization = match req.headers().get(AUTHORIZATION) {
@@ -131,7 +130,7 @@ impl FromRequest for AuthFromHeaders {
                 return Err(AuthError::Invalid("Date is too old".into()));
             }
             let (key_id, scope) = parse_credential(cred)?;
-            if scope.date != format!("{}", date.format(crate::handler::common::time::SHORT_DATE)) {
+            if scope.date != format!("{}", date.format(SHORT_DATE)) {
                 return Err(AuthError::Invalid("Date mismatch".into()));
             }
 
@@ -158,26 +157,13 @@ impl FromRequest for AuthFromHeaders {
     }
 }
 
-fn parse_date(
-    date: &str,
-) -> Result<chrono::DateTime<chrono::Utc>, crate::handler::common::request::extract::AuthError> {
-    use crate::handler::common::request::extract::AuthError;
-    use chrono::{NaiveDateTime, Utc};
-    let date: NaiveDateTime =
-        NaiveDateTime::parse_from_str(date, crate::handler::common::time::LONG_DATETIME)
-            .map_err(|_| AuthError::Invalid("Invalid date".into()))?;
+fn parse_date(date: &str) -> Result<DateTime<Utc>, AuthError> {
+    let date: NaiveDateTime = NaiveDateTime::parse_from_str(date, LONG_DATETIME)
+        .map_err(|_| AuthError::Invalid("Invalid date".into()))?;
     Ok(Utc.from_utc_datetime(&date))
 }
 
-fn parse_credential(
-    cred: &str,
-) -> Result<
-    (String, crate::handler::common::request::extract::Scope),
-    crate::handler::common::request::extract::AuthError,
-> {
-    use crate::handler::common::request::extract::{AuthError, Scope};
-    const SCOPE_ENDING: &str = "aws4_request";
-
+fn parse_credential(cred: &str) -> Result<(String, Scope), AuthError> {
     let parts: Vec<&str> = cred.split('/').collect();
     if parts.len() != 5 || parts[4] != SCOPE_ENDING {
         return Err(AuthError::Invalid("wrong scope format".into()));

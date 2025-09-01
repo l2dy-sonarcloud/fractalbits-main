@@ -14,6 +14,7 @@ use actix_web::{
 };
 use bucket::BucketEndpoint;
 use common::{
+    authorization::Authorization,
     request::extract::*,
     s3_error::S3Error,
     signature::{self, verify_request, VerifiedRequest},
@@ -296,10 +297,10 @@ async fn any_handler_inner(
     // Check authorization
     let authorization_type = endpoint.authorization_type();
     let allowed = match authorization_type {
-        common::authorization::Authorization::Read => api_key.data.allow_read(&bucket),
-        common::authorization::Authorization::Write => api_key.data.allow_write(&bucket),
-        common::authorization::Authorization::Owner => api_key.data.allow_owner(&bucket),
-        common::authorization::Authorization::None => true,
+        Authorization::Read => api_key.data.allow_read(&bucket),
+        Authorization::Write => api_key.data.allow_write(&bucket),
+        Authorization::Owner => api_key.data.allow_owner(&bucket),
+        Authorization::None => true,
     };
     tracing::debug!(
         "Authorization check: endpoint={:?}, bucket={}, required={:?}, allowed={}",
