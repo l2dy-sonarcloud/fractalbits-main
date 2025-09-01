@@ -35,6 +35,7 @@ pub enum ChecksumMessage {
 pub struct S3Trailers {
     pub checksum_crc32: Option<String>,
     pub checksum_crc32c: Option<String>,
+    pub checksum_crc64nvme: Option<String>,
     pub checksum_sha1: Option<String>,
     pub checksum_sha256: Option<String>,
     pub trailer_signature: Option<String>,
@@ -160,6 +161,13 @@ impl S3StreamingPayload {
                     base64::prelude::BASE64_STANDARD.encode(sha256)
                 );
             }
+            if let Some(crc64nvme) = checksums.crc64nvme {
+                tracing::debug!(
+                    "Calculated CRC64NVME: {:?} (base64: {})",
+                    crc64nvme,
+                    base64::prelude::BASE64_STANDARD.encode(crc64nvme)
+                );
+            }
 
             // Verify trailer checksums if present
             if let Some(trailers) = trailer_checksums {
@@ -188,6 +196,22 @@ impl S3StreamingPayload {
                             tracing::error!(
                                 "CRC32C checksum mismatch: trailer={}, calculated={}",
                                 trailer_crc32c,
+                                calculated_b64
+                            );
+                            return Err(S3Error::InvalidDigest);
+                        }
+                    }
+                }
+
+                // Verify CRC64NVME
+                if let Some(trailer_crc64nvme) = trailers.checksum_crc64nvme {
+                    if let Some(calculated_crc64nvme) = checksums.crc64nvme {
+                        let calculated_b64 =
+                            base64::prelude::BASE64_STANDARD.encode(calculated_crc64nvme);
+                        if trailer_crc64nvme != calculated_b64 {
+                            tracing::error!(
+                                "CRC64NVME checksum mismatch: trailer={}, calculated={}",
+                                trailer_crc64nvme,
                                 calculated_b64
                             );
                             return Err(S3Error::InvalidDigest);
@@ -638,6 +662,7 @@ fn parse_s3_trailers(trailer_data: &[u8]) -> S3Trailers {
             match name.as_str() {
                 "x-amz-checksum-crc32" => trailers.checksum_crc32 = Some(value.to_string()),
                 "x-amz-checksum-crc32c" => trailers.checksum_crc32c = Some(value.to_string()),
+                "x-amz-checksum-crc64nvme" => trailers.checksum_crc64nvme = Some(value.to_string()),
                 "x-amz-checksum-sha1" => trailers.checksum_sha1 = Some(value.to_string()),
                 "x-amz-checksum-sha256" => trailers.checksum_sha256 = Some(value.to_string()),
                 "x-amz-trailer-signature" => trailers.trailer_signature = Some(value.to_string()),
@@ -659,10 +684,14 @@ mod tests {
     #[test]
     fn test_parse_s3_trailers() {
         let trailer_data =
-            b"x-amz-checksum-sha256: YWJjZGVmZ2g=\r\nx-amz-trailer-signature: signature123\r\n";
+            b"x-amz-checksum-sha256: YWJjZGVmZ2g=\r\nx-amz-checksum-crc64nvme: OOJZ0D8xKts=\r\nx-amz-trailer-signature: signature123\r\n";
         let trailers = parse_s3_trailers(trailer_data);
 
         assert_eq!(trailers.checksum_sha256, Some("YWJjZGVmZ2g=".to_string()));
+        assert_eq!(
+            trailers.checksum_crc64nvme,
+            Some("OOJZ0D8xKts=".to_string())
+        );
         assert_eq!(trailers.trailer_signature, Some("signature123".to_string()));
         assert!(trailers.checksum_crc32.is_none());
     }
