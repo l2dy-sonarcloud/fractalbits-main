@@ -30,6 +30,7 @@ use put::PutEndpoint;
 use rpc_client_rss::RpcErrorRss;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{debug, error, warn};
 
 pub struct BucketRequestContext {
     pub app: Arc<AppState>,
@@ -130,22 +131,14 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
         .unwrap_or("0.0.0.0:0")
         .to_string();
 
-    tracing::debug!(%bucket, %key, %client_addr);
+    debug!(%bucket, %key, %client_addr);
 
     let resource = format!("/{bucket}{key}");
     let endpoint = match Endpoint::from_extractors(&req, &bucket, &key, api_cmd, api_sig.0.clone())
     {
         Err(e) => {
             let api_cmd = api_cmd.map_or("".into(), |cmd| cmd.to_string());
-            tracing::warn!(
-                %api_cmd,
-                %api_sig,
-                %bucket,
-                %key,
-                %client_addr,
-                error = ?e,
-                "failed to create endpoint"
-            );
+            warn!(%api_cmd, %api_sig, %bucket, %key, %client_addr, error = ?e, "failed to create endpoint");
             return Ok(e.error_response_with_resource(&resource));
         }
         Ok(endpoint) => endpoint,
@@ -179,13 +172,7 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
     let result = match result {
         Ok(result) => result,
         Err(_) => {
-            tracing::error!(
-                endpoint = %endpoint_name,
-                %bucket,
-                %key,
-                %client_addr,
-                "request timed out"
-            );
+            error!( endpoint = %endpoint_name, %bucket, %key, %client_addr, "request timed out");
             counter!("request_timeout", "endpoint" => endpoint_name).increment(1);
             return Ok(S3Error::InternalError.error_response_with_resource(&resource));
         }
@@ -200,14 +187,7 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
         Err(e) => {
             histogram!("request_duration_nanos", "status" => format!("{endpoint_name}_Err"))
                 .record(duration.as_nanos() as f64);
-            tracing::error!(
-                endpoint = %endpoint_name,
-                %bucket,
-                %key,
-                %client_addr,
-                error = ?e,
-                "failed to handle request"
-            );
+            error!(endpoint = %endpoint_name, %bucket, %key, %client_addr, error = ?e, "failed to handle request");
             Ok(e.error_response_with_resource(&resource))
         }
     }
@@ -223,48 +203,36 @@ async fn any_handler_inner(
     endpoint: Endpoint,
 ) -> Result<HttpResponse, S3Error> {
     let start = Instant::now();
+    let allow_missing_or_bad_signature = app.config.allow_missing_or_bad_signature;
 
-    tracing::debug!(
-        "Starting signature verification, allow_missing_or_bad_signature={}, auth={:?}",
-        app.config.allow_missing_or_bad_signature,
-        auth
-    );
-    let verified_result: Result<VerifiedRequest, S3Error> = if app
-        .config
-        .allow_missing_or_bad_signature
-    {
+    debug!(%allow_missing_or_bad_signature, ?auth, "starting signature verification");
+    let verified_request = if allow_missing_or_bad_signature {
         if auth.is_none() {
-            tracing::warn!("allowing anonymous access, falling back to 'test_api_key'");
-            let access_key = "test_api_key";
+            warn!("allowing anonymous access");
             let api_key = app
-                .get_api_key(access_key.to_string())
+                .get_test_api_key()
                 .await
                 .map_err(|_| S3Error::InvalidAccessKeyId)?;
-            Ok(VerifiedRequest {
+            VerifiedRequest {
                 api_key,
                 content_sha256_header: signature::ContentSha256Header::UnsignedPayload,
-            })
+            }
         } else if let Some(auth) = auth {
-            // Signature verification doesn't use body (it's marked as _body in the function)
             match verify_request(app.clone(), request, &auth).await {
-                Ok(verified) => Ok(verified),
+                Ok(verified) => verified,
                 Err(signature::SignatureError::RpcErrorRss(RpcErrorRss::NotFound)) => {
                     return Err(S3Error::InvalidAccessKeyId);
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "allowed bad signature for {:?}, falling back to 'test_api_key', error: {:?}",
-                        auth, e
-                    );
-                    let access_key = "test_api_key";
+                    warn!(?auth, error = ?e, "allowed bad signature");
                     let api_key = app
-                        .get_api_key(access_key.to_string())
+                        .get_test_api_key()
                         .await
                         .map_err(|_| S3Error::InvalidAccessKeyId)?;
-                    Ok(VerifiedRequest {
+                    VerifiedRequest {
                         api_key,
                         content_sha256_header: signature::ContentSha256Header::UnsignedPayload,
-                    })
+                    }
                 }
             }
         } else {
@@ -273,7 +241,7 @@ async fn any_handler_inner(
     } else {
         let auth_unwrapped = auth.ok_or(S3Error::InvalidSignature)?;
         match verify_request(app.clone(), request, &auth_unwrapped).await {
-            Ok(verified) => Ok(verified),
+            Ok(verified) => verified,
             Err(signature::SignatureError::RpcErrorRss(RpcErrorRss::NotFound)) => {
                 return Err(S3Error::InvalidAccessKeyId);
             }
@@ -283,10 +251,8 @@ async fn any_handler_inner(
         }
     };
 
-    let verified_request = verified_result?;
     let api_key = verified_request.api_key;
-
-    tracing::debug!(
+    debug!(
         "Signature verification completed, api_key.key_id={}",
         api_key.data.key_id
     );
@@ -302,7 +268,7 @@ async fn any_handler_inner(
         Authorization::Owner => api_key.data.allow_owner(&bucket),
         Authorization::None => true,
     };
-    tracing::debug!(
+    debug!(
         "Authorization check: endpoint={:?}, bucket={}, required={:?}, allowed={}",
         endpoint.as_str(),
         bucket,

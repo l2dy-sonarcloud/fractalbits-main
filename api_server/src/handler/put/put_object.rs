@@ -293,16 +293,16 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
             tracing::debug!("Streaming checksum verification completed successfully");
             // Extract the appropriate checksum value based on what was calculated
             // For now, we'll try to extract from the first available algorithm
-            if checksums.crc32.is_some() {
-                Some(ChecksumValue::Crc32(checksums.crc32.unwrap()))
-            } else if checksums.crc32c.is_some() {
-                Some(ChecksumValue::Crc32c(checksums.crc32c.unwrap()))
-            } else if checksums.crc64nvme.is_some() {
-                Some(ChecksumValue::Crc64Nvme(checksums.crc64nvme.unwrap()))
-            } else if checksums.sha1.is_some() {
-                Some(ChecksumValue::Sha1(checksums.sha1.unwrap()))
-            } else if checksums.sha256.is_some() {
-                Some(ChecksumValue::Sha256(checksums.sha256.unwrap()))
+            if let Some(v) = checksums.crc32 {
+                Some(ChecksumValue::Crc32(v))
+            } else if let Some(v) = checksums.crc32c {
+                Some(ChecksumValue::Crc32c(v))
+            } else if let Some(v) =  checksums.crc64nvme {
+                Some(ChecksumValue::Crc64Nvme(v))
+            } else if let Some(v) = checksums.sha1 {
+                Some(ChecksumValue::Sha1(v))
+            } else if let Some(v) = checksums.sha256 {
+                Some(ChecksumValue::Sha256(v))
             } else {
                 None
             }

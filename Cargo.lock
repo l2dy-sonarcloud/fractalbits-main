@@ -377,7 +377,6 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-http-client",
  "base64 0.22.1",
- "blake2",
  "bytes",
  "chrono",
  "clap 4.5.46",
@@ -437,7 +436,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -1746,6 +1744,7 @@ dependencies = [
 name = "data_types"
 version = "0.1.0"
 dependencies = [
+ "blake2",
  "bytes",
  "hex",
  "metrics",
@@ -1755,8 +1754,10 @@ dependencies = [
  "rpc_client_rss",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tracing",
+ "xxhash-rust",
 ]
 
 [[package]]

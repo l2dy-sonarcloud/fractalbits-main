@@ -9,14 +9,13 @@ use actix_web::{
 };
 use arrayvec::ArrayString;
 use chrono::{DateTime, Utc};
-use data_types::{ApiKey, Versioned};
+use data_types::{hash::Hash, ApiKey, Versioned};
 use hmac::{Hmac, Mac};
 use itertools::Itertools;
 use sha2::{Digest, Sha256};
 
 use crate::{
     handler::common::{
-        data::Hash,
         request::extract::Authentication,
         signature::{ContentSha256Header, SignatureError},
         time::{LONG_DATETIME, SHORT_DATE},

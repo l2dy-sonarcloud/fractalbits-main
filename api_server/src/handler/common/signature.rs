@@ -2,12 +2,9 @@ mod error;
 pub use error::SignatureError;
 pub mod payload;
 
-use crate::{
-    handler::common::{data::Hash, request::extract::Authentication},
-    AppState,
-};
+use crate::{handler::common::request::extract::Authentication, AppState};
 use actix_web::HttpRequest;
-use data_types::{ApiKey, Versioned};
+use data_types::{hash::Hash, ApiKey, Versioned};
 use rpc_client_rss::RpcErrorRss;
 use std::sync::Arc;
 
@@ -23,6 +20,7 @@ pub enum ContentSha256Header {
     StreamingPayload { trailer: bool, signed: bool },
 }
 
+// Signature verification doesn't use body
 pub async fn verify_request(
     app: Arc<AppState>,
     request: &HttpRequest,

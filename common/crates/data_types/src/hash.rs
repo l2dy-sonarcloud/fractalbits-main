@@ -1,7 +1,4 @@
-//! Contains common types and functions related to serialization and integrity
-use rand::Rng;
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use std::fmt;
 
 /// An array of 32 bytes
@@ -23,34 +20,6 @@ impl std::convert::AsRef<[u8]> for FixedBytes32 {
 impl fmt::Debug for FixedBytes32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", hex::encode(&self.0[..8]))
-    }
-}
-
-struct FixedBytes32Visitor;
-impl Visitor<'_> for FixedBytes32Visitor {
-    type Value = FixedBytes32;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a byte slice of size 32")
-    }
-
-    fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
-        if value.len() == 32 {
-            let mut res = [0u8; 32];
-            res.copy_from_slice(value);
-            Ok(res.into())
-        } else {
-            Err(E::custom(format!(
-                "Invalid byte string length {}, expected 32",
-                value.len()
-            )))
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for FixedBytes32 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<FixedBytes32, D::Error> {
-        deserializer.deserialize_bytes(FixedBytes32Visitor)
     }
 }
 
@@ -98,8 +67,6 @@ impl FixedBytes32 {
     }
 }
 
-/// A 32 bytes UUID
-pub type Uuid = FixedBytes32;
 /// A 256 bit cryptographic hash, can be sha256 or blake2 depending on provenance
 pub type Hash = FixedBytes32;
 
@@ -135,11 +102,6 @@ pub fn fasthash(data: &[u8]) -> FastHash {
     let mut h = Xxh3::new();
     h.update(data);
     h.digest()
-}
-
-/// Generate a random 32 bytes UUID
-pub fn gen_uuid() -> Uuid {
-    rand::thread_rng().gen::<[u8; 32]>().into()
 }
 
 #[cfg(test)]

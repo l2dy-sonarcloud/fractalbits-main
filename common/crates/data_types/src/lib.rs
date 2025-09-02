@@ -1,5 +1,6 @@
 mod api_key;
 mod bucket;
+pub mod hash;
 mod permission;
 
 // Re-export the main types for convenience

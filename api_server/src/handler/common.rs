@@ -1,6 +1,5 @@
 pub mod authorization;
 pub mod checksum;
-pub mod data;
 pub mod request;
 pub mod response;
 pub mod s3_error;

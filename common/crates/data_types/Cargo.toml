@@ -15,3 +15,6 @@ tracing.workspace = true
 metrics.workspace = true
 rpc_client_common.workspace = true
 rpc_client_rss.workspace = true
+sha2.workspace = true
+blake2.workspace = true
+xxhash-rust.workspace = true

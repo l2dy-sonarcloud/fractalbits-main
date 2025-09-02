@@ -1,11 +1,12 @@
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hasher;
 
-use crate::handler::common::{data::Hash, s3_error::S3Error, signature::SignatureError, xheader};
+use crate::handler::common::{s3_error::S3Error, signature::SignatureError, xheader};
 use actix_web::http::header::HeaderMap;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use crc32c::Crc32cHasher as Crc32c;
 use crc32fast::Hasher as Crc32;
+use data_types::hash::Hash;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;

@@ -191,6 +191,10 @@ impl AppState {
             .into())
     }
 
+    pub async fn get_test_api_key(&self) -> Result<Versioned<ApiKey>, RpcError> {
+        self.get_api_key("test_api_key".into()).await
+    }
+
     pub async fn put_api_key(&self, api_key: &Versioned<ApiKey>) -> Result<(), RpcError> {
         let full_key = format!("api_key:{}", api_key.data.key_id);
         let data: String = serde_json::to_string(&api_key.data).unwrap();
