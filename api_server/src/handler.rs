@@ -14,10 +14,8 @@ use actix_web::{
 };
 use bucket::BucketEndpoint;
 use common::{
-    authorization::Authorization,
-    request::extract::*,
-    s3_error::S3Error,
-    signature::{self, verify_request, VerifiedRequest},
+    authorization::Authorization, request::extract::*, s3_error::S3Error,
+    signature::check_signature,
 };
 use data_types::{ApiKey, Bucket, Versioned};
 use delete::DeleteEndpoint;
@@ -27,7 +25,6 @@ use head::HeadEndpoint;
 use metrics::{counter, gauge, histogram, Gauge};
 use post::PostEndpoint;
 use put::PutEndpoint;
-use rpc_client_rss::RpcErrorRss;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, warn};
@@ -206,60 +203,8 @@ async fn any_handler_inner(
     endpoint: Endpoint,
 ) -> Result<HttpResponse, S3Error> {
     let start = Instant::now();
-    let allow_missing_or_bad_signature = app.config.allow_missing_or_bad_signature;
 
-    debug!(%allow_missing_or_bad_signature, ?auth, "starting signature verification");
-    let verified_request = if allow_missing_or_bad_signature {
-        if auth.is_none() {
-            warn!("allowing anonymous access");
-            let api_key = app
-                .get_test_api_key()
-                .await
-                .map_err(|_| S3Error::InvalidAccessKeyId)?;
-            VerifiedRequest {
-                api_key,
-                content_sha256_header: signature::ContentSha256Header::UnsignedPayload,
-            }
-        } else if let Some(ref auth) = auth {
-            match verify_request(app.clone(), request, auth).await {
-                Ok(verified) => verified,
-                Err(signature::SignatureError::RpcErrorRss(RpcErrorRss::NotFound)) => {
-                    return Err(S3Error::InvalidAccessKeyId);
-                }
-                Err(e) => {
-                    warn!(?auth, error = ?e, "allowed bad signature");
-                    let api_key = app
-                        .get_test_api_key()
-                        .await
-                        .map_err(|_| S3Error::InvalidAccessKeyId)?;
-                    VerifiedRequest {
-                        api_key,
-                        content_sha256_header: signature::ContentSha256Header::UnsignedPayload,
-                    }
-                }
-            }
-        } else {
-            return Err(S3Error::InvalidSignature);
-        }
-    } else {
-        let auth = auth.as_ref().ok_or(S3Error::InvalidSignature)?;
-        match verify_request(app.clone(), request, auth).await {
-            Ok(verified) => verified,
-            Err(signature::SignatureError::RpcErrorRss(RpcErrorRss::NotFound)) => {
-                return Err(S3Error::InvalidAccessKeyId);
-            }
-            Err(_) => {
-                return Err(S3Error::InvalidSignature);
-            }
-        }
-    };
-
-    let api_key = verified_request.api_key;
-    debug!(
-        "Signature verification completed, api_key.key_id={}",
-        api_key.data.key_id
-    );
-
+    let api_key = check_signature(app.clone(), request, auth.as_ref()).await?;
     histogram!("verify_request_duration_nanos", "endpoint" => endpoint.as_str())
         .record(start.elapsed().as_nanos() as f64);
 

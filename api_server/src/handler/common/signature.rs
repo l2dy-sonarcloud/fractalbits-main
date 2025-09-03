@@ -7,37 +7,45 @@ pub use aws_signature::streaming::{
     parse_chunk_signature, verify_chunk_signature, ChunkSignature, ChunkSignatureContext,
 };
 
-use crate::{handler::common::request::extract::Authentication, AppState};
+use crate::{
+    handler::common::{request::extract::Authentication, s3_error::S3Error},
+    AppState,
+};
 use actix_web::HttpRequest;
-use data_types::{hash::Hash, ApiKey, Versioned};
-use rpc_client_rss::RpcErrorRss;
+use data_types::{ApiKey, Versioned};
 use std::sync::Arc;
+use tracing::{debug, error, warn};
 
-pub struct VerifiedRequest {
-    pub api_key: Versioned<ApiKey>,
-    pub content_sha256_header: ContentSha256Header,
-}
-
-#[derive(Debug)]
-pub enum ContentSha256Header {
-    UnsignedPayload,
-    Sha256Checksum(Hash),
-    StreamingPayload { trailer: bool, signed: bool },
-}
-
-pub async fn verify_request(
+pub async fn check_signature(
     app: Arc<AppState>,
     request: &HttpRequest,
-    auth: &Authentication,
-) -> Result<VerifiedRequest, SignatureError> {
-    let checked_signature = payload::check_payload_signature(app.clone(), auth, request).await?;
+    auth: Option<&Authentication>,
+) -> Result<Versioned<ApiKey>, S3Error> {
+    let allow_missing_or_bad_signature = app.config.allow_missing_or_bad_signature;
+    debug!(%allow_missing_or_bad_signature, ?auth, "starting signature verification");
 
-    let api_key = checked_signature
-        .key
-        .ok_or(SignatureError::RpcErrorRss(RpcErrorRss::NotFound))?;
-
-    Ok(VerifiedRequest {
-        api_key,
-        content_sha256_header: checked_signature.content_sha256_header,
-    })
+    if let Some(auth) = auth {
+        match payload::check_signature_impl(app.clone(), auth, request).await {
+            Ok(verified) => Ok(verified),
+            Err(e) => {
+                if allow_missing_or_bad_signature {
+                    warn!(?auth, error = ?e, "allowed bad signature");
+                    app.get_test_api_key()
+                        .await
+                        .map_err(|_| S3Error::InvalidAccessKeyId)
+                } else {
+                    error!(?auth, error = ?e, "verifying request failed");
+                    Err(S3Error::from(e))
+                }
+            }
+        }
+    } else if allow_missing_or_bad_signature {
+        warn!("allowing anonymous access");
+        app.get_test_api_key()
+            .await
+            .map_err(|_| S3Error::InvalidAccessKeyId)
+    } else {
+        error!("no valid authentication found");
+        Err(S3Error::InvalidSignature)
+    }
 }
