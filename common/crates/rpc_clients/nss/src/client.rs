@@ -27,10 +27,6 @@ impl RpcClient {
     ) -> Result<MessageFrame<nss_codec::MessageHeader>, RpcError> {
         self.inner.send_request(request_id, frame, timeout).await
     }
-
-    pub fn is_closed(&self) -> bool {
-        self.inner.is_closed()
-    }
 }
 
 impl Poolable for RpcClient {
@@ -47,6 +43,6 @@ impl Poolable for RpcClient {
     }
 
     fn is_closed(&self) -> bool {
-        self.is_closed()
+        self.inner.is_closed()
     }
 }
