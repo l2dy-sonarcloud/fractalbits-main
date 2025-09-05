@@ -2,8 +2,9 @@ pub mod leader_election;
 pub mod multi_az;
 
 use crate::{
+    CmdResult, InitConfig, MultiAzTestType, ServiceName, TestType,
     cmd_build::{self, BuildMode},
-    cmd_service, CmdResult, InitConfig, MultiAzTestType, ServiceName, TestType,
+    cmd_service,
 };
 
 pub async fn run_tests(test_type: TestType) -> CmdResult {

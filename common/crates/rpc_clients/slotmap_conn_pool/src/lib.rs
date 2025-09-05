@@ -1,13 +1,13 @@
 use parking_lot::RwLock;
-use slotmap::{new_key_type, SlotMap};
+use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt::{self, Debug};
 use std::future::Future;
 use std::hash::Hash;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
 new_key_type! { struct ConnectionKey; }
@@ -119,10 +119,10 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
                         }
                     };
 
-                    if let Some(conn_after_lock) = conn_after_lock_option {
-                        if !is_closed_after_lock {
-                            return Ok(conn_after_lock);
-                        }
+                    if let Some(conn_after_lock) = conn_after_lock_option
+                        && !is_closed_after_lock
+                    {
+                        return Ok(conn_after_lock);
                     }
 
                     // If we reach here, the connection is still broken and we hold the semaphore.

@@ -6,21 +6,21 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use futures_util::stream::FuturesUnordered;
 use futures_util::TryFutureExt;
+use futures_util::stream::FuturesUnordered;
 use http::header::{self, HeaderMap};
 use http::uri::Uri;
 use http::{Method, Request};
+use hyper::Body;
 use hyper::body::Bytes;
 use hyper::client::conn::{self, SendRequest};
-use hyper::Body;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
-use tokio::time::{sleep, timeout_at, Instant};
-use tower::util::ServiceExt;
+use tokio::time::{Instant, sleep, timeout_at};
 use tower::Service;
+use tower::util::ServiceExt;
 
 use self::usage::Usage;
 use self::user_input::{Scheme, UserInput};
@@ -92,7 +92,9 @@ pub async fn start_tasks(
     let handles = FuturesUnordered::new();
 
     // Generate fake keys
-    println!("Fetching keys from test.data for {connections} connections, io_depth=1, http_method={method}");
+    println!(
+        "Fetching keys from test.data for {connections} connections, io_depth=1, http_method={method}"
+    );
     let mut gen_keys = read_keys("test.data", connections, keys_limit)
         .into_iter()
         .collect::<Vec<_>>();

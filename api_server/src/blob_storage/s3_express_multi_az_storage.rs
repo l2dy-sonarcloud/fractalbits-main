@@ -1,6 +1,6 @@
 use super::{
-    blob_key, create_s3_client_wrapper, BlobStorage, BlobStorageError, S3ClientWrapper,
-    S3RetryConfig,
+    BlobStorage, BlobStorageError, S3ClientWrapper, S3RetryConfig, blob_key,
+    create_s3_client_wrapper,
 };
 use crate::s3_retry;
 use bytes::Bytes;
@@ -38,7 +38,11 @@ impl S3ExpressMultiAzStorage {
     ) -> Result<Self, BlobStorageError> {
         info!(
             "Initializing S3 Express One Zone storage with tracking for buckets: {} (local) and {} (remote) in AZ: {} (rate_limit_enabled: {}, retry_enabled: {})",
-            config.local_az_bucket, config.remote_az_bucket, config.local_az, config.ratelimit.enabled, config.retry_config.enabled
+            config.local_az_bucket,
+            config.remote_az_bucket,
+            config.local_az,
+            config.ratelimit.enabled,
+            config.retry_config.enabled
         );
 
         // Create local AZ S3 client

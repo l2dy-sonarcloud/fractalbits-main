@@ -1,10 +1,10 @@
+use crate::handler::ObjectRequestContext;
 use crate::handler::common::{
     buffer_payload,
     response::xml::{Xml, XmlnsS3},
     s3_error::S3Error,
 };
 use crate::handler::delete::delete_object_handler;
-use crate::handler::ObjectRequestContext;
 use bytes::Buf;
 use serde::{Deserialize, Serialize};
 

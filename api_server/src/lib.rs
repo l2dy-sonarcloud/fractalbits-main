@@ -10,7 +10,7 @@ pub use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use data_types::{ApiKey, Bucket, Versioned};
 use metrics::{counter, histogram};
 use moka::future::Cache;
-use rpc_client_common::{rss_rpc_retry, RpcError};
+use rpc_client_common::{RpcError, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
 

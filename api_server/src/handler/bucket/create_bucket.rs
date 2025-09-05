@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::handler::{
-    common::{buffer_payload, s3_error::S3Error},
     BucketRequestContext,
+    common::{buffer_payload, s3_error::S3Error},
 };
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]

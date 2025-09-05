@@ -5,15 +5,15 @@ use std::sync::Arc;
 
 use crate::object_layout::ObjectLayout;
 use crate::{
+    AppState,
     handler::{
+        ObjectRequestContext,
         common::{
             response::xml::{Xml, XmlnsS3},
             s3_error::S3Error,
             time::format_timestamp,
         },
-        ObjectRequestContext,
     },
-    AppState,
 };
 use data_types::Bucket;
 use rkyv::{self, rancor::Error};
@@ -211,14 +211,14 @@ pub async fn list_objects_v2_handler(
         );
         return Err(S3Error::InvalidArgument1);
     }
-    if let Some(encoding_type) = &opts.encoding_type {
-        if encoding_type != "url" {
-            tracing::warn!(
-                "expecting content_type as \"url\" only, got {}",
-                encoding_type
-            );
-            return Err(S3Error::InvalidArgument1);
-        }
+    if let Some(encoding_type) = &opts.encoding_type
+        && encoding_type != "url"
+    {
+        tracing::warn!(
+            "expecting content_type as \"url\" only, got {}",
+            encoding_type
+        );
+        return Err(S3Error::InvalidArgument1);
     }
 
     // Get bucket info
@@ -280,8 +280,14 @@ pub async fn list_objects(
     delimiter: String,
     start_after: String,
 ) -> Result<(Vec<Object>, Vec<Prefix>, Option<String>), S3Error> {
-    tracing::debug!("NSS list_inodes call with root_blob_name='{}', max_keys={}, prefix='{}', delimiter='{}', start_after='{}'",
-        bucket.root_blob_name, max_keys, prefix, delimiter, start_after);
+    tracing::debug!(
+        "NSS list_inodes call with root_blob_name='{}', max_keys={}, prefix='{}', delimiter='{}', start_after='{}'",
+        bucket.root_blob_name,
+        max_keys,
+        prefix,
+        delimiter,
+        start_after
+    );
 
     let resp = nss_rpc_retry!(
         app,

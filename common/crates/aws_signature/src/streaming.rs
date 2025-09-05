@@ -1,6 +1,6 @@
 #[cfg(any(test, feature = "testutils"))]
 use crate::sigv4::{format_scope_string, get_signing_key};
-use crate::{HmacSha256, AWS4_HMAC_SHA256_PAYLOAD};
+use crate::{AWS4_HMAC_SHA256_PAYLOAD, HmacSha256};
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use sha2::{Digest, Sha256};

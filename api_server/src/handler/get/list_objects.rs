@@ -1,12 +1,12 @@
-use super::list_objects_v2::{list_objects, Object, Prefix};
+use super::list_objects_v2::{Object, Prefix, list_objects};
 use crate::handler::{
+    ObjectRequestContext,
     common::{
         response::xml::{Xml, XmlnsS3},
         s3_error::S3Error,
     },
-    ObjectRequestContext,
 };
-use actix_web::{web::Query, HttpResponse};
+use actix_web::{HttpResponse, web::Query};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
@@ -108,14 +108,14 @@ pub async fn list_objects_handler(ctx: ObjectRequestContext) -> Result<HttpRespo
         .into_inner();
     tracing::debug!("list_objects {opts:?}");
 
-    if let Some(encoding_type) = &opts.encoding_type {
-        if encoding_type != "url" {
-            tracing::warn!(
-                "expecting content_type as \"url\" only, got {}",
-                encoding_type
-            );
-            return Err(S3Error::InvalidArgument1);
-        }
+    if let Some(encoding_type) = &opts.encoding_type
+        && encoding_type != "url"
+    {
+        tracing::warn!(
+            "expecting content_type as \"url\" only, got {}",
+            encoding_type
+        );
+        return Err(S3Error::InvalidArgument1);
     }
 
     // Get bucket info

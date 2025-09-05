@@ -8,7 +8,7 @@ mod cmd_service;
 mod cmd_tool;
 
 use clap::{ArgAction, Parser};
-use cmd_build::{BuildMode, BUILD_INFO};
+use cmd_build::{BUILD_INFO, BuildMode};
 use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 

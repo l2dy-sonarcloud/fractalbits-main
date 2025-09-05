@@ -1,4 +1,4 @@
-use crate::{cmd_build::*, cmd_service::*, InitConfig, *};
+use crate::{InitConfig, cmd_build::*, cmd_service::*, *};
 
 pub fn prepare_bench(with_flame_graph: bool) -> CmdResult {
     if with_flame_graph && run_cmd!(bash -c "type addr2line" | grep -q .cargo).is_err() {

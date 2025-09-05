@@ -1,4 +1,4 @@
-use super::{blob_key, create_s3_client, BlobStorage, BlobStorageError};
+use super::{BlobStorage, BlobStorageError, blob_key, create_s3_client};
 use crate::{config::S3HybridSingleAzConfig, object_layout::ObjectLayout};
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;

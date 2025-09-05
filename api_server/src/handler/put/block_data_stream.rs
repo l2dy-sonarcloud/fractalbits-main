@@ -1,6 +1,6 @@
 use actix_web::error::PayloadError;
 use bytes::{BufMut, Bytes, BytesMut};
-use futures::{ready, Stream};
+use futures::{Stream, ready};
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};

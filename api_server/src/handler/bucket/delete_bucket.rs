@@ -2,7 +2,7 @@ use actix_web::HttpResponse;
 use rpc_client_common::RpcError;
 use tracing::info;
 
-use crate::handler::{common::s3_error::S3Error, BucketRequestContext};
+use crate::handler::{BucketRequestContext, common::s3_error::S3Error};
 
 pub async fn delete_bucket_handler(ctx: BucketRequestContext) -> Result<HttpResponse, S3Error> {
     let bucket = ctx.resolve_bucket().await?;

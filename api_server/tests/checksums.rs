@@ -6,7 +6,7 @@ use aws_sdk_s3::{
     types::ChecksumMode,
 };
 use rstest::rstest;
-use test_common::{assert_bytes_eq, context, Context};
+use test_common::{Context, assert_bytes_eq, context};
 
 // The test structure is identical for all supported checksum algorithms
 #[allow(clippy::too_many_arguments)]

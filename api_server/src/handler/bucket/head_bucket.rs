@@ -1,7 +1,7 @@
 use actix_web::HttpResponse;
 
 use super::resolve_bucket;
-use crate::handler::{common::s3_error::S3Error, BucketRequestContext};
+use crate::handler::{BucketRequestContext, common::s3_error::S3Error};
 use tracing::error;
 
 pub async fn head_bucket_handler(ctx: BucketRequestContext) -> Result<HttpResponse, S3Error> {

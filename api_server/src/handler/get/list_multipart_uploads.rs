@@ -1,9 +1,9 @@
 use crate::handler::{
+    ObjectRequestContext,
     common::{
         response::xml::{Xml, XmlnsS3},
         s3_error::S3Error,
     },
-    ObjectRequestContext,
 };
 use actix_web::web::Query;
 use serde::{Deserialize, Serialize};

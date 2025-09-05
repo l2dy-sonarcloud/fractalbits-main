@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::handler::{
+    ObjectRequestContext,
     common::{
         checksum::ChecksumValue,
         get_raw_object,
@@ -8,13 +9,12 @@ use crate::handler::{
         s3_error::S3Error,
         time, xheader,
     },
-    ObjectRequestContext,
 };
 use actix_web::{
     http::header::{HeaderMap, HeaderValue},
     web::Query,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]

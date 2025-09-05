@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::AppState;
+use crate::handler::ObjectRequestContext;
 use crate::handler::common::mpu_parse_part_number;
 use crate::handler::common::{
     checksum::ChecksumValue,
@@ -8,9 +10,7 @@ use crate::handler::common::{
     s3_error::S3Error,
     time,
 };
-use crate::handler::ObjectRequestContext;
 use crate::object_layout::{MpuState, ObjectState};
-use crate::AppState;
 use actix_web::web::Query;
 use base64::prelude::*;
 use data_types::Bucket;

@@ -3,13 +3,13 @@ use rpc_client_common::nss_rpc_retry;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::handler::{
+    ObjectRequestContext,
     common::{
         response::xml::{Xml, XmlnsS3},
         s3_error::S3Error,
     },
-    ObjectRequestContext,
 };
-use crate::object_layout::{gen_version_id, MpuState, ObjectLayout, ObjectState};
+use crate::object_layout::{MpuState, ObjectLayout, ObjectState, gen_version_id};
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use serde::Serialize;
 

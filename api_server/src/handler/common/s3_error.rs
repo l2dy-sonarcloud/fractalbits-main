@@ -3,12 +3,12 @@ use std::{convert::From, str::Utf8Error};
 use super::signature::SignatureError;
 use crate::blob_storage::BlobStorageError;
 use actix_web::{
+    HttpResponse, ResponseError,
     http::{
+        StatusCode,
         header::{InvalidHeaderValue, ToStrError},
         uri::InvalidUri,
-        StatusCode,
     },
-    HttpResponse, ResponseError,
 };
 use http_range::HttpRangeParseError;
 use rpc_client_common::RpcError;
@@ -28,7 +28,9 @@ pub enum S3Error {
     #[error("An access point with an identical name already exists in your account.")]
     AccessPointAlreadyOwnedByYou,
 
-    #[error("There is a problem with your account that prevents the operation from completing successfully.")]
+    #[error(
+        "There is a problem with your account that prevents the operation from completing successfully."
+    )]
     AccountProblem,
 
     #[error("All access to this S3 resource has been disabled.")]
@@ -43,34 +45,48 @@ pub enum S3Error {
     #[error("The authorization query parameters that you provided are not valid.")]
     AuthorizationQueryParametersError,
 
-    #[error("The Content-MD5 or checksum value that you specified did not match what the server received.")]
+    #[error(
+        "The Content-MD5 or checksum value that you specified did not match what the server received."
+    )]
     BadDigest,
 
-    #[error("The requested bucket name is not available. The bucket namespace is shared by all users of the system. Specify a different name and try again.")]
+    #[error(
+        "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Specify a different name and try again."
+    )]
     BucketAlreadyExists,
 
     #[error("The bucket that you tried to create already exists, and you own it.")]
     BucketAlreadyOwnedByYou,
 
-    #[error("The bucket you tried to delete has access points attached. Delete your access points before deleting your bucket.")]
+    #[error(
+        "The bucket you tried to delete has access points attached. Delete your access points before deleting your bucket."
+    )]
     BucketHasAccessPointsAttached,
 
     #[error("The bucket that you tried to delete is not empty.")]
     BucketNotEmpty,
 
-    #[error("Your Multi-Region Access Point idempotency token was already used for a different request.")]
+    #[error(
+        "Your Multi-Region Access Point idempotency token was already used for a different request."
+    )]
     ClientTokenConflict,
 
-    #[error("Returned to the original caller when an error is encountered while reading the WriteGetObjectResponse body.")]
+    #[error(
+        "Returned to the original caller when an error is encountered while reading the WriteGetObjectResponse body."
+    )]
     ConnectionClosedByRequester,
 
-    #[error("A conflicting operation occurred. If using PutObject you can retry the request. If using multipart upload you should initiate another CreateMultipartUpload request and re-upload each part.")]
+    #[error(
+        "A conflicting operation occurred. If using PutObject you can retry the request. If using multipart upload you should initiate another CreateMultipartUpload request and re-upload each part."
+    )]
     ConditionalRequestConflict,
 
     #[error("This request does not support credentials.")]
     CredentialsNotSupported,
 
-    #[error("Cross-Region logging is not allowed. Buckets in one Region cannot log information to a bucket in another Region.")]
+    #[error(
+        "Cross-Region logging is not allowed. Buckets in one Region cannot log information to a bucket in another Region."
+    )]
     CrossLocationLoggingProhibited,
 
     #[error("The device is not currently active.")]
@@ -94,16 +110,16 @@ pub enum S3Error {
     #[strum(serialize = "IllegalLocationConstraintException")]
     IllegalLocationConstraintException0,
 
-    #[error("You attempt to create a bucket with a location constraint that corresponds to a different region than the regional endpoint the request was sent to.")]
+    #[error(
+        "You attempt to create a bucket with a location constraint that corresponds to a different region than the regional endpoint the request was sent to."
+    )]
     #[strum(serialize = "IllegalLocationConstraintException")]
     IllegalLocationConstraintException1,
 
     #[error("The versioning configuration specified in the request is not valid.")]
     IllegalVersioningConfigurationException,
 
-    #[error(
-        "You did not provide the number of bytes specified by the Content-Length HTTP header."
-    )]
+    #[error("You did not provide the number of bytes specified by the Content-Length HTTP header.")]
     IncompleteBody,
 
     #[error(
@@ -132,7 +148,9 @@ pub enum S3Error {
     #[error("You must specify the Anonymous role.")]
     InvalidAddressingHeader,
 
-    #[error("A ListBuckets request is made to a Regional endpoint that is different from the Region specified in the bucket-region parameter.")]
+    #[error(
+        "A ListBuckets request is made to a Regional endpoint that is different from the Region specified in the bucket-region parameter."
+    )]
     #[strum(serialize = "InvalidArgument")]
     InvalidArgument0,
 
@@ -182,10 +200,14 @@ pub enum S3Error {
     #[error("The operation is not valid for the current state of the object.")]
     InvalidObjectState,
 
-    #[error("One or more of the specified parts could not be found. The part might not have been uploaded, or the specified entity tag might not have matched the part's entity tag.")]
+    #[error(
+        "One or more of the specified parts could not be found. The part might not have been uploaded, or the specified entity tag might not have matched the part's entity tag."
+    )]
     InvalidPart,
 
-    #[error("The list of parts was not in ascending order. The parts list must be specified in order by part number.")]
+    #[error(
+        "The list of parts was not in ascending order. The parts list must be specified in order by part number."
+    )]
     InvalidPartOrder,
 
     #[error("All access to this object has been disabled.")]
@@ -199,11 +221,15 @@ pub enum S3Error {
     #[error("The requested range is not valid for the request. Try another range.")]
     InvalidRange,
 
-    #[error("An unpaginated ListBuckets request is made from an account that has an approved general purpose bucket quota higher than 10,000. You must make paginated requests to list the buckets in an account with more than 10,000 buckets.")]
+    #[error(
+        "An unpaginated ListBuckets request is made from an account that has an approved general purpose bucket quota higher than 10,000. You must make paginated requests to list the buckets in an account with more than 10,000 buckets."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest0,
 
-    #[error("The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4).")]
+    #[error(
+        "The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4)."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest1,
 
@@ -243,11 +269,15 @@ pub enum S3Error {
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest10,
 
-    #[error("Amazon S3 Transfer Acceleration is not supported for buckets with non-DNS compliant names.")]
+    #[error(
+        "Amazon S3 Transfer Acceleration is not supported for buckets with non-DNS compliant names."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest11,
 
-    #[error("Amazon S3 Transfer Acceleration is not supported for buckets with periods (.) in their names.")]
+    #[error(
+        "Amazon S3 Transfer Acceleration is not supported for buckets with periods (.) in their names."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest12,
 
@@ -263,11 +293,15 @@ pub enum S3Error {
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest15,
 
-    #[error("Amazon S3 Transfer Acceleration is not supported on this bucket. For assistance, contact Support.")]
+    #[error(
+        "Amazon S3 Transfer Acceleration is not supported on this bucket. For assistance, contact Support."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest16,
 
-    #[error("Amazon S3 Transfer Acceleration cannot be enabled on this bucket. For assistance, contact Support.")]
+    #[error(
+        "Amazon S3 Transfer Acceleration cannot be enabled on this bucket. For assistance, contact Support."
+    )]
     #[strum(serialize = "InvalidRequest")]
     InvalidRequest17,
 
@@ -286,7 +320,9 @@ pub enum S3Error {
     #[error("Returned if the session doesn't exist anymore because it timed out or expired.")]
     InvalidSessionException,
 
-    #[error("The request signature that the server calculated does not match the signature that you provided. Check your secret access key and signing method. For more information, see Signing and authenticating REST requests.")]
+    #[error(
+        "The request signature that the server calculated does not match the signature that you provided. Check your secret access key and signing method. For more information, see Signing and authenticating REST requests."
+    )]
     InvalidSignature,
 
     #[error("The provided security credentials are not valid.")]
@@ -298,7 +334,9 @@ pub enum S3Error {
     #[error("The storage class that you specified is not valid.")]
     InvalidStorageClass,
 
-    #[error("The target bucket for logging either does not exist, is not owned by you, or does not have the appropriate grants for the log-delivery group.")]
+    #[error(
+        "The target bucket for logging either does not exist, is not owned by you, or does not have the appropriate grants for the log-delivery group."
+    )]
     InvalidTargetBucketForLogging,
 
     #[error("The provided token is malformed or otherwise not valid.")]
@@ -321,11 +359,15 @@ pub enum S3Error {
     #[strum(serialize = "KMS.InvalidKeyUsageException")]
     KMSInvalidKeyUsageException0,
 
-    #[error("The encryption algorithm or signing algorithm specified for the operation is incompatible with the type of key material in the KMS key (KeySpec).")]
+    #[error(
+        "The encryption algorithm or signing algorithm specified for the operation is incompatible with the type of key material in the KMS key (KeySpec)."
+    )]
     #[strum(serialize = "KMS.InvalidKeyUsageException")]
     KMSInvalidKeyUsageException1,
 
-    #[error("The request was rejected because the state of the specified resource is not valid for this request.")]
+    #[error(
+        "The request was rejected because the state of the specified resource is not valid for this request."
+    )]
     #[strum(serialize = "KMS.KMSINvalidStateException")]
     KMSKMSInvalidStateException,
 
@@ -335,13 +377,17 @@ pub enum S3Error {
     #[strum(serialize = "KMS.NotFoundException")]
     KMSNotFoundException,
 
-    #[error("The ACL that you provided was not well formed or did not validate against our published schema.")]
+    #[error(
+        "The ACL that you provided was not well formed or did not validate against our published schema."
+    )]
     MalformedACLError,
 
     #[error("The body of your POST request is not well-formed multipart/form-data.")]
     MalformedPOSTRequest,
 
-    #[error("The XML that you provided was not well formed or did not validate against our published schema.")]
+    #[error(
+        "The XML that you provided was not well formed or did not validate against our published schema."
+    )]
     MalformedXML,
 
     #[error("Your request was too large.")]
@@ -425,7 +471,9 @@ pub enum S3Error {
     #[error("No transformation found for this Object Lambda Access Point.")]
     NoTransformationDefined,
 
-    #[error("Your account is not signed up for the fractalbits S3 service. You must sign up before you can use S3.")]
+    #[error(
+        "Your account is not signed up for the fractalbits S3 service. You must sign up before you can use S3."
+    )]
     NotSignedUp,
 
     #[error("The Object Lock configuration does not exist for this bucket.")]
@@ -434,28 +482,40 @@ pub enum S3Error {
     #[error("The bucket ownership controls were not found.")]
     OwnershipControlsNotFoundError,
 
-    #[error("A conflicting conditional operation is currently in progress against this resource. Try again.")]
+    #[error(
+        "A conflicting conditional operation is currently in progress against this resource. Try again."
+    )]
     OperationAborted,
 
-    #[error("The bucket that you are attempting to access must be addressed using the specified endpoint. Send all future requests to this endpoint.")]
+    #[error(
+        "The bucket that you are attempting to access must be addressed using the specified endpoint. Send all future requests to this endpoint."
+    )]
     PermanentRedirect,
 
-    #[error("The API operation you are attempting to access must be addressed using the specified endpoint. Send all future requests to this endpoint.")]
+    #[error(
+        "The API operation you are attempting to access must be addressed using the specified endpoint. Send all future requests to this endpoint."
+    )]
     PermanentRedirectControlError,
 
     #[error("At least one of the preconditions that you specified did not hold.")]
     PreconditionFailed,
 
-    #[error("Temporary redirect. You are being redirected to the bucket while the Domain Name System (DNS) server is being updated.")]
+    #[error(
+        "Temporary redirect. You are being redirected to the bucket while the Domain Name System (DNS) server is being updated."
+    )]
     Redirect,
 
-    #[error("The request header and query parameters used to make the request exceed the maximum allowed size.")]
+    #[error(
+        "The request header and query parameters used to make the request exceed the maximum allowed size."
+    )]
     RequestHeaderSectionTooLarge,
 
     #[error("A bucket POST request must be of the enclosure-type multipart/form-data.")]
     RequestIsNotMultiPartContent,
 
-    #[error("Your socket connection to the server was not read from or written to within the timeout period.")]
+    #[error(
+        "Your socket connection to the server was not read from or written to within the timeout period."
+    )]
     RequestTimeout,
 
     #[error("The difference between the request time and the server's time is too large.")]
@@ -464,7 +524,9 @@ pub enum S3Error {
     #[error("Requesting the torrent file of a bucket is not permitted.")]
     RequestTorrentOfBucketError,
 
-    #[error("Returned to the original caller when an error is encountered while reading the WriteGetObjectResponse body.")]
+    #[error(
+        "Returned to the original caller when an error is encountered while reading the WriteGetObjectResponse body."
+    )]
     ResponseInterrupted,
 
     #[error("The object restore is already in progress.")]
@@ -476,7 +538,9 @@ pub enum S3Error {
     #[error("Service is unable to handle request.")]
     ServiceUnavailable,
 
-    #[error("The request signature that the server calculated does not match the signature that you provided. Check your AWS secret access key and signing method.")]
+    #[error(
+        "The request signature that the server calculated does not match the signature that you provided. Check your AWS secret access key and signing method."
+    )]
     SignatureDoesNotMatch,
 
     #[error("Please reduce your request rate.")]
@@ -486,7 +550,9 @@ pub enum S3Error {
     #[strum(serialize = "503 SlowDown")]
     SlowDown503,
 
-    #[error("You are being redirected to the bucket while the Domain Name System (DNS) server is being updated.")]
+    #[error(
+        "You are being redirected to the bucket while the Domain Name System (DNS) server is being updated."
+    )]
     TemporaryRedirect,
 
     #[error("The serial number and/or token code you provided is not valid.")]
@@ -501,37 +567,51 @@ pub enum S3Error {
     #[error("You have attempted to create more buckets than are allowed for an account.")]
     TooManyBuckets,
 
-    #[error("You have attempted to create a Multi-Region Access Point with more Regions than are allowed for an account.")]
+    #[error(
+        "You have attempted to create a Multi-Region Access Point with more Regions than are allowed for an account."
+    )]
     TooManyMultiRegionAccessPointregionsError,
 
-    #[error("You have attempted to create more Multi-Region Access Points than are allowed for an account.")]
+    #[error(
+        "You have attempted to create more Multi-Region Access Points than are allowed for an account."
+    )]
     TooManyMultiRegionAccessPoints,
 
-    #[error("Applicable in China Regions only. Returned when a request is made to a bucket that doesn't have an ICP license.")]
+    #[error(
+        "Applicable in China Regions only. Returned when a request is made to a bucket that doesn't have an ICP license."
+    )]
     UnauthorizedAccessError,
 
     #[error("This request contains unsupported content.")]
     UnexpectedContent,
 
-    #[error("Applicable in China Regions only. This request was rejected because the IP was unexpected.")]
+    #[error(
+        "Applicable in China Regions only. This request was rejected because the IP was unexpected."
+    )]
     UnexpectedIPError,
 
     #[error("The request contained an unsupported argument.")]
     UnsupportedArgument,
 
-    #[error("The provided request is signed with an unsupported STS Token version or the signature version is not supported.")]
+    #[error(
+        "The provided request is signed with an unsupported STS Token version or the signature version is not supported."
+    )]
     UnsupportedSignature,
 
     #[error("The email address that you provided does not match any account on record.")]
     UnresolvableGrantByEmailAddress,
 
-    #[error("The bucket POST request must contain the specified field name. If it is specified, check the order of the fields.")]
+    #[error(
+        "The bucket POST request must contain the specified field name. If it is specified, check the order of the fields."
+    )]
     UserKeyMustBeSpecified,
 
     #[error("The specified access point does not exist.")]
     NoSuchAccessPoint,
 
-    #[error("Your request contains tag input that is not valid. For example, your request might contain duplicate keys, keys or values that are too long, or system tags.")]
+    #[error(
+        "Your request contains tag input that is not valid. For example, your request might contain duplicate keys, keys or values that are too long, or system tags."
+    )]
     InvalidTag,
 
     #[error("Your policy contains a principal that is not valid.")]

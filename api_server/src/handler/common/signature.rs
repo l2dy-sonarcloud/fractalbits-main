@@ -4,12 +4,12 @@ pub mod payload;
 
 // Re-export from common crate
 pub use aws_signature::streaming::{
-    parse_chunk_signature, verify_chunk_signature, ChunkSignature, ChunkSignatureContext,
+    ChunkSignature, ChunkSignatureContext, parse_chunk_signature, verify_chunk_signature,
 };
 
 use crate::{
-    handler::common::{request::extract::Authentication, s3_error::S3Error},
     AppState,
+    handler::common::{request::extract::Authentication, s3_error::S3Error},
 };
 use actix_web::HttpRequest;
 use data_types::{ApiKey, Versioned};

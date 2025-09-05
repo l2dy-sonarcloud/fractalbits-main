@@ -577,10 +577,10 @@ pub fn get_service_ips(service_id: &str, expected_min_count: usize) -> Vec<Strin
                 let mut ips = Vec::new();
                 if let Some(obj) = instances.as_object() {
                     for (_instance_id, value) in obj {
-                        if let Some(ip_obj) = value.get("S") {
-                            if let Some(ip) = ip_obj.as_str() {
-                                ips.push(ip.to_string());
-                            }
+                        if let Some(ip_obj) = value.get("S")
+                            && let Some(ip) = ip_obj.as_str()
+                        {
+                            ips.push(ip.to_string());
                         }
                     }
                 }

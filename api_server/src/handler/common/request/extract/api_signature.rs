@@ -1,5 +1,5 @@
-use actix_web::{dev::Payload, web::Query, FromRequest, HttpRequest};
-use futures::future::{ready, Ready};
+use actix_web::{FromRequest, HttpRequest, dev::Payload, web::Query};
+use futures::future::{Ready, ready};
 use serde::Deserialize;
 use std::fmt;
 
@@ -40,8 +40,11 @@ pub struct ApiSignatureExtractor(pub ApiSignature);
 
 impl std::fmt::Display for ApiSignatureExtractor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ApiSignatureExtractor(upload_id: {:?}, part_number: {:?}, list_type: {:?}, x_amz_copy_source: {:?})",
-               self.0.upload_id, self.0.part_number, self.0.list_type, self.0.x_amz_copy_source)
+        write!(
+            f,
+            "ApiSignatureExtractor(upload_id: {:?}, part_number: {:?}, list_type: {:?}, x_amz_copy_source: {:?})",
+            self.0.upload_id, self.0.part_number, self.0.list_type, self.0.x_amz_copy_source
+        )
     }
 }
 
@@ -69,7 +72,7 @@ impl FromRequest for ApiSignatureExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, web, App, HttpResponse};
+    use actix_web::{App, HttpResponse, test, web};
 
     async fn handler(api_signature: ApiSignatureExtractor) -> HttpResponse {
         let upload_id = api_signature.0.upload_id.unwrap_or_default();

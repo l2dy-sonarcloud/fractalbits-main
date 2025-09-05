@@ -9,8 +9,8 @@ mod put;
 
 use crate::AppState;
 use actix_web::{
-    web::{self, Payload},
     HttpRequest, HttpResponse, ResponseError,
+    web::{self, Payload},
 };
 use bucket::BucketEndpoint;
 use common::{
@@ -22,7 +22,7 @@ use delete::DeleteEndpoint;
 use endpoint::Endpoint;
 use get::GetEndpoint;
 use head::HeadEndpoint;
-use metrics::{counter, gauge, histogram, Gauge};
+use metrics::{Gauge, counter, gauge, histogram};
 use post::PostEndpoint;
 use put::PutEndpoint;
 use std::sync::Arc;

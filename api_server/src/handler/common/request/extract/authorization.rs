@@ -1,12 +1,12 @@
 use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
-    dev::Payload,
-    http::header::{ToStrError, AUTHORIZATION},
     FromRequest, HttpRequest,
+    dev::Payload,
+    http::header::{AUTHORIZATION, ToStrError},
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use futures::future::{ready, Ready};
+use futures::future::{Ready, ready};
 use thiserror::Error;
 
 use crate::handler::common::{
@@ -183,7 +183,7 @@ fn parse_credential(cred: &str) -> Result<(String, Scope), AuthError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, web, App, HttpResponse};
+    use actix_web::{App, HttpResponse, test, web};
     use chrono::{Datelike, Timelike};
 
     async fn handler(auth: AuthFromHeaders) -> HttpResponse {

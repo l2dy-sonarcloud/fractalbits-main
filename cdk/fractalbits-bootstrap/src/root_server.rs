@@ -141,7 +141,9 @@ fn initialize_az_status_in_ddb(remote_az: &str) -> CmdResult {
             --region $region
     }?;
 
-    info!("AZ status initialized in service-discovery table ({local_az}: Normal, {remote_az}: Normal)");
+    info!(
+        "AZ status initialized in service-discovery table ({local_az}: Normal, {remote_az}: Normal)"
+    );
     Ok(())
 }
 
@@ -246,7 +248,9 @@ fn run_cmd_with_ssm(instance_id: &str, cmd: &str) -> CmdResult {
             --query "Command.CommandId"
             --output text
     }?;
-    info!("Command sent to {instance_id} successfully. Command ID: {command_id}. Polling for results...");
+    info!(
+        "Command sent to {instance_id} successfully. Command ID: {command_id}. Polling for results..."
+    );
     let mut attempt = 0;
     loop {
         attempt += 1;
@@ -269,7 +273,8 @@ fn run_cmd_with_ssm(instance_id: &str, cmd: &str) -> CmdResult {
             }
             "TimedOut" => {
                 return Err(Error::other(format!(
-                            "Command timed out on the remote instance after {COMMAND_TIMEOUT_SECONDS} seconds.")));
+                    "Command timed out on the remote instance after {COMMAND_TIMEOUT_SECONDS} seconds."
+                )));
             }
             _ => {
                 // Status is Pending, InProgress, Cancelling, etc.

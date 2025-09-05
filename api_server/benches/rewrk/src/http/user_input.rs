@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use http::header::HeaderValue;
 use http::uri::Uri;
 use http::{HeaderMap, Method};

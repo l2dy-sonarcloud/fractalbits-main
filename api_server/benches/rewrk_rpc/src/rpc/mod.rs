@@ -12,7 +12,7 @@ use std::future::Future;
 use std::pin::Pin;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
-use tokio::time::{timeout_at, Instant};
+use tokio::time::{Instant, timeout_at};
 use uuid::Uuid;
 
 use self::usage::Usage;

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use nss_codec::{get_inode_response, list_inodes_response};
-use rpc_client_common::{nss_rpc_retry, rss_rpc_retry, RpcError};
+use rpc_client_common::{RpcError, nss_rpc_retry, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
 use rss_codec::AzStatusMap;

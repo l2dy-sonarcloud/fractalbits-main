@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 
 use crate::results::WorkerResult;

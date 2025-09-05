@@ -10,21 +10,21 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::io::AsRawFd;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use strum::AsRefStr;
 use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     oneshot,
 };
 use tokio::task::JoinSet;
 use tokio_retry::{
-    strategy::{jitter, FixedInterval},
     Retry,
+    strategy::{FixedInterval, jitter},
 };
 use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;

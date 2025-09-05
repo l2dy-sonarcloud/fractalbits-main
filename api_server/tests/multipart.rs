@@ -134,15 +134,16 @@ async fn test_multipart_upload() {
         .unwrap();
 
     // The multipart upload must not appear anymore
-    assert!(ctx
-        .client
-        .list_parts()
-        .bucket(&bucket)
-        .key("a")
-        .upload_id(uid)
-        .send()
-        .await
-        .is_err());
+    assert!(
+        ctx.client
+            .list_parts()
+            .bucket(&bucket)
+            .key("a")
+            .upload_id(uid)
+            .send()
+            .await
+            .is_err()
+    );
 
     {
         // The object must appear as a regular object
@@ -540,15 +541,16 @@ async fn test_uploadlistpart() {
         .unwrap();
 
     // The multipart upload must not appear anymore
-    assert!(ctx
-        .client
-        .list_parts()
-        .bucket(&bucket)
-        .key(&test_key)
-        .upload_id(uid)
-        .send()
-        .await
-        .is_err());
+    assert!(
+        ctx.client
+            .list_parts()
+            .bucket(&bucket)
+            .key(&test_key)
+            .upload_id(uid)
+            .send()
+            .await
+            .is_err()
+    );
 
     {
         // The object must appear as a regular object

@@ -545,7 +545,9 @@ Environment="GUI_WEB_ROOT=ui/dist""##;
         ServiceName::DdbLocal => {
             let java = run_fun!(bash -c "command -v java")?;
             let java_lib = format!("{pwd}/dynamodb_local/DynamoDBLocal_lib");
-            format!("{java} -Djava.library.path={java_lib} -jar {java_lib}/../DynamoDBLocal.jar -sharedDb -dbPath {pwd}/data/rss")
+            format!(
+                "{java} -Djava.library.path={java_lib} -jar {java_lib}/../DynamoDBLocal.jar -sharedDb -dbPath {pwd}/data/rss"
+            )
         }
         ServiceName::Minio => {
             env_settings = r##"

@@ -1,5 +1,5 @@
-use actix_web::{dev::Payload, FromRequest, HttpRequest};
-use futures::future::{ready, Ready};
+use actix_web::{FromRequest, HttpRequest, dev::Payload};
+use futures::future::{Ready, ready};
 
 use crate::handler::common::s3_error::S3Error;
 
@@ -104,7 +104,7 @@ fn check_key_name(n: &str) -> Result<(), S3Error> {
 mod tests {
     use super::*;
     use crate::{AppState, Config};
-    use actix_web::{test, web, App, HttpResponse};
+    use actix_web::{App, HttpResponse, test, web};
     use std::sync::Arc;
 
     async fn handler(bucket_key: BucketAndKeyName) -> HttpResponse {

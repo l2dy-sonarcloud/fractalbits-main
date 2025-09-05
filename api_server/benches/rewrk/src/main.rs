@@ -46,7 +46,9 @@ fn main() {
     let conns: usize = match args.value_of("connections").unwrap_or("1").trim().parse() {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("invalid parameter for 'connections' given, input type must be a integer.");
+            eprintln!(
+                "invalid parameter for 'connections' given, input type must be a integer."
+            );
             return;
         },
     };

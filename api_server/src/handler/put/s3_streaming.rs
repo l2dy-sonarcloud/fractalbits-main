@@ -1,20 +1,20 @@
 use crate::handler::common::signature::{
-    parse_chunk_signature, verify_chunk_signature, ChunkSignature, ChunkSignatureContext,
+    ChunkSignature, ChunkSignatureContext, parse_chunk_signature, verify_chunk_signature,
 };
 use crate::handler::common::{
     checksum::{
-        request_checksum_value, request_trailer_checksum_algorithm, ChecksumAlgorithm, Checksummer,
-        Checksums, ExpectedChecksums,
+        ChecksumAlgorithm, Checksummer, Checksums, ExpectedChecksums, request_checksum_value,
+        request_trailer_checksum_algorithm,
     },
     s3_error::S3Error,
 };
-use actix_web::error::PayloadError;
 use actix_web::HttpRequest;
+use actix_web::error::PayloadError;
 use aws_signature::{STREAMING_PAYLOAD, UNSIGNED_PAYLOAD};
 use base64::prelude::*;
 use bytes::{Buf, Bytes, BytesMut};
 use data_types::hash::Hash;
-use futures::{ready, Stream};
+use futures::{Stream, ready};
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -188,82 +188,78 @@ impl S3StreamingPayload {
             // Verify trailer checksums if present
             if let Some(trailers) = trailer_checksums {
                 // Verify CRC32
-                if let Some(trailer_crc32) = trailers.checksum_crc32 {
-                    if let Some(calculated_crc32) = checksums.crc32 {
-                        let calculated_b64 =
-                            base64::prelude::BASE64_STANDARD.encode(calculated_crc32);
-                        if trailer_crc32 != calculated_b64 {
-                            tracing::error!(
-                                "CRC32 checksum mismatch: trailer={}, calculated={}",
-                                trailer_crc32,
-                                calculated_b64
-                            );
-                            return Err(S3Error::InvalidDigest);
-                        }
+                if let Some(trailer_crc32) = trailers.checksum_crc32
+                    && let Some(calculated_crc32) = checksums.crc32
+                {
+                    let calculated_b64 = base64::prelude::BASE64_STANDARD.encode(calculated_crc32);
+                    if trailer_crc32 != calculated_b64 {
+                        tracing::error!(
+                            "CRC32 checksum mismatch: trailer={}, calculated={}",
+                            trailer_crc32,
+                            calculated_b64
+                        );
+                        return Err(S3Error::InvalidDigest);
                     }
                 }
 
                 // Verify CRC32C
-                if let Some(trailer_crc32c) = trailers.checksum_crc32c {
-                    if let Some(calculated_crc32c) = checksums.crc32c {
-                        let calculated_b64 =
-                            base64::prelude::BASE64_STANDARD.encode(calculated_crc32c);
-                        if trailer_crc32c != calculated_b64 {
-                            tracing::error!(
-                                "CRC32C checksum mismatch: trailer={}, calculated={}",
-                                trailer_crc32c,
-                                calculated_b64
-                            );
-                            return Err(S3Error::InvalidDigest);
-                        }
+                if let Some(trailer_crc32c) = trailers.checksum_crc32c
+                    && let Some(calculated_crc32c) = checksums.crc32c
+                {
+                    let calculated_b64 = base64::prelude::BASE64_STANDARD.encode(calculated_crc32c);
+                    if trailer_crc32c != calculated_b64 {
+                        tracing::error!(
+                            "CRC32C checksum mismatch: trailer={}, calculated={}",
+                            trailer_crc32c,
+                            calculated_b64
+                        );
+                        return Err(S3Error::InvalidDigest);
                     }
                 }
 
                 // Verify CRC64NVME
-                if let Some(trailer_crc64nvme) = trailers.checksum_crc64nvme {
-                    if let Some(calculated_crc64nvme) = checksums.crc64nvme {
-                        let calculated_b64 =
-                            base64::prelude::BASE64_STANDARD.encode(calculated_crc64nvme);
-                        if trailer_crc64nvme != calculated_b64 {
-                            tracing::error!(
-                                "CRC64NVME checksum mismatch: trailer={}, calculated={}",
-                                trailer_crc64nvme,
-                                calculated_b64
-                            );
-                            return Err(S3Error::InvalidDigest);
-                        }
+                if let Some(trailer_crc64nvme) = trailers.checksum_crc64nvme
+                    && let Some(calculated_crc64nvme) = checksums.crc64nvme
+                {
+                    let calculated_b64 =
+                        base64::prelude::BASE64_STANDARD.encode(calculated_crc64nvme);
+                    if trailer_crc64nvme != calculated_b64 {
+                        tracing::error!(
+                            "CRC64NVME checksum mismatch: trailer={}, calculated={}",
+                            trailer_crc64nvme,
+                            calculated_b64
+                        );
+                        return Err(S3Error::InvalidDigest);
                     }
                 }
 
                 // Verify SHA1
-                if let Some(trailer_sha1) = trailers.checksum_sha1 {
-                    if let Some(calculated_sha1) = checksums.sha1 {
-                        let calculated_b64 =
-                            base64::prelude::BASE64_STANDARD.encode(calculated_sha1);
-                        if trailer_sha1 != calculated_b64 {
-                            tracing::error!(
-                                "SHA1 checksum mismatch: trailer={}, calculated={}",
-                                trailer_sha1,
-                                calculated_b64
-                            );
-                            return Err(S3Error::InvalidDigest);
-                        }
+                if let Some(trailer_sha1) = trailers.checksum_sha1
+                    && let Some(calculated_sha1) = checksums.sha1
+                {
+                    let calculated_b64 = base64::prelude::BASE64_STANDARD.encode(calculated_sha1);
+                    if trailer_sha1 != calculated_b64 {
+                        tracing::error!(
+                            "SHA1 checksum mismatch: trailer={}, calculated={}",
+                            trailer_sha1,
+                            calculated_b64
+                        );
+                        return Err(S3Error::InvalidDigest);
                     }
                 }
 
                 // Verify SHA256
-                if let Some(trailer_sha256) = trailers.checksum_sha256 {
-                    if let Some(calculated_sha256) = checksums.sha256 {
-                        let calculated_b64 =
-                            base64::prelude::BASE64_STANDARD.encode(calculated_sha256);
-                        if trailer_sha256 != calculated_b64 {
-                            tracing::error!(
-                                "SHA256 checksum mismatch: trailer={}, calculated={}",
-                                trailer_sha256,
-                                calculated_b64
-                            );
-                            return Err(S3Error::InvalidDigest);
-                        }
+                if let Some(trailer_sha256) = trailers.checksum_sha256
+                    && let Some(calculated_sha256) = checksums.sha256
+                {
+                    let calculated_b64 = base64::prelude::BASE64_STANDARD.encode(calculated_sha256);
+                    if trailer_sha256 != calculated_b64 {
+                        tracing::error!(
+                            "SHA256 checksum mismatch: trailer={}, calculated={}",
+                            trailer_sha256,
+                            calculated_b64
+                        );
+                        return Err(S3Error::InvalidDigest);
                     }
                 }
 
@@ -374,13 +370,11 @@ impl S3StreamingPayload {
         }
 
         // Check for streaming signature in content-sha256
-        if let Some(content_sha256) = headers.get("x-amz-content-sha256") {
-            if let Ok(value) = content_sha256.to_str() {
-                if value == "STREAMING-UNSIGNED-PAYLOAD-TRAILER" || value.starts_with("STREAMING-")
-                {
-                    return true;
-                }
-            }
+        if let Some(content_sha256) = headers.get("x-amz-content-sha256")
+            && let Ok(value) = content_sha256.to_str()
+            && (value == "STREAMING-UNSIGNED-PAYLOAD-TRAILER" || value.starts_with("STREAMING-"))
+        {
+            return true;
         }
 
         false
@@ -522,7 +516,7 @@ impl Stream for S3StreamingPayload {
                         match ready!(this.inner.as_mut().poll_next(cx)) {
                             Some(Ok(data)) => {
                                 // Send data to checksum calculator
-                                if let Some(ref sender) = this.checksum_sender {
+                                if let Some(sender) = &this.checksum_sender {
                                     let _ = sender.send(ChecksumMessage::Data(data.clone()));
                                 }
                                 return Poll::Ready(Some(Ok(data)));
@@ -579,7 +573,7 @@ impl Stream for S3StreamingPayload {
                         }
 
                         // Send data to checksum calculator
-                        if let Some(ref sender) = this.checksum_sender {
+                        if let Some(sender) = &this.checksum_sender {
                             let _ = sender.send(ChecksumMessage::Data(chunk_data.clone().into()));
                         }
 
@@ -608,7 +602,7 @@ impl Stream for S3StreamingPayload {
                             }
 
                             // Send data to checksum calculator
-                            if let Some(ref sender) = this.checksum_sender {
+                            if let Some(sender) = &this.checksum_sender {
                                 let _ = sender.send(ChecksumMessage::Data(chunk_data.clone()));
                             }
 

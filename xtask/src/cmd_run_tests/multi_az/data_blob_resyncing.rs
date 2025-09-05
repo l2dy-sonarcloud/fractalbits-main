@@ -273,11 +273,11 @@ async fn test_with_deleted_blobs() -> CmdResult {
     // Create set of surviving blob IDs (excluding deleted ones)
     let mut surviving_outage_blob_ids = HashSet::new();
     for key in &outage_keys {
-        if !to_delete.contains(key) {
-            if let Some(blob_id) = key_to_blob_id.get(*key) {
-                surviving_outage_blob_ids.insert(blob_id.clone());
-                println!("    Tracking surviving blob: {} -> {}", key, blob_id);
-            }
+        if !to_delete.contains(key)
+            && let Some(blob_id) = key_to_blob_id.get(*key)
+        {
+            surviving_outage_blob_ids.insert(blob_id.clone());
+            println!("    Tracking surviving blob: {} -> {}", key, blob_id);
         }
     }
 

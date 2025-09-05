@@ -1,4 +1,4 @@
-use crate::{streaming::SignatureError, HmacSha256, AWS4_HMAC_SHA256};
+use crate::{AWS4_HMAC_SHA256, HmacSha256, streaming::SignatureError};
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use sha2::{Digest, Sha256};

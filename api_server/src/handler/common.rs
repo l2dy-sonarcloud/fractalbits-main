@@ -8,12 +8,12 @@ pub mod time;
 pub mod xheader;
 
 use crate::{
-    object_layout::{HeaderList, ObjectLayout},
     AppState,
+    object_layout::{HeaderList, ObjectLayout},
 };
 use actix_web::http::header::{self, HeaderMap};
 use futures::StreamExt;
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use rkyv::{self, rancor::Error};
 use rpc_client_common::nss_rpc_retry;
 use s3_error::S3Error;

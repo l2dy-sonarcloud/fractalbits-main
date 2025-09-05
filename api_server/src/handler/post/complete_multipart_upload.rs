@@ -1,21 +1,21 @@
 use crate::{
     handler::{
+        ObjectRequestContext,
         common::{
             buffer_payload,
-            checksum::{request_checksum_value, ChecksumAlgorithm, ChecksumValue},
+            checksum::{ChecksumAlgorithm, ChecksumValue, request_checksum_value},
             extract_metadata_headers, gen_etag, get_raw_object, list_raw_objects,
             mpu_get_part_prefix, mpu_parse_part_number,
             response::xml::{Xml, XmlnsS3},
             s3_error::S3Error,
         },
         delete::delete_object_handler,
-        ObjectRequestContext,
     },
     object_layout::{MpuState, ObjectCoreMetaData, ObjectState},
 };
 use actix_web::http::header::HeaderValue;
 use actix_web::web::Bytes;
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytes::Buf;
 use crc32c::Crc32cHasher as Crc32c;
 use crc32fast::Hasher as Crc32;
@@ -180,22 +180,19 @@ impl MpuChecksummer {
     pub(crate) fn update(&mut self, checksum: Option<ChecksumValue>) -> Result<(), S3Error> {
         match (&mut self.composite_checksum, checksum) {
             (None, _) => (),
-            (Some(MpuChecksummerAlgo::Crc32(ref mut crc32)), Some(ChecksumValue::Crc32(x))) => {
+            (Some(MpuChecksummerAlgo::Crc32(crc32)), Some(ChecksumValue::Crc32(x))) => {
                 crc32.update(&x);
             }
-            (Some(MpuChecksummerAlgo::Crc32c(ref mut crc32c)), Some(ChecksumValue::Crc32c(x))) => {
+            (Some(MpuChecksummerAlgo::Crc32c(crc32c)), Some(ChecksumValue::Crc32c(x))) => {
                 crc32c.write(&x);
             }
-            (
-                Some(MpuChecksummerAlgo::Crc64Nvme(ref mut crc64nvme)),
-                Some(ChecksumValue::Crc64Nvme(x)),
-            ) => {
+            (Some(MpuChecksummerAlgo::Crc64Nvme(crc64nvme)), Some(ChecksumValue::Crc64Nvme(x))) => {
                 crc64nvme.write(&x);
             }
-            (Some(MpuChecksummerAlgo::Sha1(ref mut sha1)), Some(ChecksumValue::Sha1(x))) => {
+            (Some(MpuChecksummerAlgo::Sha1(sha1)), Some(ChecksumValue::Sha1(x))) => {
                 sha1.update(x);
             }
-            (Some(MpuChecksummerAlgo::Sha256(ref mut sha256)), Some(ChecksumValue::Sha256(x))) => {
+            (Some(MpuChecksummerAlgo::Sha256(sha256)), Some(ChecksumValue::Sha256(x))) => {
                 sha256.update(x);
             }
             (Some(_), b) => {

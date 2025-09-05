@@ -9,11 +9,11 @@ pub use authorization::{AuthError, AuthFromHeaders, Authentication, Scope};
 pub use bucket_name_and_key::BucketAndKeyName;
 
 use crate::handler::common::checksum::{ChecksumAlgorithm, ChecksumValue};
-use actix_web::{dev::Payload, web, FromRequest, HttpRequest};
-use base64::{prelude::BASE64_STANDARD, Engine};
+use actix_web::{FromRequest, HttpRequest, dev::Payload, web};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytes::Bytes;
-use futures::future::{ready, Ready};
 use futures::StreamExt;
+use futures::future::{Ready, ready};
 use std::collections::HashMap;
 
 /// Custom extractor that can handle chunked streams with trailers

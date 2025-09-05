@@ -6,15 +6,15 @@ mod api_key_routes;
 mod cache_mgmt;
 
 use actix_files::Files;
-use actix_web::{middleware::Logger, web, App, HttpServer};
-use api_server::{handler::any_handler, AppState, Config};
+use actix_web::{App, HttpServer, middleware::Logger, web};
+use api_server::{AppState, Config, handler::any_handler};
 use clap::Parser;
 use openssl::{
     pkey::{PKey, Private},
     ssl::{SslAcceptor, SslMethod},
 };
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -44,8 +44,7 @@ fn load_private_key(key_path: &str) -> Result<PKey<Private>, Box<dyn std::error:
 #[actix_web::main]
 async fn main() {
     // AWS SDK suppression filter
-    let third_party_filter =
-        "tower_http=warn,hyper_util=warn,aws_smithy=warn,aws_sdk=warn,actix_web=warn,actix_server=warn,h2=warn";
+    let third_party_filter = "tower_http=warn,hyper_util=warn,aws_smithy=warn,aws_sdk=warn,actix_web=warn,actix_server=warn,h2=warn";
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()

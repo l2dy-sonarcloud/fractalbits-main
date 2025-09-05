@@ -1,6 +1,6 @@
+use crate::handler::ObjectRequestContext;
 use crate::handler::common::{mpu_get_part_prefix, s3_error::S3Error};
 use crate::handler::put::put_object_handler;
-use crate::handler::ObjectRequestContext;
 use actix_web::HttpResponse;
 use serde::Serialize;
 

@@ -1,10 +1,10 @@
 use crate::handler::{
-    common::{get_raw_object, object_headers, s3_error::S3Error},
-    get::{override_headers, GetObjectHeaderOpts, GetObjectQueryOpts},
     ObjectRequestContext,
+    common::{get_raw_object, object_headers, s3_error::S3Error},
+    get::{GetObjectHeaderOpts, GetObjectQueryOpts, override_headers},
 };
-use actix_web::{web::Query, HttpResponse};
-use futures_util::{stream, StreamExt as _};
+use actix_web::{HttpResponse, web::Query};
+use futures_util::{StreamExt as _, stream};
 
 pub async fn head_object_handler(ctx: ObjectRequestContext) -> Result<HttpResponse, S3Error> {
     let bucket = ctx.resolve_bucket().await?;

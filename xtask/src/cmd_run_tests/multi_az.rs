@@ -2,7 +2,7 @@ pub mod data_blob_resyncing;
 pub mod data_blob_tracking;
 
 use crate::{
-    cmd_build::BuildMode, cmd_service, CmdResult, InitConfig, MultiAzTestType, ServiceName,
+    CmdResult, InitConfig, MultiAzTestType, ServiceName, cmd_build::BuildMode, cmd_service,
 };
 
 pub async fn run_multi_az_tests(test_type: MultiAzTestType) -> CmdResult {

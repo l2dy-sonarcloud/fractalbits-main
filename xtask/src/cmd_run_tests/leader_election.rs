@@ -101,10 +101,6 @@ async fn setup_test_table(table_name: &str) -> aws_sdk_dynamodb::Client {
         .region(Region::new("fakeRegion"))
         .endpoint_url(DDB_ENDPOINT);
 
-    // For local testing with fake credentials
-    std::env::set_var("AWS_ACCESS_KEY_ID", "fakeMyKeyId");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "fakeSecretAccessKey");
-
     let config = config_builder.load().await;
     let client = aws_sdk_dynamodb::Client::new(&config);
 

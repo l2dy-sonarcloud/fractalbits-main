@@ -1,8 +1,8 @@
 use aws_sdk_s3::types::ChecksumMode;
 use aws_signature::{
-    sigv4::{sign_request, SigningParams},
-    streaming::{create_chunk_signature_context, create_streaming_body, SignatureError},
     STREAMING_PAYLOAD,
+    sigv4::{SigningParams, sign_request},
+    streaming::{SignatureError, create_chunk_signature_context, create_streaming_body},
 };
 use chrono::Utc;
 use reqwest::{Client, Method};

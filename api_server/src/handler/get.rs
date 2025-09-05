@@ -6,8 +6,8 @@ mod list_objects_v2;
 mod list_parts;
 
 pub use get_object::{
-    get_object_content_as_bytes, get_object_handler, override_headers,
     HeaderOpts as GetObjectHeaderOpts, QueryOpts as GetObjectQueryOpts,
+    get_object_content_as_bytes, get_object_handler, override_headers,
 };
 pub use get_object_attributes::get_object_attributes_handler;
 pub use list_multipart_uploads::list_multipart_uploads_handler;

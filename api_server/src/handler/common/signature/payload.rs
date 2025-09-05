@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::{
-    handler::common::{request::extract::Authentication, signature::SignatureError},
     AppState,
+    handler::common::{request::extract::Authentication, signature::SignatureError},
 };
-use actix_web::{http::header::HOST, web::Query, HttpRequest};
+use actix_web::{HttpRequest, http::header::HOST, web::Query};
 use aws_signature::{create_canonical_request, get_signing_key, string_to_sign, verify_signature};
 use data_types::{ApiKey, Versioned};
 

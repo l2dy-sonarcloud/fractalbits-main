@@ -1,5 +1,5 @@
-use actix_web::{dev::Payload, FromRequest, HttpRequest};
-use futures::future::{ready, Ready};
+use actix_web::{FromRequest, HttpRequest, dev::Payload};
+use futures::future::{Ready, ready};
 use std::str::FromStr;
 use strum::EnumString;
 
@@ -63,10 +63,10 @@ impl FromRequest for ApiCommandFromQuery {
                 }
             } else if let Some((key, value)) = pair.split_once('=') {
                 // Also check for commands as keys with empty values (e.g., "?uploads=")
-                if value.is_empty() {
-                    if let Ok(cmd) = ApiCommand::from_str(key) {
-                        api_commands.push(cmd);
-                    }
+                if value.is_empty()
+                    && let Ok(cmd) = ApiCommand::from_str(key)
+                {
+                    api_commands.push(cmd);
                 }
             }
         }
@@ -90,7 +90,7 @@ impl FromRequest for ApiCommandFromQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, web, App, HttpResponse};
+    use actix_web::{App, HttpResponse, test, web};
 
     async fn handler(ApiCommandFromQuery(api_command): ApiCommandFromQuery) -> HttpResponse {
         let result = match api_command {

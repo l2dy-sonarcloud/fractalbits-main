@@ -1,10 +1,10 @@
 use crate::{
+    BlobId,
     blob_storage::{
         BlobStorage, BlobStorageError, BlobStorageImpl, S3ExpressMultiAzStorage,
         S3HybridSingleAzStorage,
     },
     config::{BlobStorageBackend, BlobStorageConfig},
-    BlobId,
 };
 use bytes::Bytes;
 use data_blob_tracking::DataBlobTracker;

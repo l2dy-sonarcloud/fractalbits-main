@@ -1,28 +1,28 @@
 use std::sync::Arc;
 
+use crate::{AppState, BlobId};
+use crate::{
+    BlobClient,
+    object_layout::{MpuState, ObjectState},
+};
 use crate::{
     handler::{
+        ObjectRequestContext,
         common::{
             get_raw_object, list_raw_objects, mpu_get_part_prefix, object_headers,
             s3_error::S3Error, xheader,
         },
-        ObjectRequestContext,
     },
     object_layout::ObjectLayout,
 };
-use crate::{
-    object_layout::{MpuState, ObjectState},
-    BlobClient,
-};
-use crate::{AppState, BlobId};
 use actix_web::{
-    http::{header, header::HeaderValue, StatusCode},
-    web::Query,
     HttpResponse,
+    http::{StatusCode, header, header::HeaderValue},
+    web::Query,
 };
 use bytes::Bytes;
 use data_types::Bucket;
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream};
 use metrics::histogram;
 use serde::Deserialize;
 
@@ -388,7 +388,8 @@ fn get_range_blob_stream(
     let start_block_i = start / block_size;
     let end_block_i = (end - 1) / block_size;
     let blob_offset: usize = block_size * start_block_i;
-    let body_stream = futures::stream::iter(start_block_i..=end_block_i)
+
+    futures::stream::iter(start_block_i..=end_block_i)
         .then(move |i| {
             let blob_client = blob_client.clone();
             async move {
@@ -433,9 +434,7 @@ fn get_range_blob_stream(
             };
             futures::future::ready(r)
         })
-        .filter_map(futures::future::ready);
-
-    body_stream
+        .filter_map(futures::future::ready)
 }
 
 pub async fn get_object_content_as_bytes(

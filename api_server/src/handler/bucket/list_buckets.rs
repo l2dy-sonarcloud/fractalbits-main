@@ -2,12 +2,12 @@ use actix_web::HttpResponse;
 use serde::{Deserialize, Serialize};
 
 use crate::handler::{
+    BucketRequestContext,
     common::{
         response::xml::{Xml, XmlnsS3},
         s3_error::S3Error,
         time::format_timestamp,
     },
-    BucketRequestContext,
 };
 
 #[allow(dead_code)]

@@ -13,14 +13,14 @@ pub enum BlobStorageImpl {
     S3ExpressMultiAz(S3ExpressMultiAzStorage),
 }
 
-use aws_config::{retry::RetryConfig, BehaviorVersion};
+use aws_config::{BehaviorVersion, retry::RetryConfig};
 use aws_sdk_s3::{
+    Client as S3Client, Config as S3Config,
     config::{Credentials, Region},
     error::SdkError,
     operation::{
         delete_object::DeleteObjectError, get_object::GetObjectError, put_object::PutObjectError,
     },
-    Client as S3Client, Config as S3Config,
 };
 use bytes::Bytes;
 use governor::{Quota, RateLimiter};
@@ -209,7 +209,9 @@ pub async fn create_optimized_s3_client(
 
     info!(
         "Creating optimized S3 client for host: {} with connection pool config: max_connections_per_host={}, connection_idle_timeout={}s",
-        s3_host, config.max_connections_per_host, config.connection_idle_timeout.as_secs()
+        s3_host,
+        config.max_connections_per_host,
+        config.connection_idle_timeout.as_secs()
     );
 
     // Create AWS config with default optimizations

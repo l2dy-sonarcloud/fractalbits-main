@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::time::Duration;
 
 use ::http::{HeaderMap, Method};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 use futures_util::StreamExt;
 use hyper::body::Bytes;

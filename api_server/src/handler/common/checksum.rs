@@ -3,7 +3,7 @@ use std::hash::Hasher;
 
 use crate::handler::common::{s3_error::S3Error, signature::SignatureError, xheader};
 use actix_web::http::header::HeaderMap;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use crc32c::Crc32cHasher as Crc32c;
 use crc32fast::Hasher as Crc32;
 use data_types::hash::Hash;
@@ -192,7 +192,7 @@ impl Checksums {
                 _ => {
                     return Err(SignatureError::InvalidDigest(
                         "MD5 checksum verification failed (from content-md5)".into(),
-                    ))
+                    ));
                 }
             }
         }
@@ -202,7 +202,7 @@ impl Checksums {
                 _ => {
                     return Err(SignatureError::InvalidDigest(
                         "SHA256 checksum verification failed (from x-amz-content-sha256)".into(),
-                    ))
+                    ));
                 }
             }
         }

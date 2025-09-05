@@ -3,8 +3,8 @@ use rpc_client_common::nss_rpc_retry;
 use std::hash::Hasher;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use actix_web::{http::header, HttpResponse};
-use aws_signature::{sigv4::get_signing_key, STREAMING_PAYLOAD};
+use actix_web::{HttpResponse, http::header};
+use aws_signature::{STREAMING_PAYLOAD, sigv4::get_signing_key};
 use crc32c::Crc32cHasher as Crc32c;
 use crc32fast::Hasher as Crc32;
 use futures::{StreamExt, TryStreamExt};
@@ -18,6 +18,7 @@ use super::block_data_stream::BlockDataStream;
 use super::s3_streaming::S3StreamingPayload;
 use crate::{
     handler::{
+        ObjectRequestContext,
         common::{
             buffer_payload_with_capacity,
             checksum::{self, ChecksumAlgorithm, ChecksumValue},
@@ -25,7 +26,6 @@ use crate::{
             s3_error::S3Error,
             signature::ChunkSignatureContext,
         },
-        ObjectRequestContext,
     },
     object_layout::*,
 };
@@ -187,23 +187,21 @@ fn should_use_streaming(request: &actix_web::HttpRequest) -> bool {
     }
 
     // Always stream for chunked transfer encoding (which AWS SDK uses for streaming checksums)
-    if let Some(transfer_encoding) = request.headers().get("transfer-encoding") {
-        if let Ok(encoding) = transfer_encoding.to_str() {
-            if encoding.to_lowercase().contains("chunked") {
-                tracing::debug!("Streaming due to chunked transfer-encoding");
-                return true;
-            }
-        }
+    if let Some(transfer_encoding) = request.headers().get("transfer-encoding")
+        && let Ok(encoding) = transfer_encoding.to_str()
+        && encoding.to_lowercase().contains("chunked")
+    {
+        tracing::debug!("Streaming due to chunked transfer-encoding");
+        return true;
     }
 
     // Always stream for AWS chunk-signed requests
-    if let Some(content_encoding) = request.headers().get("content-encoding") {
-        if let Ok(encoding) = content_encoding.to_str() {
-            if encoding.to_lowercase() == "aws-chunked" {
-                tracing::debug!("Streaming due to aws-chunked content-encoding");
-                return true;
-            }
-        }
+    if let Some(content_encoding) = request.headers().get("content-encoding")
+        && let Ok(encoding) = content_encoding.to_str()
+        && encoding.to_lowercase() == "aws-chunked"
+    {
+        tracing::debug!("Streaming due to aws-chunked content-encoding");
+        return true;
     }
 
     // Get content length for size-based decisions
@@ -627,25 +625,25 @@ fn extract_chunk_signature_context(
     ctx: &ObjectRequestContext,
 ) -> Result<Option<(ChunkSignatureContext, Option<String>)>, S3Error> {
     // Check if this is a streaming chunked request and we have auth info
-    if let Some(auth) = &ctx.auth {
-        if auth.content_sha256 == STREAMING_PAYLOAD {
-            let api_key = ctx.api_key.as_ref().ok_or(S3Error::InvalidAccessKeyId)?;
+    if let Some(auth) = &ctx.auth
+        && auth.content_sha256 == STREAMING_PAYLOAD
+    {
+        let api_key = ctx.api_key.as_ref().ok_or(S3Error::InvalidAccessKeyId)?;
 
-            // Create signing key
-            let signing_key =
-                get_signing_key(auth.date, &api_key.data.secret_key, &ctx.app.config.region)
-                    .map_err(|_| S3Error::InternalError)?;
+        // Create signing key
+        let signing_key =
+            get_signing_key(auth.date, &api_key.data.secret_key, &ctx.app.config.region)
+                .map_err(|_| S3Error::InternalError)?;
 
-            let chunk_context = ChunkSignatureContext {
-                signing_key,
-                datetime: auth.date,
-                scope_string: auth.scope_string(),
-            };
+        let chunk_context = ChunkSignatureContext {
+            signing_key,
+            datetime: auth.date,
+            scope_string: auth.scope_string(),
+        };
 
-            // Take ownership of the signature string by cloning just the string, not the entire Auth
-            let seed_signature = auth.signature.clone();
-            return Ok(Some((chunk_context, Some(seed_signature))));
-        }
+        // Take ownership of the signature string by cloning just the string, not the entire Auth
+        let seed_signature = auth.signature.clone();
+        return Ok(Some((chunk_context, Some(seed_signature))));
     }
 
     Ok(None)
