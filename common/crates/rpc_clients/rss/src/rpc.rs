@@ -509,4 +509,50 @@ impl RpcClient {
             }
         }
     }
+
+    pub async fn get_data_vg_info(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<DataVgInfo, RpcError> {
+        let _guard = InflightRpcGuard::new("rss", "get_data_vg_info");
+        let start = Instant::now();
+        let body = GetDataVgInfoRequest {};
+
+        let mut header = MessageHeader::default();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
+        header.command = Command::GetDataVgInfo;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+
+        let mut body_bytes = BytesMut::new();
+        body.encode(&mut body_bytes)
+            .map_err(|e| RpcError::EncodeError(e.to_string()))?;
+
+        let frame = MessageFrame::new(header, body_bytes.freeze());
+        let resp_frame = self
+            .send_request(request_id, frame, timeout)
+            .await
+            .map_err(|e| {
+                if !e.retryable() {
+                    error!(rpc=%"get_data_vg_info", %request_id, error=?e, "rss rpc failed");
+                }
+                e
+            })?;
+        let resp: GetDataVgInfoResponse =
+            PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
+        let duration = start.elapsed();
+        match resp.result.unwrap() {
+            rss_codec::get_data_vg_info_response::Result::Info(info) => {
+                histogram!("rss_rpc_nanos", "status" => "GetDataVgInfo_Ok")
+                    .record(duration.as_nanos() as f64);
+                Ok(info)
+            }
+            rss_codec::get_data_vg_info_response::Result::Error(err) => {
+                histogram!("rss_rpc_nanos", "status" => "GetDataVgInfo_Error")
+                    .record(duration.as_nanos() as f64);
+                error!(rpc=%"get_data_vg_info", "rss rpc failed: {err}");
+                Err(RpcError::InternalResponseError(err))
+            }
+        }
+    }
 }

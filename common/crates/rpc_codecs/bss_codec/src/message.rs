@@ -50,11 +50,14 @@ pub struct MessageHeader {
 
     pub checksum_algo: u8,
 
+    /// Volume ID for multi-BSS support
+    pub volume_id: u8,
+
     /// Reserved parts for padding
     // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
     // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
     // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
-    reserved0: [u8; 21],
+    reserved0: [u8; 20],
     reserved1: [u8; 32],
     reserved2: [u8; 32],
     reserved3: [u8; 32],

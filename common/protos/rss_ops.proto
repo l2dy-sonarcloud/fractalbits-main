@@ -24,6 +24,9 @@ enum Command {
   // Bucket management
   CreateBucket = 9;
   DeleteBucket = 10;
+
+  // Data Volume Group management
+  GetDataVgInfo = 11;
 }
 
 // Put
@@ -213,4 +216,37 @@ message DeleteBucketResponse {
     google.protobuf.Empty ok = 1;
     string error = 2;
   }
+}
+
+// GetDataVgInfo - Get data volume group configuration
+message GetDataVgInfoRequest {
+  // Empty for now - could add parameters later
+}
+
+message GetDataVgInfoResponse {
+  oneof result {
+    DataVgInfo info = 1;
+    string error = 2;
+  }
+}
+
+message DataVgInfo {
+  repeated DataVolume volumes = 1;
+  QuorumConfig quorum = 2;
+}
+
+message DataVolume {
+  uint32 volume_id = 1;
+  repeated BssNode bss_nodes = 2;
+}
+
+message BssNode {
+  string node_id = 1;
+  string address = 2;  // ip:port format
+}
+
+message QuorumConfig {
+  uint32 n = 1;  // Total replicas per volume
+  uint32 r = 2;  // Read quorum
+  uint32 w = 3;  // Write quorum
 }
