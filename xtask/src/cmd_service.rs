@@ -647,8 +647,14 @@ fn create_dirs_for_bss_server() -> CmdResult {
         mkdir -p data/bss/local/stats;
         mkdir -p data/bss/local/blobs;
     }?;
-    for i in 0..256 {
-        run_cmd!(mkdir -p data/bss/local/blobs/dir$i)?;
+
+    // Create volume directories for multi-BSS support
+    // For local testing, create directories for volumes 0 and 1
+    for volume_id in 0..2 {
+        run_cmd!(mkdir -p data/bss/local/blobs/data_volume$volume_id)?;
+        for i in 0..256 {
+            run_cmd!(mkdir -p data/bss/local/blobs/data_volume$volume_id/dir$i)?;
+        }
     }
 
     Ok(())
