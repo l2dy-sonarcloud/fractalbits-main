@@ -381,6 +381,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
     })?;
 
     // Delete old object if it is an overwrite request
+    // But skip deletion for multipart parts (keys containing '#') to avoid race conditions
     let old_object_bytes = match resp.result.unwrap() {
         put_inode_response::Result::Ok(res) => res,
         put_inode_response::Result::Err(e) => {
@@ -389,7 +390,8 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         }
     };
 
-    if !old_object_bytes.is_empty() {
+    let is_multipart_part = ctx.key.contains('#');
+    if !old_object_bytes.is_empty() && !is_multipart_part {
         let old_object =
             rkyv::from_bytes::<ObjectLayout, Error>(&old_object_bytes).map_err(|e| {
                 tracing::error!("Failed to deserialize old object layout: {e}");
@@ -570,6 +572,7 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
     })?;
 
     // Delete old object if it is an overwrite request
+    // But skip deletion for multipart parts (keys containing '#') to avoid race conditions
     let old_object_bytes = match resp.result.unwrap() {
         put_inode_response::Result::Ok(res) => res,
         put_inode_response::Result::Err(e) => {
@@ -577,7 +580,8 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
             return Err(S3Error::InternalError);
         }
     };
-    if !old_object_bytes.is_empty() {
+    let is_multipart_part = ctx.key.contains('#');
+    if !old_object_bytes.is_empty() && !is_multipart_part {
         let old_object =
             rkyv::from_bytes::<ObjectLayout, Error>(&old_object_bytes).map_err(|e| {
                 tracing::error!("Failed to deserialize old object layout: {e}");
