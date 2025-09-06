@@ -70,7 +70,7 @@ pub fn run_cmd_bench(
             ]);
         }
         BenchService::BssRpc => {
-            *service_name = ServiceName::Bss;
+            *service_name = ServiceName::Bss0;
             build_rewrk_rpc()?;
             init_service(
                 *service_name,
@@ -80,7 +80,7 @@ pub fn run_cmd_bench(
                     data_blob_storage: DataBlobStorage::S3HybridSingleAz,
                 },
             )?;
-            start_service(ServiceName::Bss)?;
+            start_service(ServiceName::Bss0)?;
             uri = "127.0.0.1:8088";
             bench_exe = "./target/release/rewrk_rpc";
             bench_opts.extend_from_slice(&[

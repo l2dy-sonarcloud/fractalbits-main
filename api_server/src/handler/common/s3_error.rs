@@ -907,6 +907,8 @@ impl From<BlobStorageError> for S3Error {
             BlobStorageError::S3(_) => S3Error::InternalError,
             BlobStorageError::Config(_) => S3Error::InternalError,
             BlobStorageError::Internal(_) => S3Error::InternalError,
+            BlobStorageError::InitializationError(_) => S3Error::InternalError,
+            BlobStorageError::QuorumFailure(_) => S3Error::InternalError,
         }
     }
 }

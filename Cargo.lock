@@ -417,6 +417,7 @@ dependencies = [
  "rpc_client_common",
  "rpc_client_nss",
  "rpc_client_rss",
+ "rss_codec",
  "rstest",
  "serde",
  "serde_bytes",

@@ -154,7 +154,12 @@ pub fn init_service(
     let init_minio = || run_cmd!(mkdir -p data/s3);
     let init_minio_dev_az1 = || run_cmd!(mkdir -p data/s3-localdev-az1);
     let init_minio_dev_az2 = || run_cmd!(mkdir -p data/s3-localdev-az2);
-    let init_bss = || create_dirs_for_bss_server();
+    let init_bss0 = || create_dirs_for_bss_server(0);
+    let init_bss1 = || create_dirs_for_bss_server(1);
+    let init_bss2 = || create_dirs_for_bss_server(2);
+    let init_bss3 = || create_dirs_for_bss_server(3);
+    let init_bss4 = || create_dirs_for_bss_server(4);
+    let init_bss5 = || create_dirs_for_bss_server(5);
     let init_mirrord = || -> CmdResult {
         let pwd = run_fun!(pwd)?;
         let format_log = "data/logs/format_mirrord.log";
@@ -182,7 +187,12 @@ pub fn init_service(
         ServiceName::Minio => init_minio()?,
         ServiceName::MinioAz1 => init_minio_dev_az1()?,
         ServiceName::MinioAz2 => init_minio_dev_az2()?,
-        ServiceName::Bss => init_bss()?,
+        ServiceName::Bss0 => init_bss0()?,
+        ServiceName::Bss1 => init_bss1()?,
+        ServiceName::Bss2 => init_bss2()?,
+        ServiceName::Bss3 => init_bss3()?,
+        ServiceName::Bss4 => init_bss4()?,
+        ServiceName::Bss5 => init_bss5()?,
         ServiceName::Rss => init_rss()?,
         ServiceName::Nss => init_nss()?,
         ServiceName::NssRoleAgentA => init_nss_role_agent()?,
@@ -191,7 +201,12 @@ pub fn init_service(
         ServiceName::All => {
             generate_https_certificates()?;
             init_rss()?;
-            init_bss()?;
+            init_bss0()?;
+            init_bss1()?;
+            init_bss2()?;
+            init_bss3()?;
+            init_bss4()?;
+            init_bss5()?;
             init_nss()?;
             init_mirrord()?;
             init_minio()?;
@@ -238,7 +253,12 @@ fn all_services(data_blob_storage: DataBlobStorage) -> Vec<ServiceName> {
             ServiceName::ApiServer,
             ServiceName::NssRoleAgentA,
             ServiceName::Nss,
-            ServiceName::Bss,
+            ServiceName::Bss0,
+            ServiceName::Bss1,
+            ServiceName::Bss2,
+            ServiceName::Bss3,
+            ServiceName::Bss4,
+            ServiceName::Bss5,
             ServiceName::Rss,
             ServiceName::DdbLocal,
             ServiceName::Minio,
@@ -386,7 +406,12 @@ fn start_all_services() -> CmdResult {
     if run_cmd!(grep -q single_az etc/api_server.service).is_ok() {
         info!("Starting single_az services");
         start_service(ServiceName::Rss)?;
-        start_service(ServiceName::Bss)?;
+        start_service(ServiceName::Bss0)?;
+        start_service(ServiceName::Bss1)?;
+        start_service(ServiceName::Bss2)?;
+        start_service(ServiceName::Bss3)?;
+        start_service(ServiceName::Bss4)?;
+        start_service(ServiceName::Bss5)?;
         start_service(ServiceName::NssRoleAgentA)?;
         start_service(ServiceName::ApiServer)?;
     } else {
@@ -432,7 +457,12 @@ fn create_systemd_unit_files_for_init(
                 data_blob_storage,
             )?;
         }
-        ServiceName::Bss
+        ServiceName::Bss0
+        | ServiceName::Bss1
+        | ServiceName::Bss2
+        | ServiceName::Bss3
+        | ServiceName::Bss4
+        | ServiceName::Bss5
         | ServiceName::Nss
         | ServiceName::NssRoleAgentA
         | ServiceName::NssRoleAgentB
@@ -450,7 +480,12 @@ fn create_systemd_unit_files_for_init(
             create_systemd_unit_file(ServiceName::MinioAz1, build_mode)?;
             create_systemd_unit_file(ServiceName::MinioAz2, build_mode)?;
             create_systemd_unit_file(ServiceName::Rss, build_mode)?;
-            create_systemd_unit_file(ServiceName::Bss, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss0, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss1, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss2, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss3, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss4, build_mode)?;
+            create_systemd_unit_file(ServiceName::Bss5, build_mode)?;
             create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode)?;
             create_systemd_unit_file(ServiceName::Nss, build_mode)?;
             create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode)?;
@@ -487,7 +522,42 @@ Environment="RUST_LOG=warn""##
         }
     };
     let exec_start = match service {
-        ServiceName::Bss => format!("{pwd}/zig-out/bin/bss_server"),
+        ServiceName::Bss0 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss0"
+Environment="BSS_PORT=8088""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
+        ServiceName::Bss1 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss1"
+Environment="BSS_PORT=8089""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
+        ServiceName::Bss2 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss2"
+Environment="BSS_PORT=8090""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
+        ServiceName::Bss3 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss3"
+Environment="BSS_PORT=8091""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
+        ServiceName::Bss4 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss4"
+Environment="BSS_PORT=8092""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
+        ServiceName::Bss5 => {
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss5"
+Environment="BSS_PORT=8093""##;
+            format!("{pwd}/zig-out/bin/bss_server")
+        }
         ServiceName::Nss => match build_mode {
             BuildMode::Debug => format!("{pwd}/zig-out/bin/nss_server serve"),
             BuildMode::Release => {
@@ -641,19 +711,19 @@ fn create_nss_dirs(dir_name: &str) -> CmdResult {
     Ok(())
 }
 
-fn create_dirs_for_bss_server() -> CmdResult {
-    info!("Creating necessary directories for bss_server");
+fn create_dirs_for_bss_server(bss_id: u32) -> CmdResult {
+    info!("Creating necessary directories for bss{} server", bss_id);
     run_cmd! {
-        mkdir -p data/bss/local/stats;
-        mkdir -p data/bss/local/blobs;
+        mkdir -p data/bss$bss_id/local/stats;
+        mkdir -p data/bss$bss_id/local/blobs;
     }?;
 
     // Create volume directories for multi-BSS support
     // For local testing, create directories for volumes 0 and 1
     for volume_id in 0..2 {
-        run_cmd!(mkdir -p data/bss/local/blobs/data_volume$volume_id)?;
+        run_cmd!(mkdir -p data/bss$bss_id/local/blobs/data_volume$volume_id)?;
         for i in 0..256 {
-            run_cmd!(mkdir -p data/bss/local/blobs/data_volume$volume_id/dir$i)?;
+            run_cmd!(mkdir -p data/bss$bss_id/local/blobs/data_volume$volume_id/dir$i)?;
         }
     }
 
@@ -679,7 +749,12 @@ pub fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdRes
                 ServiceName::MinioAz1 => check_port_ready(9001),
                 ServiceName::MinioAz2 => check_port_ready(9002),
                 ServiceName::Rss => check_port_ready(8086),
-                ServiceName::Bss => check_port_ready(8088),
+                ServiceName::Bss0 => check_port_ready(8088),
+                ServiceName::Bss1 => check_port_ready(8089),
+                ServiceName::Bss2 => check_port_ready(8090),
+                ServiceName::Bss3 => check_port_ready(8091),
+                ServiceName::Bss4 => check_port_ready(8092),
+                ServiceName::Bss5 => check_port_ready(8093),
                 ServiceName::Nss => check_port_ready(8087),
                 ServiceName::Mirrord => check_port_ready(9999),
                 ServiceName::ApiServer | ServiceName::GuiServer => {

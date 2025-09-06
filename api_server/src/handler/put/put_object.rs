@@ -12,11 +12,11 @@ use nss_codec::put_inode_response;
 use rkyv::{self, api::high::to_bytes_in, rancor::Error};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 use super::block_data_stream::BlockDataStream;
 use super::s3_streaming::S3StreamingPayload;
 use crate::{
+    blob_storage::BlobGuid,
     handler::{
         ObjectRequestContext,
         common::{
@@ -37,13 +37,17 @@ pub async fn put_object_handler(ctx: ObjectRequestContext) -> Result<HttpRespons
         tracing::debug!("  {}: {:?}", name, value);
     }
 
+    // Create blob GUID once for this object upload
+    let blob_client = ctx.app.get_blob_client();
+    let blob_guid = blob_client.create_data_blob_guid();
+
     // Decide whether to use streaming based on request characteristics
     if should_use_streaming(&ctx.request) {
         tracing::debug!("Using streaming path for PUT object");
-        put_object_streaming_internal(ctx).await
+        put_object_streaming_internal(ctx, blob_guid).await
     } else {
         tracing::debug!("Using buffered path for PUT object");
-        put_object_with_no_trailer(ctx).await
+        put_object_with_no_trailer(ctx, blob_guid).await
     }
 }
 
@@ -232,7 +236,10 @@ fn should_use_streaming(request: &actix_web::HttpRequest) -> bool {
 }
 
 // Internal streaming handler that processes chunks as they arrive
-async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<HttpResponse, S3Error> {
+async fn put_object_streaming_internal(
+    ctx: ObjectRequestContext,
+    blob_guid: BlobGuid,
+) -> Result<HttpResponse, S3Error> {
     let start = Instant::now();
 
     tracing::debug!(
@@ -260,8 +267,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         S3StreamingPayload::with_checksums(payload, &ctx.request)?
     };
 
-    // Create blob ID for this upload
-    let blob_id = Uuid::now_v7();
+    // Use the blob GUID passed from the main handler
     let blob_client = ctx.app.get_blob_client();
 
     // Convert S3 payload to block stream
@@ -282,11 +288,16 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
 
                 let len = data.len() as u64;
                 let put_result = blob_client
-                    .put_blob(tracking_root_blob_name.as_deref(), blob_id, i as u32, data)
+                    .put_blob(
+                        tracking_root_blob_name.as_deref(),
+                        blob_guid,
+                        i as u32,
+                        data,
+                    )
                     .await;
 
                 match put_result {
-                    Ok(()) => Ok(len),
+                    Ok(_blob_guid) => Ok(len),
                     Err(e) => {
                         tracing::error!("Failed to store blob block {}: {}", i, e);
                         Err(S3Error::InternalError)
@@ -337,7 +348,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    let etag = blob_id.simple().to_string();
+    let etag = blob_guid.blob_id.simple().to_string();
     let version_id = gen_version_id();
 
     // Create object layout
@@ -346,7 +357,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         block_size: ObjectLayout::DEFAULT_BLOCK_SIZE,
         timestamp,
         state: ObjectState::Normal(ObjectMetaData {
-            blob_id,
+            blob_guid,
             core_meta_data: ObjectCoreMetaData {
                 size: total_size,
                 etag: etag.clone(),
@@ -401,7 +412,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         if let Ok(size) = old_object.size() {
             histogram!("object_size", "operation" => "delete_old_blob").record(size as f64);
         }
-        let blob_id = old_object.blob_id().map_err(|e| {
+        let blob_id = old_object.blob_guid().map_err(|e| {
             tracing::error!("Failed to get blob_id from old object: {e}");
             S3Error::InternalError
         })?;
@@ -414,7 +425,7 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
         if let Err(e) = blob_deletion
             .send((
                 bucket_obj.tracking_root_blob_name.clone(),
-                blob_id,
+                blob_guid,
                 num_blocks,
             ))
             .await
@@ -441,7 +452,10 @@ async fn put_object_streaming_internal(ctx: ObjectRequestContext) -> Result<Http
 }
 
 // Helper function for buffered upload with pre-resolved bucket
-async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpResponse, S3Error> {
+async fn put_object_with_no_trailer(
+    ctx: ObjectRequestContext,
+    blob_guid: BlobGuid,
+) -> Result<HttpResponse, S3Error> {
     let bucket = ctx.resolve_bucket().await?;
     let expected_size = ctx
         .request
@@ -478,7 +492,6 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
     };
 
     // Store data in chunks
-    let blob_id = Uuid::now_v7();
     let blob_client = ctx.app.get_blob_client();
     let size = body.len() as u64;
     let block_size = ObjectLayout::DEFAULT_BLOCK_SIZE as usize;
@@ -487,7 +500,7 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
     let tracking_root_blob_name = bucket.tracking_root_blob_name.as_deref();
     if body.len() <= block_size {
         blob_client
-            .put_blob(tracking_root_blob_name, blob_id, 0, body.clone())
+            .put_blob(tracking_root_blob_name, blob_guid, 0, body.clone())
             .await
             .map_err(|e| {
                 tracing::error!("Failed to store blob: {e}");
@@ -505,7 +518,7 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
                 blob_client
                     .put_blob(
                         tracking_root_blob_name,
-                        blob_id,
+                        blob_guid,
                         block_num as u32,
                         chunk_bytes,
                     )
@@ -518,9 +531,9 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
             futures.push(future);
         }
 
-        let results: Vec<Result<(), S3Error>> = futures::future::join_all(futures).await;
+        let results: Vec<Result<BlobGuid, S3Error>> = futures::future::join_all(futures).await;
         for result in results {
-            result?;
+            let _blob_guid = result?; // Ignore the returned BlobGuid
         }
     }
 
@@ -528,7 +541,7 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    let etag = blob_id.simple().to_string();
+    let etag = blob_guid.blob_id.simple().to_string();
     let version_id = gen_version_id();
 
     // Create object layout with calculated checksum
@@ -537,7 +550,7 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
         block_size: ObjectLayout::DEFAULT_BLOCK_SIZE,
         timestamp,
         state: ObjectState::Normal(ObjectMetaData {
-            blob_id,
+            blob_guid,
             core_meta_data: ObjectCoreMetaData {
                 size,
                 etag: etag.clone(),
@@ -591,8 +604,8 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
         if let Ok(size) = old_object.size() {
             histogram!("object_size", "operation" => "delete_old_blob").record(size as f64);
         }
-        let blob_id = old_object.blob_id().map_err(|e| {
-            tracing::error!("Failed to get blob_id from old object: {e}");
+        let old_blob_guid = old_object.blob_guid().map_err(|e| {
+            tracing::error!("Failed to get blob_guid from old object: {e}");
             S3Error::InternalError
         })?;
         let num_blocks = old_object.num_blocks().map_err(|e| {
@@ -602,11 +615,15 @@ async fn put_object_with_no_trailer(ctx: ObjectRequestContext) -> Result<HttpRes
 
         let blob_deletion = ctx.app.get_blob_deletion();
         if let Err(e) = blob_deletion
-            .send((bucket.tracking_root_blob_name.clone(), blob_id, num_blocks))
+            .send((
+                bucket.tracking_root_blob_name.clone(),
+                old_blob_guid,
+                num_blocks,
+            ))
             .await
         {
             tracing::warn!(
-                "Failed to send blob {blob_id} num_blocks={num_blocks} for background deletion: {e}"
+                "Failed to send blob {old_blob_guid} num_blocks={num_blocks} for background deletion: {e}"
             );
         }
     }

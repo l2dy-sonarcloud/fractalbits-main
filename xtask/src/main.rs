@@ -137,7 +137,12 @@ pub enum ServiceAction {
 pub enum ServiceName {
     GuiServer,
     ApiServer,
-    Bss,
+    Bss0,
+    Bss1,
+    Bss2,
+    Bss3,
+    Bss4,
+    Bss5,
     NssRoleAgentA,
     Nss,
     NssRoleAgentB,

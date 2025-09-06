@@ -14,15 +14,8 @@ pub enum BlobStorageBackend {
 pub struct BlobStorageConfig {
     pub backend: BlobStorageBackend,
 
-    pub bss: Option<BssConfig>,
     pub s3_hybrid_single_az: Option<S3HybridSingleAzConfig>,
     pub s3_express_multi_az: Option<S3ExpressMultiAzConfig>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct BssConfig {
-    pub addr: String,
-    pub conn_num: u16,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -163,7 +156,6 @@ impl Config {
             rpc_timeout_seconds: 10,
             blob_storage: BlobStorageConfig {
                 backend: BlobStorageBackend::S3ExpressMultiAz,
-                bss: None,
                 s3_hybrid_single_az: None,
                 s3_express_multi_az: Some(S3ExpressMultiAzConfig::default()),
             },
@@ -187,10 +179,6 @@ impl Config {
             rpc_timeout_seconds: 10,
             blob_storage: BlobStorageConfig {
                 backend: BlobStorageBackend::S3HybridSingleAz,
-                bss: Some(BssConfig {
-                    addr: "127.0.0.1:8088".to_string(),
-                    conn_num: 2,
-                }),
                 s3_hybrid_single_az: Some(S3HybridSingleAzConfig {
                     s3_host: "http://127.0.0.1".into(),
                     s3_port: 9000,

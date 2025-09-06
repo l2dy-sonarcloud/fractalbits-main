@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{AppState, BlobId};
+use crate::{AppState, blob_storage::BlobGuid};
 use crate::{
     BlobClient,
     object_layout::{MpuState, ObjectState},
@@ -201,10 +201,10 @@ pub async fn get_object_content(
     let blob_client = app.get_blob_client();
     match object.state {
         ObjectState::Normal(ref _obj_data) => {
-            let blob_id = object.blob_id()?;
+            let blob_guid = object.blob_guid()?;
             let num_blocks = object.num_blocks()?;
             let size = object.size()?;
-            let body_stream = get_full_blob_stream(blob_client, blob_id, num_blocks).await?;
+            let body_stream = get_full_blob_stream(blob_client, blob_guid, num_blocks).await?;
             Ok((Box::pin(body_stream), size))
         }
         ObjectState::Mpu(ref mpu_state) => match mpu_state {
@@ -244,9 +244,9 @@ pub async fn get_object_content(
                     .then(move |(_key, mpu_obj)| {
                         let blob_client = blob_client.clone();
                         async move {
-                            let blob_id = mpu_obj.blob_id()?;
+                            let blob_guid = mpu_obj.blob_guid()?;
                             let num_blocks = mpu_obj.num_blocks()?;
-                            get_full_blob_stream(blob_client, blob_id, num_blocks).await
+                            get_full_blob_stream(blob_client, blob_guid, num_blocks).await
                         }
                     })
                     .try_flatten();
@@ -268,9 +268,9 @@ async fn get_object_range_content(
     let block_size = object.block_size as usize;
     match object.state {
         ObjectState::Normal(ref _obj_data) => {
-            let blob_id = object.blob_id()?;
+            let blob_guid = object.blob_guid()?;
             let body_stream =
-                get_range_blob_stream(blob_client, blob_id, block_size, range.start, range.end);
+                get_range_blob_stream(blob_client, blob_guid, block_size, range.start, range.end);
             Ok(Box::pin(body_stream))
         }
         ObjectState::Mpu(ref mpu_state) => match mpu_state {
@@ -295,7 +295,7 @@ async fn get_object_range_content(
                 )
                 .await?;
 
-                let mut mpu_blobs: Vec<(BlobId, usize, usize)> = Vec::new();
+                let mut mpu_blobs: Vec<(BlobGuid, usize, usize)> = Vec::new();
                 let mut obj_offset = 0;
                 for (_mpu_key, mpu_obj) in mpus {
                     let mpu_size = mpu_obj.size()? as usize;
@@ -310,18 +310,18 @@ async fn get_object_range_content(
                         } else {
                             range.end - obj_offset
                         };
-                        mpu_blobs.push((mpu_obj.blob_id()?, blob_start, blob_end));
+                        mpu_blobs.push((mpu_obj.blob_guid()?, blob_start, blob_end));
                     }
                     obj_offset += mpu_size;
                 }
 
                 let body_stream = stream::iter(mpu_blobs.into_iter())
-                    .then(move |(blob_id, blob_start, blob_end)| {
+                    .then(move |(blob_guid, blob_start, blob_end)| {
                         let blob_client = blob_client.clone();
                         async move {
                             Ok::<_, S3Error>(get_range_blob_stream(
                                 blob_client,
-                                blob_id,
+                                blob_guid,
                                 block_size,
                                 blob_start,
                                 blob_end,
@@ -337,7 +337,7 @@ async fn get_object_range_content(
 
 async fn get_full_blob_stream(
     blob_client: Arc<BlobClient>,
-    blob_id: BlobId,
+    blob_guid: BlobGuid,
     num_blocks: usize,
 ) -> Result<impl stream::Stream<Item = Result<Bytes, S3Error>>, S3Error> {
     if num_blocks == 0 {
@@ -347,10 +347,10 @@ async fn get_full_blob_stream(
     // Get the first block
     let mut first_block = Bytes::new();
     blob_client
-        .get_blob(blob_id, 0, &mut first_block)
+        .get_blob(blob_guid, 0, &mut first_block)
         .await
         .map_err(|e| {
-            tracing::error!(%blob_id, block_number=0, error=?e, "failed to get blob");
+            tracing::error!(%blob_guid, block_number=0, error=?e, "failed to get blob");
             S3Error::from(e)
         })?;
 
@@ -364,9 +364,9 @@ async fn get_full_blob_stream(
         let blob_client = blob_client.clone();
         async move {
             let mut block = Bytes::new();
-            match blob_client.get_blob(blob_id, i as u32, &mut block).await {
+            match blob_client.get_blob(blob_guid, i as u32, &mut block).await {
                 Err(e) => {
-                    tracing::error!(%blob_id, block_number=i, error=?e, "failed to get blob");
+                    tracing::error!(%blob_guid, block_number=i, error=?e, "failed to get blob");
                     Err(S3Error::from(e))
                 }
                 Ok(_) => Ok(block),
@@ -380,7 +380,7 @@ async fn get_full_blob_stream(
 
 fn get_range_blob_stream(
     blob_client: Arc<BlobClient>,
-    blob_id: BlobId,
+    blob_guid: BlobGuid,
     block_size: usize,
     start: usize,
     end: usize,
@@ -394,9 +394,9 @@ fn get_range_blob_stream(
             let blob_client = blob_client.clone();
             async move {
                 let mut block = Bytes::new();
-                match blob_client.get_blob(blob_id, i as u32, &mut block).await {
+                match blob_client.get_blob(blob_guid, i as u32, &mut block).await {
                     Err(e) => {
-                        tracing::error!(%blob_id, block_number=i, error=?e, "failed to get blob");
+                        tracing::error!(%blob_guid, block_number=i, error=?e, "failed to get blob");
                         Err(S3Error::from(e))
                     }
                     Ok(_) => Ok(block),

@@ -5,6 +5,7 @@ pub mod handler;
 mod object_layout;
 
 use blob_client::BlobClient;
+use blob_storage::BlobGuid;
 pub use config::{BlobStorageBackend, BlobStorageConfig, Config, S3HybridSingleAzConfig};
 pub use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use data_types::{ApiKey, Bucket, Versioned};
@@ -32,7 +33,7 @@ pub struct AppState {
     rpc_clients_rss: ConnPool<Arc<RpcClientRss>, String>,
 
     blob_client: Arc<BlobClient>,
-    blob_deletion: Sender<(Option<String>, BlobId, usize)>,
+    blob_deletion: Sender<(Option<String>, BlobGuid, usize)>,
     pub data_blob_tracker: Arc<DataBlobTracker>,
 }
 
@@ -63,6 +64,8 @@ impl AppState {
             rx,
             config.rpc_timeout(),
             Some(data_blob_tracker.clone()),
+            Some(Arc::new(rpc_clients_rss.clone())),
+            Some(config.rss_addr.clone()),
         )
         .await
         .expect("Failed to initialize blob client");
@@ -159,7 +162,7 @@ impl AppState {
         self.blob_client.clone()
     }
 
-    pub fn get_blob_deletion(&self) -> Sender<(Option<String>, BlobId, usize)> {
+    pub fn get_blob_deletion(&self) -> Sender<(Option<String>, BlobGuid, usize)> {
         self.blob_deletion.clone()
     }
 }

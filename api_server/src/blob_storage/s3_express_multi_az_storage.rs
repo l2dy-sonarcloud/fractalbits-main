@@ -1,5 +1,5 @@
 use super::{
-    BlobStorage, BlobStorageError, S3ClientWrapper, S3RetryConfig, blob_key,
+    BlobGuid, BlobStorage, BlobStorageError, S3ClientWrapper, S3RetryConfig, blob_key,
     create_s3_client_wrapper,
 };
 use crate::s3_retry;
@@ -187,6 +187,13 @@ impl S3ExpressMultiAzStorage {
             .await?;
         Ok(())
     }
+
+    pub fn create_data_blob_guid(&self) -> BlobGuid {
+        BlobGuid {
+            blob_id: Uuid::now_v7(),
+            volume_id: 0, // S3 Express Multi AZ doesn't use multi-volume BSS
+        }
+    }
 }
 
 impl BlobStorage for S3ExpressMultiAzStorage {
@@ -194,9 +201,10 @@ impl BlobStorage for S3ExpressMultiAzStorage {
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_id: Uuid,
+        volume_id: u32,
         block_number: u32,
         body: Bytes,
-    ) -> Result<(), BlobStorageError> {
+    ) -> Result<BlobGuid, BlobStorageError> {
         histogram!("blob_size", "operation" => "put", "storage" => "s3_express_multi_az")
             .record(body.len() as f64);
 
@@ -388,17 +396,17 @@ impl BlobStorage for S3ExpressMultiAzStorage {
         histogram!("rpc_duration_nanos", "type" => "s3_express_multi_az", "name" => "put_blob")
             .record(start.elapsed().as_nanos() as f64);
 
-        Ok(())
+        Ok(BlobGuid { blob_id, volume_id })
     }
 
     async fn get_blob(
         &self,
-        blob_id: Uuid,
+        blob_guid: BlobGuid,
         block_number: u32,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
         let start = Instant::now();
-        let s3_key = blob_key(blob_id, block_number);
+        let s3_key = blob_key(blob_guid.blob_id, block_number);
 
         // Always read from local AZ bucket for better performance
         let response_result = s3_retry!(
@@ -465,10 +473,10 @@ impl BlobStorage for S3ExpressMultiAzStorage {
     async fn delete_blob(
         &self,
         tracking_root_blob_name: Option<&str>,
-        blob_id: Uuid,
+        blob_guid: BlobGuid,
         block_number: u32,
     ) -> Result<(), BlobStorageError> {
-        let s3_key = blob_key(blob_id, block_number);
+        let s3_key = blob_key(blob_guid.blob_id, block_number);
         let tracking_root = tracking_root_blob_name.expect("No tracking_root_blob_name provided");
         assert!(!tracking_root.is_empty());
 

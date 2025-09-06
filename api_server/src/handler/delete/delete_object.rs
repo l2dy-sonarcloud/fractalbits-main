@@ -1,5 +1,5 @@
 use crate::{
-    BlobId,
+    blob_storage::BlobGuid,
     handler::{
         ObjectRequestContext,
         common::{list_raw_objects, mpu_get_part_prefix, s3_error::S3Error},
@@ -121,16 +121,16 @@ pub async fn delete_object_handler(ctx: ObjectRequestContext) -> Result<HttpResp
 async fn delete_blob(
     tracking_root_blob_name: Option<String>,
     object: &ObjectLayout,
-    blob_deletion: Sender<(Option<String>, BlobId, usize)>,
+    blob_deletion: Sender<(Option<String>, BlobGuid, usize)>,
 ) -> Result<(), S3Error> {
-    let blob_id = object.blob_id()?;
+    let blob_guid = object.blob_guid()?;
     let num_blocks = object.num_blocks()?;
     if let Err(e) = blob_deletion
-        .send((tracking_root_blob_name, blob_id, num_blocks))
+        .send((tracking_root_blob_name, blob_guid, num_blocks))
         .await
     {
         tracing::warn!(
-            "Failed to send blob {blob_id} num_blocks={num_blocks} for background deletion: {e}"
+            "Failed to send blob {blob_guid} num_blocks={num_blocks} for background deletion: {e}"
         );
     }
     Ok(())
