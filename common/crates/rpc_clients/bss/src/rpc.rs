@@ -24,7 +24,7 @@ impl RpcClient {
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.volume_id = volume_id;
-        header.command = Command::PutBlob;
+        header.command = Command::PutDataBlob;
         header.size = (MessageHeader::SIZE + body.len()) as u32;
 
         let msg_frame = MessageFrame::new(header, body);
@@ -55,7 +55,7 @@ impl RpcClient {
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.volume_id = volume_id;
-        header.command = Command::GetBlob;
+        header.command = Command::GetDataBlob;
         header.size = MessageHeader::SIZE as u32;
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
@@ -86,7 +86,7 @@ impl RpcClient {
         header.blob_id = blob_id.into_bytes();
         header.block_number = block_number;
         header.volume_id = volume_id;
-        header.command = Command::DeleteBlob;
+        header.command = Command::DeleteDataBlob;
         header.size = MessageHeader::SIZE as u32;
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
@@ -100,38 +100,5 @@ impl RpcClient {
                 e
             })?;
         Ok(())
-    }
-
-    // Backwards compatibility wrappers using default volume_id = 0
-    pub async fn put_blob(
-        &self,
-        blob_id: Uuid,
-        block_number: u32,
-        body: Bytes,
-        timeout: Option<Duration>,
-    ) -> Result<(), RpcError> {
-        self.put_data_blob(blob_id, block_number, 0, body, timeout)
-            .await
-    }
-
-    pub async fn get_blob(
-        &self,
-        blob_id: Uuid,
-        block_number: u32,
-        body: &mut Bytes,
-        timeout: Option<Duration>,
-    ) -> Result<(), RpcError> {
-        self.get_data_blob(blob_id, block_number, 0, body, timeout)
-            .await
-    }
-
-    pub async fn delete_blob(
-        &self,
-        blob_id: Uuid,
-        block_number: u32,
-        timeout: Option<Duration>,
-    ) -> Result<(), RpcError> {
-        self.delete_data_blob(blob_id, block_number, 0, timeout)
-            .await
     }
 }
