@@ -57,6 +57,9 @@ enum Cmd {
         )]
         debug_api_server: bool,
 
+        #[clap(long, long_help = "Run art tests in addition to other tests")]
+        with_art_tests: bool,
+
         #[clap(long, value_enum)]
         #[arg(default_value_t)]
         data_blob_storage: DataBlobStorage,
@@ -283,11 +286,13 @@ async fn main() -> CmdResult {
             s3_api_only,
             zig_unit_tests_only,
             debug_api_server,
+            with_art_tests,
             data_blob_storage,
         } => cmd_precheckin::run_cmd_precheckin(
             s3_api_only,
             zig_unit_tests_only,
             debug_api_server,
+            with_art_tests,
             data_blob_storage,
         )?,
         Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,

@@ -4,6 +4,7 @@ pub fn run_cmd_precheckin(
     s3_api_only: bool,
     zig_unit_tests_only: bool,
     debug_api_server: bool,
+    with_art_tests: bool,
     data_blob_storage: DataBlobStorage,
 ) -> CmdResult {
     let working_dir = run_fun!(pwd)?;
@@ -45,7 +46,10 @@ pub fn run_cmd_precheckin(
     }?;
 
     run_s3_api_tests(false)?;
-    run_art_tests()?;
+
+    if with_art_tests {
+        run_art_tests()?;
+    }
 
     if let Ok(core_file) = run_fun!(ls data | grep ^core) {
         let core_files: Vec<&str> = core_file.split("\n").collect();

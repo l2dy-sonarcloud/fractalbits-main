@@ -640,4 +640,48 @@ impl RpcClient {
             }
         }
     }
+
+    /// Get metadata VG info as raw JSON string for forwarding to NSS
+    pub async fn get_metadata_vg_info_json(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<String, RpcError> {
+        let _guard = InflightRpcGuard::new("rss", "get_metadata_vg_info_json");
+        let start = Instant::now();
+        let body = GetMetadataVgInfoRequest {};
+        let mut header = MessageHeader::default();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
+        header.command = Command::GetMetadataVgInfo;
+        header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+        let mut body_bytes = BytesMut::new();
+        body.encode(&mut body_bytes)
+            .map_err(|e| RpcError::EncodeError(e.to_string()))?;
+        let frame = MessageFrame::new(header, body_bytes.freeze());
+        let resp_frame = self
+            .send_request(request_id, frame, timeout)
+            .await
+            .map_err(|e| {
+                if !e.retryable() {
+                    error!(rpc=%"get_metadata_vg_info_json", %request_id, error=?e, "rss rpc failed");
+                }
+                e
+            })?;
+        let resp: GetMetadataVgInfoResponse =
+            PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
+        let duration = start.elapsed();
+        match resp.result.unwrap() {
+            rss_codec::get_metadata_vg_info_response::Result::InfoJson(info_json) => {
+                histogram!("rss_rpc_nanos", "status" => "GetMetadataVgInfoJson_Ok")
+                    .record(duration.as_nanos() as f64);
+                Ok(info_json)
+            }
+            rss_codec::get_metadata_vg_info_response::Result::Error(err) => {
+                histogram!("rss_rpc_nanos", "status" => "GetMetadataVgInfoJson_Error")
+                    .record(duration.as_nanos() as f64);
+                error!(rpc=%"get_metadata_vg_info_json", "rss rpc failed: {err}");
+                Err(RpcError::InternalResponseError(err))
+            }
+        }
+    }
 }

@@ -3269,6 +3269,7 @@ dependencies = [
  "rpc_client_common",
  "rpc_client_rss",
  "serde",
+ "serde_json",
  "slotmap_conn_pool",
  "tikv-jemallocator",
  "tokio",

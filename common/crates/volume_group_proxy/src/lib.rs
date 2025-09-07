@@ -1,8 +1,8 @@
-pub mod metadata_proxy;
-pub mod proxy;
+pub mod data_vg_proxy;
+pub mod metadata_vg_proxy;
 
-pub use metadata_proxy::{MetadataBlobGuid, MetadataVgProxy};
-pub use proxy::{DataBlobGuid, DataVgProxy};
+pub use data_vg_proxy::{DataBlobGuid, DataVgProxy};
+pub use metadata_vg_proxy::{MetadataBlobGuid, MetadataVgProxy};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataVgError {
