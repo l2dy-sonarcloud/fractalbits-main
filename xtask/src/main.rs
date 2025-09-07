@@ -48,6 +48,9 @@ enum Cmd {
         #[clap(long, long_help = "Run s3 api tests only")]
         s3_api_only: bool,
 
+        #[clap(long, long_help = "Run zig unit tests only")]
+        zig_unit_tests_only: bool,
+
         #[clap(
             long,
             long_help = "Debug by recompiling and restarting api_server only"
@@ -278,9 +281,15 @@ async fn main() -> CmdResult {
         }
         Cmd::Precheckin {
             s3_api_only,
+            zig_unit_tests_only,
             debug_api_server,
             data_blob_storage,
-        } => cmd_precheckin::run_cmd_precheckin(s3_api_only, debug_api_server, data_blob_storage)?,
+        } => cmd_precheckin::run_cmd_precheckin(
+            s3_api_only,
+            zig_unit_tests_only,
+            debug_api_server,
+            data_blob_storage,
+        )?,
         Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,
         Cmd::Bench {
             service,

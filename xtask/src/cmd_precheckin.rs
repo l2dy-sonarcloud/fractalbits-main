@@ -2,6 +2,7 @@ use crate::*;
 
 pub fn run_cmd_precheckin(
     s3_api_only: bool,
+    zig_unit_tests_only: bool,
     debug_api_server: bool,
     data_blob_storage: DataBlobStorage,
 ) -> CmdResult {
@@ -19,6 +20,10 @@ pub fn run_cmd_precheckin(
 
     if s3_api_only {
         return run_s3_api_tests(debug_api_server);
+    }
+
+    if zig_unit_tests_only {
+        return run_zig_unit_tests();
     }
 
     cmd_service::init_service(
@@ -93,6 +98,26 @@ fn run_art_tests() -> CmdResult {
         $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
     }?;
 
+    Ok(())
+}
+
+fn run_zig_unit_tests() -> CmdResult {
+    let working_dir = run_fun!(pwd)?;
+
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug, InitConfig::default())?;
+    cmd_service::start_service(ServiceName::Minio)?;
+
+    run_cmd! {
+        info "Formatting nss_server";
+        $working_dir/zig-out/bin/nss_server format;
+    }?;
+
+    run_cmd! {
+        info "Running zig unit tests";
+        zig build test --summary all 2>&1;
+    }?;
+
+    info!("Zig unit tests completed successfully");
     Ok(())
 }
 
