@@ -149,6 +149,45 @@ pub fn init_service(
                 --item $bss_data_vg_config_item >/dev/null;
         }?;
 
+        // Initialize BSS metadata volume group configuration in service-discovery table
+        let bss_metadata_vg_config_json = r#"{
+            "volumes": [
+                {
+                    "volume_id": 0,
+                    "bss_nodes": [
+                        {"node_id": "bss0", "address": "127.0.0.1:8088"},
+                        {"node_id": "bss1", "address": "127.0.0.1:8089"},
+                        {"node_id": "bss2", "address": "127.0.0.1:8090"},
+                        {"node_id": "bss3", "address": "127.0.0.1:8091"},
+                        {"node_id": "bss4", "address": "127.0.0.1:8092"},
+                        {"node_id": "bss5", "address": "127.0.0.1:8093"}
+                    ]
+                }
+            ],
+            "quorum": {
+                "n": 6,
+                "r": 4,
+                "w": 4
+            }
+        }"#;
+        let bss_metadata_vg_config_item = format!(
+            r#"{{"service_id":{{"S":"metadata-vg"}},"value":{{"S":"{}"}}}}"#,
+            bss_metadata_vg_config_json
+                .replace('"', r#"\""#)
+                .replace(['\n', ' '], "")
+        );
+
+        run_cmd! {
+            info "Initializing BSS metadata volume group configuration in service-discovery table ...";
+            AWS_DEFAULT_REGION=fakeRegion
+            AWS_ACCESS_KEY_ID=fakeMyKeyId
+            AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+            AWS_ENDPOINT_URL_DYNAMODB="http://localhost:8000"
+            aws dynamodb put-item
+                --table-name $SERVICE_DISCOVERY_TABLE
+                --item $bss_metadata_vg_config_item >/dev/null;
+        }?;
+
         Ok(())
     };
     let init_rss = || -> CmdResult {
@@ -765,9 +804,16 @@ fn create_dirs_for_bss_server(bss_id: u32) -> CmdResult {
     // Create volume directories for multi-BSS support
     // For local testing, create directories for volumes 0 and 1
     for volume_id in 0..2 {
+        // Data volumes
         run_cmd!(mkdir -p data/bss$bss_id/local/blobs/data_volume$volume_id)?;
         for i in 0..256 {
             run_cmd!(mkdir -p data/bss$bss_id/local/blobs/data_volume$volume_id/dir$i)?;
+        }
+
+        // Metadata volumes
+        run_cmd!(mkdir -p data/bss$bss_id/local/blobs/metadata_volume$volume_id)?;
+        for i in 0..256 {
+            run_cmd!(mkdir -p data/bss$bss_id/local/blobs/metadata_volume$volume_id/dir$i)?;
         }
     }
 

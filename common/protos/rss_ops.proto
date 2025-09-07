@@ -27,6 +27,9 @@ enum Command {
 
   // Data Volume Group management
   GetDataVgInfo = 11;
+
+  // Metadata Volume Group management
+  GetMetadataVgInfo = 12;
 }
 
 // Put
@@ -249,4 +252,16 @@ message QuorumConfig {
   uint32 n = 1;  // Total replicas per volume
   uint32 r = 2;  // Read quorum
   uint32 w = 3;  // Write quorum
+}
+
+// GetMetadataVgInfo - Get metadata volume group configuration
+message GetMetadataVgInfoRequest {
+  // Empty for now - could add parameters later
+}
+
+message GetMetadataVgInfoResponse {
+  oneof result {
+    string info_json = 1;
+    string error = 2;
+  }
 }
