@@ -1,5 +1,5 @@
 use crate::{
-    blob_storage::DataBlobGuid,
+    blob_client::BlobDeletionRequest,
     handler::{
         ObjectRequestContext,
         common::{list_raw_objects, mpu_get_part_prefix, s3_error::S3Error},
@@ -121,17 +121,27 @@ pub async fn delete_object_handler(ctx: ObjectRequestContext) -> Result<HttpResp
 async fn delete_blob(
     tracking_root_blob_name: Option<String>,
     object: &ObjectLayout,
-    blob_deletion: Sender<(Option<String>, DataBlobGuid, usize)>,
+    blob_deletion: Sender<BlobDeletionRequest>,
 ) -> Result<(), S3Error> {
     let blob_guid = object.blob_guid()?;
     let num_blocks = object.num_blocks()?;
-    if let Err(e) = blob_deletion
-        .send((tracking_root_blob_name, blob_guid, num_blocks))
-        .await
-    {
-        tracing::warn!(
-            "Failed to send blob {blob_guid} num_blocks={num_blocks} for background deletion: {e}"
-        );
+    let blob_location = object.get_blob_location()?;
+
+    // Send deletion request for each block
+    for block_number in 0..num_blocks {
+        let request = BlobDeletionRequest {
+            tracking_root_blob_name: tracking_root_blob_name.clone(),
+            blob_guid,
+            block_number: block_number as u32,
+            location: blob_location,
+        };
+
+        if let Err(e) = blob_deletion.send(request).await {
+            tracing::warn!(
+                "Failed to send blob {blob_guid} block={block_number} for background deletion: {e}"
+            );
+        }
     }
+
     Ok(())
 }

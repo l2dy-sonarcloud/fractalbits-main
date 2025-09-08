@@ -523,7 +523,6 @@ impl DataVgProxy {
 
     pub async fn delete_blob(
         &self,
-        _tracking_root_blob_name: Option<&str>,
         blob_guid: DataBlobGuid,
         block_number: u32,
     ) -> Result<(), DataVgError> {

@@ -1,16 +1,23 @@
 use crate::{
     blob_storage::{
-        BlobStorage, BlobStorageError, BlobStorageImpl, DataBlobGuid, S3ExpressMultiAzStorage,
+        BlobLocation, BlobStorageError, BlobStorageImpl, DataBlobGuid, S3ExpressMultiAzStorage,
         S3HybridSingleAzStorage,
     },
     config::{BlobStorageBackend, BlobStorageConfig},
 };
 use bytes::Bytes;
 use data_blob_tracking::DataBlobTracker;
-use futures::stream::{self, StreamExt};
 use moka::future::Cache;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+
+#[derive(Debug)]
+pub struct BlobDeletionRequest {
+    pub tracking_root_blob_name: Option<String>,
+    pub blob_guid: DataBlobGuid,
+    pub block_number: u32,
+    pub location: BlobLocation,
+}
 
 pub struct BlobClient {
     storage: Arc<BlobStorageImpl>,
@@ -21,7 +28,7 @@ pub struct BlobClient {
 impl BlobClient {
     pub async fn new(
         blob_storage_config: &BlobStorageConfig,
-        rx: Receiver<(Option<String>, DataBlobGuid, usize)>,
+        rx: Receiver<BlobDeletionRequest>,
         rpc_timeout: Duration,
         data_blob_tracker: Option<Arc<DataBlobTracker>>,
         rss_clients: Option<
@@ -117,7 +124,7 @@ impl BlobClient {
 
     fn create_client_with_task(
         storage: Arc<BlobStorageImpl>,
-        rx: Receiver<(Option<String>, DataBlobGuid, usize)>,
+        rx: Receiver<BlobDeletionRequest>,
     ) -> Self {
         let blob_deletion_task_handle = tokio::spawn({
             let storage = storage.clone();
@@ -150,32 +157,26 @@ impl BlobClient {
 
     async fn blob_deletion_task(
         storage: Arc<BlobStorageImpl>,
-        mut input: Receiver<(Option<String>, DataBlobGuid, usize)>,
+        mut input: Receiver<BlobDeletionRequest>,
     ) -> Result<(), BlobStorageError> {
-        while let Some((tracking_root_blob_name, blob_guid, block_numbers)) = input.recv().await {
-            let deleted = stream::iter(0..block_numbers)
-                .map(|block_number| {
-                    let storage = storage.clone();
-                    let tracking_root = tracking_root_blob_name.clone();
-                    async move {
-                        let res = storage
-                            .delete_blob(tracking_root.as_deref(), blob_guid, block_number as u32)
-                            .await;
-                        match res {
-                            Ok(()) => 1,
-                            Err(e) => {
-                                tracing::warn!("delete {blob_guid}-p{block_number} failed: {e}");
-                                0
-                            }
-                        }
-                    }
-                })
-                .buffer_unordered(10)
-                .fold(0, |acc, x| async move { acc + x })
+        while let Some(request) = input.recv().await {
+            let res = storage
+                .delete_blob(
+                    request.tracking_root_blob_name.as_deref(),
+                    request.blob_guid,
+                    request.block_number,
+                    request.location,
+                )
                 .await;
-            let failed = block_numbers - deleted;
-            if failed != 0 {
-                tracing::warn!("delete parts of {blob_guid}: ok={deleted},err={failed}");
+            match res {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "delete {}-p{} failed: {e}",
+                        request.blob_guid,
+                        request.block_number
+                    );
+                }
             }
         }
         Ok(())
@@ -210,9 +211,12 @@ impl BlobClient {
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
-        self.storage.get_blob(blob_guid, block_number, body).await
+        self.storage
+            .get_blob(blob_guid, block_number, location, body)
+            .await
     }
 
     pub async fn delete_blob(
@@ -220,9 +224,10 @@ impl BlobClient {
         tracking_root_blob_name: Option<&str>,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
     ) -> Result<(), BlobStorageError> {
         self.storage
-            .delete_blob(tracking_root_blob_name, blob_guid, block_number)
+            .delete_blob(tracking_root_blob_name, blob_guid, block_number, location)
             .await
     }
 }

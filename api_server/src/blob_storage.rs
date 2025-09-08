@@ -8,6 +8,15 @@ pub use s3_express_multi_az_storage::S3ExpressMultiAzStorage;
 pub use s3_hybrid_single_az_storage::S3HybridSingleAzStorage;
 pub use volume_group_proxy::{DataBlobGuid, DataVgProxy};
 
+/// Specifies where a blob should be stored/retrieved from
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BlobLocation {
+    /// Small blobs stored in DataVgProxy
+    DataVgProxy,
+    /// Large blobs stored in S3
+    S3,
+}
+
 #[allow(clippy::enum_variant_names)]
 pub enum BlobStorageImpl {
     HybridSingleAz(S3HybridSingleAzStorage),
@@ -327,33 +336,8 @@ impl From<SdkError<DeleteObjectError>> for BlobStorageError {
     }
 }
 
-pub trait BlobStorage: Send + Sync {
-    async fn put_blob(
-        &self,
-        tracking_root_blob_name: Option<&str>,
-        blob_id: Uuid,
-        volume_id: u32,
-        block_number: u32,
-        body: Bytes,
-    ) -> Result<DataBlobGuid, BlobStorageError>;
-
-    async fn get_blob(
-        &self,
-        blob_guid: DataBlobGuid,
-        block_number: u32,
-        body: &mut Bytes,
-    ) -> Result<(), BlobStorageError>;
-
-    async fn delete_blob(
-        &self,
-        tracking_root_blob_name: Option<&str>,
-        blob_guid: DataBlobGuid,
-        block_number: u32,
-    ) -> Result<(), BlobStorageError>;
-}
-
-impl BlobStorage for BlobStorageImpl {
-    async fn put_blob(
+impl BlobStorageImpl {
+    pub async fn put_blob(
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_id: Uuid,
@@ -364,13 +348,7 @@ impl BlobStorage for BlobStorageImpl {
         match self {
             BlobStorageImpl::HybridSingleAz(storage) => {
                 storage
-                    .put_blob(
-                        tracking_root_blob_name,
-                        blob_id,
-                        volume_id,
-                        block_number,
-                        body,
-                    )
+                    .put_blob(blob_id, volume_id, block_number, body)
                     .await
             }
             BlobStorageImpl::S3ExpressMultiAz(storage) => {
@@ -387,15 +365,18 @@ impl BlobStorage for BlobStorageImpl {
         }
     }
 
-    async fn get_blob(
+    pub async fn get_blob(
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
         match self {
             BlobStorageImpl::HybridSingleAz(storage) => {
-                storage.get_blob(blob_guid, block_number, body).await
+                storage
+                    .get_blob(blob_guid, block_number, location, body)
+                    .await
             }
             BlobStorageImpl::S3ExpressMultiAz(storage) => {
                 storage.get_blob(blob_guid, block_number, body).await
@@ -403,17 +384,16 @@ impl BlobStorage for BlobStorageImpl {
         }
     }
 
-    async fn delete_blob(
+    pub async fn delete_blob(
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
     ) -> Result<(), BlobStorageError> {
         match self {
             BlobStorageImpl::HybridSingleAz(storage) => {
-                storage
-                    .delete_blob(tracking_root_blob_name, blob_guid, block_number)
-                    .await
+                storage.delete_blob(blob_guid, block_number, location).await
             }
             BlobStorageImpl::S3ExpressMultiAz(storage) => {
                 storage

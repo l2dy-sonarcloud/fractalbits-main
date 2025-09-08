@@ -1,5 +1,5 @@
 use super::{
-    BlobStorage, BlobStorageError, DataBlobGuid, S3ClientWrapper, S3RetryConfig, blob_key,
+    BlobStorageError, DataBlobGuid, S3ClientWrapper, S3RetryConfig, blob_key,
     create_s3_client_wrapper,
 };
 use crate::s3_retry;
@@ -196,8 +196,8 @@ impl S3ExpressMultiAzStorage {
     }
 }
 
-impl BlobStorage for S3ExpressMultiAzStorage {
-    async fn put_blob(
+impl S3ExpressMultiAzStorage {
+    pub async fn put_blob(
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_id: Uuid,
@@ -399,7 +399,7 @@ impl BlobStorage for S3ExpressMultiAzStorage {
         Ok(DataBlobGuid { blob_id, volume_id })
     }
 
-    async fn get_blob(
+    pub async fn get_blob(
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
@@ -470,7 +470,7 @@ impl BlobStorage for S3ExpressMultiAzStorage {
         Ok(())
     }
 
-    async fn delete_blob(
+    pub async fn delete_blob(
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_guid: DataBlobGuid,

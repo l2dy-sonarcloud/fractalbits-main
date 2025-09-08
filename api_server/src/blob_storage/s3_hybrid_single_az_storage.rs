@@ -1,4 +1,6 @@
-use super::{BlobStorage, BlobStorageError, DataBlobGuid, DataVgProxy, blob_key, create_s3_client};
+use super::{
+    BlobLocation, BlobStorageError, DataBlobGuid, DataVgProxy, blob_key, create_s3_client,
+};
 use crate::{config::S3HybridSingleAzConfig, object_layout::ObjectLayout};
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
@@ -62,10 +64,9 @@ impl S3HybridSingleAzStorage {
     }
 }
 
-impl BlobStorage for S3HybridSingleAzStorage {
-    async fn put_blob(
+impl S3HybridSingleAzStorage {
+    pub async fn put_blob(
         &self,
-        _tracking_root_blob_name: Option<&str>,
         blob_id: Uuid,
         volume_id: u32,
         block_number: u32,
@@ -77,74 +78,103 @@ impl BlobStorage for S3HybridSingleAzStorage {
         // Create BlobGuid with provided volume_id
         let blob_guid = DataBlobGuid { blob_id, volume_id };
 
-        if block_number == 0 && body.len() < ObjectLayout::DEFAULT_BLOCK_SIZE as usize {
-            // Small blob - only store in BSS via DataVgProxy
+        // Determine location based on size (single block and small size)
+        let is_small = block_number == 0 && body.len() < ObjectLayout::DEFAULT_BLOCK_SIZE as usize;
+
+        if is_small {
+            // Small blob - only store in DataVgProxy
             self.data_vg_proxy
                 .put_blob(blob_guid, block_number, body)
                 .await?;
-            return Ok(blob_guid);
+        } else {
+            // Large blob - only store in S3
+            let s3_key = blob_key(blob_id, block_number);
+            self.client_s3
+                .put_object()
+                .bucket(&self.s3_cache_bucket)
+                .key(&s3_key)
+                .body(body.into())
+                .send()
+                .await
+                .map_err(|e| BlobStorageError::S3(e.to_string()))?;
+
+            histogram!("rpc_duration_nanos", "type" => "s3", "name" => "put_blob_s3")
+                .record(start.elapsed().as_nanos() as f64);
         }
-
-        // Large blob - store in both S3 and BSS
-        let s3_key = blob_key(blob_id, block_number);
-        let s3_fut = self
-            .client_s3
-            .put_object()
-            .bucket(&self.s3_cache_bucket)
-            .key(&s3_key)
-            .body(body.clone().into())
-            .send();
-
-        let bss_fut = self.data_vg_proxy.put_blob(blob_guid, block_number, body);
-
-        let (res_s3, res_bss) = tokio::join!(s3_fut, bss_fut);
-
-        histogram!("rpc_duration_nanos", "type"  => "bss_s3_join",  "name" => "put_blob_join_with_s3")
-            .record(start.elapsed().as_nanos() as f64);
-
-        res_s3.map_err(|e| BlobStorageError::S3(e.to_string()))?;
-        res_bss?;
 
         Ok(blob_guid)
     }
 
-    async fn get_blob(
+    pub async fn get_blob(
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
-        self.data_vg_proxy
-            .get_blob(blob_guid, block_number, body)
-            .await?;
+        match location {
+            BlobLocation::DataVgProxy => {
+                // Small blob - get from DataVgProxy
+                self.data_vg_proxy
+                    .get_blob(blob_guid, block_number, body)
+                    .await?;
+            }
+            BlobLocation::S3 => {
+                // Large blob - get from S3
+                let s3_key = blob_key(blob_guid.blob_id, block_number);
+                let result = self
+                    .client_s3
+                    .get_object()
+                    .bucket(&self.s3_cache_bucket)
+                    .key(&s3_key)
+                    .send()
+                    .await
+                    .map_err(|e| BlobStorageError::S3(e.to_string()))?;
+
+                let bytes = result
+                    .body
+                    .collect()
+                    .await
+                    .map_err(|e| BlobStorageError::S3(e.to_string()))?
+                    .into_bytes();
+
+                *body = bytes;
+            }
+        }
 
         histogram!("blob_size", "operation" => "get").record(body.len() as f64);
         Ok(())
     }
 
-    async fn delete_blob(
+    pub async fn delete_blob(
         &self,
-        _tracking_root_blob_name: Option<&str>,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        location: BlobLocation,
     ) -> Result<(), BlobStorageError> {
-        let s3_key = blob_key(blob_guid.blob_id, block_number);
-        let s3_fut = self
-            .client_s3
-            .delete_object()
-            .bucket(&self.s3_cache_bucket)
-            .key(&s3_key)
-            .send();
-        let bss_fut =
-            self.data_vg_proxy
-                .delete_blob(_tracking_root_blob_name, blob_guid, block_number);
-        let (res_s3, res_bss) = tokio::join!(s3_fut, bss_fut);
-
-        if let Err(e) = res_s3 {
-            tracing::warn!("delete {s3_key} failed: {e}");
+        match location {
+            BlobLocation::DataVgProxy => {
+                // Small blob - delete from DataVgProxy
+                self.data_vg_proxy
+                    .delete_blob(blob_guid, block_number)
+                    .await?;
+            }
+            BlobLocation::S3 => {
+                // Large blob - delete from S3
+                let s3_key = blob_key(blob_guid.blob_id, block_number);
+                self.client_s3
+                    .delete_object()
+                    .bucket(&self.s3_cache_bucket)
+                    .key(&s3_key)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!("delete {s3_key} failed: {e}");
+                        BlobStorageError::S3(e.to_string())
+                    })?;
+            }
         }
 
-        res_bss?;
         Ok(())
     }
 }
