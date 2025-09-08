@@ -86,6 +86,7 @@ pub async fn delete_objects_handler(
             None,
             ctx.bucket_name.clone(),
             key,
+            None, // No checksum value needed for delete
             actix_web::dev::Payload::None,
         );
         match delete_object_handler(delete_ctx).await {

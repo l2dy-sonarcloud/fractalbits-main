@@ -59,6 +59,7 @@ pub async fn upload_part_handler(
         ctx.auth,
         ctx.bucket_name,
         part_key,
+        ctx.checksum_value, // Pass through the original checksum value
         ctx.payload,
     );
 

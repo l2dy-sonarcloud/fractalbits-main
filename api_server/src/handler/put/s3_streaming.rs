@@ -3,7 +3,7 @@ use crate::handler::common::signature::{
 };
 use crate::handler::common::{
     checksum::{
-        ChecksumAlgorithm, Checksummer, Checksums, ExpectedChecksums, request_checksum_value,
+        ChecksumAlgorithm, ChecksumValue, Checksummer, Checksums, ExpectedChecksums,
         request_trailer_checksum_algorithm,
     },
     s3_error::S3Error,
@@ -80,28 +80,31 @@ impl S3StreamingPayload {
     pub fn with_checksums(
         payload: actix_web::dev::Payload,
         request: &HttpRequest,
+        checksum_value: Option<ChecksumValue>,
     ) -> Result<(Self, StreamingChecksumReceiver), S3Error> {
-        Self::with_checksums_full(payload, request, None)
+        Self::with_checksums_full(payload, request, checksum_value, None)
     }
 
     pub fn with_checksums_and_signature(
         payload: actix_web::dev::Payload,
         request: &HttpRequest,
+        checksum_value: Option<ChecksumValue>,
         signature_info: Option<(ChunkSignatureContext, Option<String>)>,
     ) -> Result<(Self, StreamingChecksumReceiver), S3Error> {
-        Self::with_checksums_full(payload, request, signature_info)
+        Self::with_checksums_full(payload, request, checksum_value, signature_info)
     }
 
     /// Full path: complete functionality with task spawning for complex cases
     fn with_checksums_full(
         payload: actix_web::dev::Payload,
         request: &HttpRequest,
+        checksum_value: Option<ChecksumValue>,
         signature_info: Option<(ChunkSignatureContext, Option<String>)>,
     ) -> Result<(Self, StreamingChecksumReceiver), S3Error> {
         tracing::debug!("Using full checksum path (with task spawning)");
 
         // Extract expected checksums from request headers
-        let expected_checksums = Self::extract_expected_checksums(request)?;
+        let expected_checksums = Self::extract_expected_checksums(request, checksum_value)?;
 
         // Extract trailer algorithm if present
         let trailer_algorithm = Self::extract_trailer_algorithm(request)?;
@@ -306,12 +309,10 @@ impl S3StreamingPayload {
     }
 
     /// Extract expected checksums from request headers
-    fn extract_expected_checksums(request: &HttpRequest) -> Result<ExpectedChecksums, S3Error> {
-        let extra_checksum = request_checksum_value(request.headers()).map_err(|e| {
-            tracing::error!("Failed to extract checksum value: {:?}", e);
-            S3Error::InvalidDigest
-        })?;
-
+    fn extract_expected_checksums(
+        request: &HttpRequest,
+        checksum_value: Option<ChecksumValue>,
+    ) -> Result<ExpectedChecksums, S3Error> {
         // Extract MD5 from Content-MD5 header
         let md5 = request
             .headers()
@@ -335,7 +336,7 @@ impl S3StreamingPayload {
         Ok(ExpectedChecksums {
             md5,
             sha256,
-            extra: extra_checksum,
+            extra: checksum_value,
         })
     }
 

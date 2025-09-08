@@ -263,9 +263,14 @@ async fn put_object_streaming_internal(
     let payload = ctx.payload;
     let (s3_payload, checksum_future) = if signature_context.is_some() {
         tracing::debug!("Using chunk signature validation for streaming upload");
-        S3StreamingPayload::with_checksums_and_signature(payload, &ctx.request, signature_context)?
+        S3StreamingPayload::with_checksums_and_signature(
+            payload,
+            &ctx.request,
+            ctx.checksum_value,
+            signature_context,
+        )?
     } else {
-        S3StreamingPayload::with_checksums(payload, &ctx.request)?
+        S3StreamingPayload::with_checksums(payload, &ctx.request, ctx.checksum_value)?
     };
 
     // Use the blob GUID passed from the main handler
@@ -486,7 +491,7 @@ async fn put_object_with_no_trailer(
     let headers = extract_metadata_headers(ctx.request.headers())?;
 
     // Extract expected checksum from headers
-    let expected_checksum = checksum::request_checksum_value(ctx.request.headers())?;
+    let expected_checksum = ctx.checksum_value;
 
     // Check if there's a trailer checksum algorithm specified
     let trailer_algo = checksum::request_trailer_checksum_algorithm(ctx.request.headers())?;

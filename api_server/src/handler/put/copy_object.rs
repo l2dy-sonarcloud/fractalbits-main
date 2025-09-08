@@ -238,6 +238,7 @@ pub async fn copy_object_handler(
         ctx.auth,
         ctx.bucket_name,
         ctx.key,
+        ctx.checksum_value, // Pass through the original checksum value
         actix_web::dev::Payload::from(actix_body_bytes),
     );
     let _put_response = put_object_handler(new_ctx).await?;

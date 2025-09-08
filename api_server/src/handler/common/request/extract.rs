@@ -2,11 +2,13 @@ mod api_command;
 mod api_signature;
 mod authorization;
 mod bucket_name_and_key;
+mod checksum_value;
 
 pub use api_command::{ApiCommand, ApiCommandFromQuery};
 pub use api_signature::{ApiSignature, ApiSignatureExtractor};
 pub use authorization::{AuthError, AuthFromHeaders, Authentication, Scope};
 pub use bucket_name_and_key::BucketAndKeyName;
+pub use checksum_value::ChecksumValueFromHeaders;
 
 use crate::handler::common::checksum::{ChecksumAlgorithm, ChecksumValue};
 use actix_web::{FromRequest, HttpRequest, dev::Payload, web};

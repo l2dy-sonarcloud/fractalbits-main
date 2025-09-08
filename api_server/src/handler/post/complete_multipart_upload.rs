@@ -3,7 +3,7 @@ use crate::{
         ObjectRequestContext,
         common::{
             buffer_payload,
-            checksum::{ChecksumAlgorithm, ChecksumValue, request_checksum_value},
+            checksum::{ChecksumAlgorithm, ChecksumValue},
             extract_metadata_headers, gen_etag, get_raw_object, list_raw_objects,
             mpu_get_part_prefix, mpu_parse_part_number,
             response::xml::{Xml, XmlnsS3},
@@ -231,7 +231,7 @@ pub async fn complete_multipart_upload_handler(
 ) -> Result<actix_web::HttpResponse, S3Error> {
     let bucket = ctx.resolve_bucket().await?;
     let _headers = extract_metadata_headers(ctx.request.headers())?;
-    let _expected_checksum = request_checksum_value(ctx.request.headers())?;
+    let _expected_checksum = ctx.checksum_value;
 
     // Extract body from payload
     let body = buffer_payload(ctx.payload).await?;
@@ -266,8 +266,7 @@ pub async fn complete_multipart_upload_handler(
     let headers = crate::handler::common::extract_metadata_headers(ctx.request.headers())?;
 
     // Extract expected checksum from headers
-    let expected_checksum =
-        crate::handler::common::checksum::request_checksum_value(ctx.request.headers())?;
+    let expected_checksum = ctx.checksum_value;
 
     // Use MpuChecksummer like the original implementation
     let mut total_size = 0;
@@ -323,6 +322,7 @@ pub async fn complete_multipart_upload_handler(
             None,
             ctx.bucket_name.clone(),
             invalid_key,
+            None, // No checksum value needed for delete
             actix_web::dev::Payload::None,
         );
         delete_object_handler(delete_ctx).await?;

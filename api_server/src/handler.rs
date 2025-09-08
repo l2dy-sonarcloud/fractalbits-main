@@ -14,7 +14,7 @@ use actix_web::{
 };
 use bucket::BucketEndpoint;
 use common::{
-    authorization::Authorization, request::extract::*, s3_error::S3Error,
+    authorization::Authorization, checksum::ChecksumValue, request::extract::*, s3_error::S3Error,
     signature::check_signature,
 };
 use data_types::{ApiKey, Bucket, Versioned};
@@ -66,10 +66,12 @@ pub struct ObjectRequestContext {
     pub auth: Option<Authentication>,
     pub bucket_name: String,
     pub key: String,
+    pub checksum_value: Option<ChecksumValue>,
     pub payload: actix_web::dev::Payload,
 }
 
 impl ObjectRequestContext {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app: Arc<AppState>,
         request: HttpRequest,
@@ -77,6 +79,7 @@ impl ObjectRequestContext {
         auth: Option<Authentication>,
         bucket_name: String,
         key: String,
+        checksum_value: Option<ChecksumValue>,
         payload: actix_web::dev::Payload,
     ) -> Self {
         Self {
@@ -86,6 +89,7 @@ impl ObjectRequestContext {
             auth,
             bucket_name,
             key,
+            checksum_value,
             payload,
         }
     }
@@ -124,6 +128,8 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
     let AuthFromHeaders(auth) = extract_or_return!(AuthFromHeaders, &req);
     let BucketAndKeyName { bucket, key } = extract_or_return!(BucketAndKeyName, &req);
     let api_sig = extract_or_return!(ApiSignatureExtractor, &req);
+    let ChecksumValueFromHeaders(checksum_value) =
+        extract_or_return!(ChecksumValueFromHeaders, &req);
 
     let client_addr = req
         .connection_info()
@@ -160,6 +166,7 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
             bucket.clone(),
             key.clone(),
             auth,
+            checksum_value,
             &req,
             payload.into_inner(),
             endpoint,
@@ -193,11 +200,13 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn any_handler_inner(
     app: Arc<AppState>,
     bucket: String,
     key: String,
     auth: Option<Authentication>,
+    checksum_value: Option<ChecksumValue>,
     request: &HttpRequest,
     payload: actix_web::dev::Payload,
     endpoint: Endpoint,
@@ -241,6 +250,7 @@ async fn any_handler_inner(
                 auth,
                 bucket,
                 key,
+                checksum_value,
                 payload,
             );
             match endpoint {
