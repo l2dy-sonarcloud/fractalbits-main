@@ -18,6 +18,11 @@ pub trait Poolable: Unpin + Send + Sized + 'static {
 
     fn new(addr_key: Self::AddrKey) -> impl Future<Output = Result<Self, Self::Error>> + Send;
 
+    fn new_with_session_id(
+        addr_key: Self::AddrKey,
+        session_id: u64,
+    ) -> impl Future<Output = Result<Self, Self::Error>> + Send;
+
     fn is_closed(&self) -> bool;
 }
 
@@ -31,6 +36,15 @@ impl<T: Poolable + Sync> Poolable for Arc<T> {
 
     async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
         T::new(addr_key).await.map(Arc::new)
+    }
+
+    async fn new_with_session_id(
+        addr_key: Self::AddrKey,
+        session_id: u64,
+    ) -> Result<Self, Self::Error> {
+        T::new_with_session_id(addr_key, session_id)
+            .await
+            .map(Arc::new)
     }
 }
 
@@ -84,6 +98,22 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
         T: Poolable + Clone,
         T::AddrKey: From<K>,
     {
+        self.checkout_internal(addr_key, None).await
+    }
+
+    pub async fn checkout_with_session(&self, addr_key: K, session_id: u64) -> Result<T, Error>
+    where
+        T: Poolable + Clone,
+        T::AddrKey: From<K>,
+    {
+        self.checkout_internal(addr_key, Some(session_id)).await
+    }
+
+    async fn checkout_internal(&self, addr_key: K, session_id: Option<u64>) -> Result<T, Error>
+    where
+        T: Poolable + Clone,
+        T::AddrKey: From<K>,
+    {
         let mut current_conn_key = self.get_conn_key(&addr_key)?;
 
         loop {
@@ -126,11 +156,12 @@ impl<T: Poolable, K: Key> ConnPool<T, K> {
                     }
 
                     // If we reach here, the connection is still broken and we hold the semaphore.
-                    // Proceed with recreation.
-                    let new_conn = match T::new(addr_key.clone().into()).await {
-                        Ok(c) => c,
-                        Err(e) => panic!("Failed to create new connection: {e:?}"),
-                    };
+                    // Proceed with recreation using provided session_id or generate new one.
+                    let new_conn = match session_id {
+                        Some(id) => T::new_with_session_id(addr_key.clone().into(), id).await,
+                        None => T::new(addr_key.clone().into()).await,
+                    }
+                    .unwrap_or_else(|e| panic!("Failed to create new connection: {e:?}"));
 
                     // Acquire write lock to modify the pool.
                     let mut inner = self.inner.write(); // Acquire write lock
@@ -221,6 +252,13 @@ mod tests {
         type AddrKey = MockKey;
 
         async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
+            Ok(mock_conn(addr_key.0.parse().unwrap()))
+        }
+
+        async fn new_with_session_id(
+            addr_key: Self::AddrKey,
+            _session_id: u64,
+        ) -> Result<Self, Self::Error> {
             Ok(mock_conn(addr_key.0.parse().unwrap()))
         }
     }

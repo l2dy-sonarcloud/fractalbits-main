@@ -134,24 +134,68 @@ impl AppState {
     pub async fn checkout_rpc_client_nss(
         &self,
     ) -> Result<Arc<RpcClientNss>, <RpcClientNss as Poolable>::Error> {
-        let start = Instant::now();
-        let res = self
-            .rpc_clients_nss
-            .checkout(self.config.nss_addr.clone())
-            .await?;
-        histogram!("checkout_rpc_client_nanos", "type" => "nss")
-            .record(start.elapsed().as_nanos() as f64);
-        Ok(res)
+        self.checkout_nss_internal(None).await
+    }
+
+    pub async fn checkout_with_session_nss(
+        &self,
+        session_id: u64,
+    ) -> Result<Arc<RpcClientNss>, <RpcClientNss as Poolable>::Error> {
+        self.checkout_nss_internal(Some(session_id)).await
     }
 
     pub async fn checkout_rpc_client_rss(
         &self,
     ) -> Result<Arc<RpcClientRss>, <RpcClientRss as Poolable>::Error> {
+        self.checkout_rss_internal(None).await
+    }
+
+    pub async fn checkout_with_session_rss(
+        &self,
+        session_id: u64,
+    ) -> Result<Arc<RpcClientRss>, <RpcClientRss as Poolable>::Error> {
+        self.checkout_rss_internal(Some(session_id)).await
+    }
+
+    async fn checkout_nss_internal(
+        &self,
+        session_id: Option<u64>,
+    ) -> Result<Arc<RpcClientNss>, <RpcClientNss as Poolable>::Error> {
         let start = Instant::now();
-        let res = self
-            .rpc_clients_rss
-            .checkout(self.config.rss_addr.clone())
-            .await?;
+        let res = match session_id {
+            Some(id) => {
+                self.rpc_clients_nss
+                    .checkout_with_session(self.config.nss_addr.clone(), id)
+                    .await?
+            }
+            None => {
+                self.rpc_clients_nss
+                    .checkout(self.config.nss_addr.clone())
+                    .await?
+            }
+        };
+        histogram!("checkout_rpc_client_nanos", "type" => "nss")
+            .record(start.elapsed().as_nanos() as f64);
+        Ok(res)
+    }
+
+    async fn checkout_rss_internal(
+        &self,
+        session_id: Option<u64>,
+    ) -> Result<Arc<RpcClientRss>, <RpcClientRss as Poolable>::Error> {
+        let start = Instant::now();
+        let res = match session_id {
+            Some(id) => {
+                self.rpc_clients_rss
+                    .checkout_with_session(self.config.rss_addr.clone(), id)
+                    .await?
+            }
+            None => {
+                self.rpc_clients_rss
+                    .checkout(self.config.rss_addr.clone())
+                    .await?
+            }
+        };
         histogram!("checkout_rpc_client_nanos", "type" => "rss")
             .record(start.elapsed().as_nanos() as f64);
         Ok(res)

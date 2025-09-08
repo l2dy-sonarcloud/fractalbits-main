@@ -16,6 +16,18 @@ impl RpcClient {
         value: Bytes,
         timeout: Option<Duration>,
     ) -> Result<PutInodeResponse, RpcError> {
+        self.put_inode_with_stable_request_id(root_blob_name, key, value, timeout, None)
+            .await
+    }
+
+    pub async fn put_inode_with_stable_request_id(
+        &self,
+        root_blob_name: &str,
+        key: &str,
+        value: Bytes,
+        timeout: Option<Duration>,
+        stable_request_id: Option<u32>,
+    ) -> Result<PutInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "put_inode");
         let mut nss_key = key.to_string();
         nss_key.push('\0');
@@ -26,7 +38,7 @@ impl RpcClient {
         };
 
         let mut header = MessageHeader::default();
-        let request_id = self.gen_request_id();
+        let request_id = stable_request_id.unwrap_or_else(|| self.gen_request_id());
         header.id = request_id;
         header.command = Command::PutInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;

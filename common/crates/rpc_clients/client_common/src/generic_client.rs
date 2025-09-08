@@ -11,8 +11,8 @@ use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::AsRefStr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -31,6 +31,20 @@ use tokio_util::codec::FramedRead;
 use tracing::{debug, warn};
 
 use crate::RpcError;
+
+static CLIENT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub fn generate_unique_client_session_id() -> u64 {
+    let process_id = std::process::id() as u64;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let counter = CLIENT_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    // Combine: high 32 bits = timestamp, low 32 bits = (process_id << 16) | counter
+    (timestamp << 32) | ((process_id & 0xFFFF) << 16) | (counter & 0xFFFF)
+}
 
 type RequestMap<Header> = Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame<Header>>>>>;
 
@@ -53,6 +67,7 @@ pub struct RpcClient<Codec, Header: MessageHeaderTrait> {
     tasks: JoinSet<()>,
     socket_fd: RawFd,
     is_closed: Arc<AtomicBool>,
+    client_session_id: u64,
     _phantom: PhantomData<Codec>,
 }
 
@@ -85,6 +100,14 @@ where
     }
 
     pub async fn new(stream: TcpStream) -> Result<Self, RpcError> {
+        Self::new_internal(stream, None).await
+    }
+
+    pub async fn new_with_session_id(stream: TcpStream, session_id: u64) -> Result<Self, RpcError> {
+        Self::new_internal(stream, Some(session_id)).await
+    }
+
+    async fn new_internal(stream: TcpStream, session_id: Option<u64>) -> Result<Self, RpcError> {
         let rpc_type = Codec::RPC_TYPE;
         let socket_fd = stream.as_raw_fd();
         let (reader, writer) = stream.into_split();
@@ -132,6 +155,8 @@ where
             });
         }
 
+        let client_session_id = session_id.unwrap_or_else(generate_unique_client_session_id);
+
         Ok(RpcClient {
             requests,
             sender,
@@ -139,6 +164,7 @@ where
             tasks,
             socket_fd,
             is_closed,
+            client_session_id,
             _phantom: PhantomData,
         })
     }
@@ -241,6 +267,10 @@ where
         self.next_id.fetch_add(1, Ordering::SeqCst)
     }
 
+    pub fn get_client_session_id(&self) -> u64 {
+        self.client_session_id
+    }
+
     pub async fn send_request(
         &self,
         request_id: u32,
@@ -282,13 +312,15 @@ where
     }
 }
 
-impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait> Poolable
-    for RpcClient<Codec, Header>
+impl<Codec, Header> RpcClient<Codec, Header>
+where
+    Codec: RpcCodec<Header>,
+    Header: MessageHeaderTrait + Clone + Send + Sync + 'static,
 {
-    type AddrKey = String;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
+    async fn establish_connection(
+        addr_key: String,
+        session_id: Option<u64>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         const MAX_CONNECTION_RETRIES: usize = 100 * 3600; // Max attempts to connect to an RPC server
 
         let start = std::time::Instant::now();
@@ -304,7 +336,7 @@ impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait> Poolable
         .await
         .map_err(|e| {
             warn!(rpc_type = Codec::RPC_TYPE, addr = %addr_key, error = %e, "failed to connect RPC server");
-            Box::new(e) as Self::Error
+            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
         })?;
 
         let connect_duration = start.elapsed();
@@ -324,17 +356,34 @@ impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait> Poolable
             );
         }
 
+        let configured_stream = Self::configure_tcp_socket(stream)?;
+
+        match session_id {
+            Some(id) => Self::new_with_session_id(configured_stream, id)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
+            None => Self::new(configured_stream)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
+        }
+    }
+
+    fn configure_tcp_socket(
+        stream: TcpStream,
+    ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
         // Configure socket
-        let std_stream = stream.into_std().map_err(|e| Box::new(e) as Self::Error)?;
+        let std_stream = stream
+            .into_std()
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         let socket = Socket::from(std_stream);
 
         // Set 16MB buffers for data-intensive operations
         socket
             .set_recv_buffer_size(16 * 1024 * 1024)
-            .map_err(|e| Box::new(e) as Self::Error)?;
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         socket
             .set_send_buffer_size(16 * 1024 * 1024)
-            .map_err(|e| Box::new(e) as Self::Error)?;
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         // Configure aggressive keepalive for internal network
         let keepalive = TcpKeepalive::new()
@@ -343,23 +392,38 @@ impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait> Poolable
             .with_retries(2);
         socket
             .set_tcp_keepalive(&keepalive)
-            .map_err(|e| Box::new(e) as Self::Error)?;
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         // Set TCP_NODELAY for low latency
         socket
             .set_nodelay(true)
-            .map_err(|e| Box::new(e) as Self::Error)?;
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         // Convert back to tokio TcpStream
         let std_stream: std::net::TcpStream = socket.into();
         std_stream
             .set_nonblocking(true)
-            .map_err(|e| Box::new(e) as Self::Error)?;
-        let stream = TcpStream::from_std(std_stream).map_err(|e| Box::new(e) as Self::Error)?;
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        TcpStream::from_std(std_stream)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    }
+}
 
-        Self::new(stream)
-            .await
-            .map_err(|e| Box::new(e) as Self::Error)
+impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait> Poolable
+    for RpcClient<Codec, Header>
+{
+    type AddrKey = String;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
+        Self::establish_connection(addr_key, None).await
+    }
+
+    async fn new_with_session_id(
+        addr_key: Self::AddrKey,
+        session_id: u64,
+    ) -> Result<Self, Self::Error> {
+        Self::establish_connection(addr_key, Some(session_id)).await
     }
 
     fn is_closed(&self) -> bool {

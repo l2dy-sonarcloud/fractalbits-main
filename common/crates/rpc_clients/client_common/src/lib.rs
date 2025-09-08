@@ -125,3 +125,111 @@ macro_rules! rss_rpc_retry {
         $crate::rpc_retry!($pool, checkout_rpc_client_rss(), $method($($args),*))
     };
 }
+
+#[macro_export]
+macro_rules! nss_rpc_retry_with_session {
+    // For methods with stable_request_id support
+    ($app_state:expr, $method:ident($($args:expr),*)) => {
+        async {
+            use $crate::ErrorRetryable;
+            use $crate::generic_client::generate_unique_client_session_id;
+            let mut retries = 3;
+            let mut backoff = std::time::Duration::from_millis(5);
+            let session_id = generate_unique_client_session_id();
+            let mut stable_request_id: Option<u32> = None;
+
+            loop {
+                let rpc_client = $app_state.checkout_with_session_nss(session_id).await.unwrap();
+
+                // Generate or reuse stable request_id
+                let request_id = stable_request_id.unwrap_or_else(|| {
+                    let id = rpc_client.gen_request_id();
+                    stable_request_id = Some(id);
+                    id
+                });
+
+                // Try to call the _with_stable_request_id variant if available
+                let method_name = stringify!($method);
+                match method_name {
+                    "put_inode" => {
+                        match rpc_client.put_inode_with_stable_request_id($($args,)* Some(request_id)).await {
+                            Ok(val) => return Ok(val),
+                            Err(e) => {
+                                if e.retryable() && retries > 0 {
+                                    retries -= 1;
+                                    tokio::time::sleep(backoff).await;
+                                    backoff = backoff.saturating_mul(2);
+                                } else {
+                                    if e.retryable() {
+                                        tracing::error!(
+                                            "RPC call failed after multiple retries. Error: {}",
+                                            e
+                                        );
+                                    }
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    },
+                    _ => {
+                        // Fallback to regular method call for methods without stable_request_id support
+                        match rpc_client.$method($($args),*).await {
+                            Ok(val) => return Ok(val),
+                            Err(e) => {
+                                if e.retryable() && retries > 0 {
+                                    retries -= 1;
+                                    tokio::time::sleep(backoff).await;
+                                    backoff = backoff.saturating_mul(2);
+                                } else {
+                                    if e.retryable() {
+                                        tracing::error!(
+                                            "RPC call failed after multiple retries. Error: {}",
+                                            e
+                                        );
+                                    }
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! rss_rpc_retry_with_session {
+    ($app_state:expr, $method:ident($($args:expr),*)) => {
+        async {
+            use $crate::ErrorRetryable;
+            use $crate::generic_client::generate_unique_client_session_id;
+            let mut retries = 3;
+            let mut backoff = std::time::Duration::from_millis(5);
+            let session_id = generate_unique_client_session_id();
+
+            loop {
+                let rpc_client = $app_state.checkout_with_session_rss(session_id).await.unwrap();
+
+                match rpc_client.$method($($args),*).await {
+                    Ok(val) => return Ok(val),
+                    Err(e) => {
+                        if e.retryable() && retries > 0 {
+                            retries -= 1;
+                            tokio::time::sleep(backoff).await;
+                            backoff = backoff.saturating_mul(2);
+                        } else {
+                            if e.retryable() {
+                                tracing::error!(
+                                    "RPC call failed after multiple retries. Error: {}",
+                                    e
+                                );
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+    };
+}

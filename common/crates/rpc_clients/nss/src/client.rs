@@ -29,17 +29,43 @@ impl RpcClient {
     }
 }
 
+impl RpcClient {
+    async fn new_internal(
+        address: String,
+        session_id: Option<u64>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let inner = match session_id {
+            Some(id) => {
+                <GenericRpcClient<nss_codec::MessageCodec, nss_codec::MessageHeader> as Poolable>::new_with_session_id(
+                    address,
+                    id,
+                )
+                .await?
+            }
+            None => {
+                <GenericRpcClient<nss_codec::MessageCodec, nss_codec::MessageHeader> as Poolable>::new(
+                    address,
+                )
+                .await?
+            }
+        };
+        Ok(RpcClient { inner })
+    }
+}
+
 impl Poolable for RpcClient {
     type AddrKey = String;
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     async fn new(address: Self::AddrKey) -> Result<Self, Self::Error> {
-        let inner =
-            <GenericRpcClient<nss_codec::MessageCodec, nss_codec::MessageHeader> as Poolable>::new(
-                address,
-            )
-            .await?;
-        Ok(RpcClient { inner })
+        Self::new_internal(address, None).await
+    }
+
+    async fn new_with_session_id(
+        address: Self::AddrKey,
+        session_id: u64,
+    ) -> Result<Self, Self::Error> {
+        Self::new_internal(address, Some(session_id)).await
     }
 
     fn is_closed(&self) -> bool {
