@@ -15,7 +15,7 @@ use uuid::Uuid;
 pub struct S3HybridSingleAzStorage {
     data_vg_proxy: Arc<DataVgProxy>,
     client_s3: S3Client,
-    s3_cache_bucket: String,
+    data_blob_in_s3_bucket: String,
 }
 
 impl S3HybridSingleAzStorage {
@@ -55,7 +55,7 @@ impl S3HybridSingleAzStorage {
         Ok(Self {
             data_vg_proxy,
             client_s3,
-            s3_cache_bucket: s3_hybrid_config.s3_bucket.clone(),
+            data_blob_in_s3_bucket: s3_hybrid_config.s3_bucket.clone(),
         })
     }
 
@@ -91,7 +91,7 @@ impl S3HybridSingleAzStorage {
             let s3_key = blob_key(blob_id, block_number);
             self.client_s3
                 .put_object()
-                .bucket(&self.s3_cache_bucket)
+                .bucket(&self.data_blob_in_s3_bucket)
                 .key(&s3_key)
                 .body(body.into())
                 .send()
@@ -125,7 +125,7 @@ impl S3HybridSingleAzStorage {
                 let result = self
                     .client_s3
                     .get_object()
-                    .bucket(&self.s3_cache_bucket)
+                    .bucket(&self.data_blob_in_s3_bucket)
                     .key(&s3_key)
                     .send()
                     .await
@@ -164,7 +164,7 @@ impl S3HybridSingleAzStorage {
                 let s3_key = blob_key(blob_guid.blob_id, block_number);
                 self.client_s3
                     .delete_object()
-                    .bucket(&self.s3_cache_bucket)
+                    .bucket(&self.data_blob_in_s3_bucket)
                     .key(&s3_key)
                     .send()
                     .await

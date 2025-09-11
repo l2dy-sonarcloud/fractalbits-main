@@ -113,7 +113,7 @@ log_level = "info"
 iam_role = "{iam_role}"
 mirrord_port = 9999
 
-[s3_cache]
+[metadata_blob_in_s3]
 s3_host = "s3.{aws_region}.amazonaws.com"
 s3_port = 80
 s3_region = "{aws_region}"
