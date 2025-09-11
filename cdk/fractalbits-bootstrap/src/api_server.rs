@@ -47,7 +47,7 @@ pub fn bootstrap(
 
     if for_bench {
         // Try to download tools for micro-benchmarking
-        download_binaries(&["rewrk_rpc", "fbs", "test_art"])?;
+        download_binaries(&["rewrk_rpc", "test_art"])?;
         // Testing data for bss-rpc
         xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
     }

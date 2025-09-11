@@ -68,7 +68,6 @@ fn init_service_with_data_blob_storage(data_blob_storage: DataBlobStorage) -> Cm
 fn run_art_tests() -> CmdResult {
     let rand_log = "data/logs/test_art_random.log";
     let format_log = "data/logs/format.log";
-    let fbs_log = "data/logs/fbs.log";
     let ts = ["ts", "-m", TS_FMT];
     let working_dir = run_fun!(pwd)?;
 
@@ -91,8 +90,7 @@ fn run_art_tests() -> CmdResult {
     let async_art_log = "data/logs/test_async_art_rename.log";
     run_cmd! {
         info "Running async art rename tests with log $async_art_log";
-        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
-        $working_dir/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
+        $working_dir/zig-out/bin/nss_server format --init_test_tree |& $[ts] >$format_log;
         $working_dir/zig-out/bin/test_async_art --prefill 100000 --tests rename
             --ops 10000 --parallelism 1000 --debug |& $[ts] >$async_art_log;
     }?;
@@ -100,8 +98,7 @@ fn run_art_tests() -> CmdResult {
     let async_art_log = "data/logs/test_async_art.log";
     run_cmd! {
         info "Running async art tests with log $async_art_log";
-        $working_dir/zig-out/bin/nss_server format |& $[ts] >$format_log;
-        $working_dir/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME |& $[ts] >$fbs_log;
+        $working_dir/zig-out/bin/nss_server format --init_test_tree |& $[ts] >$format_log;
         $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >$async_art_log;
         $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
         $working_dir/zig-out/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;

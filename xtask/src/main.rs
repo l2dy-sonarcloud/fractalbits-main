@@ -12,7 +12,6 @@ use cmd_build::{BUILD_INFO, BuildMode};
 use cmd_lib::*;
 use strum::{AsRefStr, EnumString};
 
-pub const TEST_BUCKET_ROOT_BLOB_NAME: &str = "947ef2be-44b2-4ac2-969b-2574eb85662b";
 pub const TS_FMT: &str = "%b %d %H:%M:%.S";
 // Need to match with api_server's default config to make authentication work
 pub const UI_DEFAULT_REGION: &str = "localdev";

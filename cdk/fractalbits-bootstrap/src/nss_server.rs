@@ -31,7 +31,7 @@ pub fn bootstrap(
 ) -> CmdResult {
     install_rpms(&["nvme-cli", "mdadm"])?;
     if meta_stack_testing || for_bench {
-        download_binaries(&["fbs", "test_art", "rewrk_rpc"])?;
+        download_binaries(&["test_art", "rewrk_rpc"])?;
     }
     format_local_nvme_disks(false)?;
     download_binaries(&["nss_server", "mirrord", "nss_role_agent"])?;

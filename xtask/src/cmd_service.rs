@@ -213,22 +213,17 @@ pub fn init_service(
     let init_nss = || -> CmdResult {
         let pwd = run_fun!(pwd)?;
         let format_log = "data/logs/format.log";
-        let fbs_log = "data/logs/fbs.log";
         create_dirs_for_nss_server()?;
         match build_mode {
             BuildMode::Debug => run_cmd! {
                 info "formatting nss_server with default configs";
-                ${pwd}/zig-out/bin/nss_server format
+                ${pwd}/zig-out/bin/nss_server format --init_test_tree
                     |& ts -m $TS_FMT >$format_log;
-                ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME
-                    |& ts -m $TS_FMT >$fbs_log;
             }?,
             BuildMode::Release => run_cmd! {
                 info "formatting nss_server for benchmarking";
-                ${pwd}/zig-out/bin/nss_server format
+                ${pwd}/zig-out/bin/nss_server format --init_test_tree
                     |& ts -m $TS_FMT >$format_log;
-                ${pwd}/zig-out/bin/fbs --new_tree $TEST_BUCKET_ROOT_BLOB_NAME
-                    |& ts -m $TS_FMT >$fbs_log;
             }?,
         }
         Ok(())

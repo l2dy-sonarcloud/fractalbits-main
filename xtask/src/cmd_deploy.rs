@@ -152,7 +152,6 @@ pub fn run_cmd_deploy(
         let zig_bins = [
             "nss_server",
             "mirrord",
-            "fbs",      // to create test art tree for benchmarking nss_rpc
             "test_art", // to create test.data for benchmarking nss_rpc
             "s3_blob_client",
         ];
