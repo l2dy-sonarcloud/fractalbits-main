@@ -65,10 +65,8 @@ enum Cmd {
     },
 
     #[clap(about = "Build the whole project")]
-    Build {
-        #[clap(long, long_help = "release build or not")]
-        release: bool,
-    },
+    #[command(subcommand)]
+    Build(BuildCommand),
 
     #[clap(about = "Service stop/init/start/restart")]
     #[command(subcommand)]
@@ -107,6 +105,36 @@ enum Cmd {
         #[clap(subcommand)]
         test_type: Option<TestType>,
     },
+}
+
+#[derive(Parser, Clone)]
+#[clap(rename_all = "snake_case")]
+pub enum BuildCommand {
+    #[clap(about = "Build all components")]
+    All {
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
+    },
+    #[clap(about = "Build only zig components")]
+    #[command(subcommand)]
+    Zig(ZigBuildCommand),
+    #[clap(about = "Build only rust components")]
+    Rust {
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
+    },
+}
+
+#[derive(Parser, Clone)]
+#[clap(rename_all = "snake_case")]
+pub enum ZigBuildCommand {
+    #[clap(about = "Build zig servers")]
+    Build {
+        #[clap(long, long_help = "release build or not")]
+        release: bool,
+    },
+    #[clap(about = "Run zig unit tests")]
+    Test,
 }
 
 #[derive(Clone, AsRefStr, EnumString, clap::ValueEnum)]
@@ -272,15 +300,30 @@ async fn main() -> CmdResult {
     BUILD_INFO.get_or_init(cmd_build::build_info);
 
     match Cmd::parse() {
-        Cmd::Build { release } => {
-            let build_mode = cmd_build::build_mode(release);
-            cmd_build::build_rust_servers(build_mode)?;
-            cmd_build::build_zig_servers(build_mode)?;
-            if release {
-                cmd_build::build_rewrk_rpc()?;
+        Cmd::Build(build_cmd) => match build_cmd {
+            BuildCommand::All { release } => {
+                let build_mode = cmd_build::build_mode(release);
+                cmd_build::build_rust_servers(build_mode)?;
+                cmd_build::build_zig_servers(build_mode)?;
+                if release {
+                    cmd_build::build_rewrk_rpc()?;
+                }
+                cmd_build::build_ui(UI_DEFAULT_REGION)?;
             }
-            cmd_build::build_ui(UI_DEFAULT_REGION)?;
-        }
+            BuildCommand::Zig(zig_cmd) => match zig_cmd {
+                ZigBuildCommand::Build { release } => {
+                    let build_mode = cmd_build::build_mode(release);
+                    cmd_build::build_zig_servers(build_mode)?;
+                }
+                ZigBuildCommand::Test => {
+                    cmd_build::run_zig_unit_tests()?;
+                }
+            },
+            BuildCommand::Rust { release } => {
+                let build_mode = cmd_build::build_mode(release);
+                cmd_build::build_rust_servers(build_mode)?;
+            }
+        },
         Cmd::Precheckin {
             s3_api_only,
             zig_unit_tests_only,

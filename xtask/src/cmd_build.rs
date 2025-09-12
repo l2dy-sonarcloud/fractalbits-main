@@ -91,3 +91,22 @@ pub fn build_ui(region: &str) -> CmdResult {
         VITE_AWS_REGION=$region npm run build;
     }
 }
+
+pub fn run_zig_unit_tests() -> CmdResult {
+    let working_dir = run_fun!(pwd)?;
+    crate::cmd_service::start_service(crate::ServiceName::Minio)?;
+
+    run_cmd! {
+        info "Formatting nss_server";
+        $working_dir/zig-out/bin/nss_server format;
+    }?;
+
+    run_cmd! {
+        info "Running zig unit tests";
+        cd ./core;
+        zig build -p ../zig-out test --summary all 2>&1;
+    }?;
+
+    info!("Zig unit tests completed successfully");
+    Ok(())
+}

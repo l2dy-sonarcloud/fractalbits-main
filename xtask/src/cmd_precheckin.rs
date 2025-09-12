@@ -7,7 +7,6 @@ pub fn run_cmd_precheckin(
     with_art_tests: bool,
     data_blob_storage: DataBlobStorage,
 ) -> CmdResult {
-    let working_dir = run_fun!(pwd)?;
     if debug_api_server {
         cmd_service::stop_service(ServiceName::ApiServer)?;
         run_cmd! {
@@ -28,16 +27,7 @@ pub fn run_cmd_precheckin(
     }
 
     init_service_with_data_blob_storage(data_blob_storage)?;
-    cmd_service::start_service(ServiceName::Minio)?;
-    run_cmd! {
-        info "Formatting nss_server";
-        $working_dir/zig-out/bin/nss_server format;
-    }?;
-    run_cmd! {
-        info "Running zig unit tests";
-        cd ./core;
-        zig build -p ../zig-out test --summary all 2>&1;
-    }?;
+    cmd_build::run_zig_unit_tests()?;
 
     run_s3_api_tests(false, data_blob_storage)?;
 
@@ -109,22 +99,8 @@ fn run_art_tests() -> CmdResult {
 }
 
 fn run_zig_unit_tests(data_blob_storage: DataBlobStorage) -> CmdResult {
-    let working_dir = run_fun!(pwd)?;
     init_service_with_data_blob_storage(data_blob_storage)?;
-    cmd_service::start_service(ServiceName::Minio)?;
-
-    run_cmd! {
-        info "Formatting nss_server";
-        $working_dir/zig-out/bin/nss_server format;
-    }?;
-
-    run_cmd! {
-        info "Running zig unit tests";
-        cd ./core;
-        zig build -p ../zig-out test --summary all 2>&1;
-    }?;
-
-    info!("Zig unit tests completed successfully");
+    cmd_build::run_zig_unit_tests()?;
     Ok(())
 }
 
