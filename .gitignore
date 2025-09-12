@@ -15,6 +15,10 @@ target/
 # Runtime data directory
 data/
 
+# Third party downloaded dependencies
+third_party/dynamodb_local/
+third_party/dynamodb_local_latest.tar.gz
+
 # Claude Code configuration
 .claude/
 

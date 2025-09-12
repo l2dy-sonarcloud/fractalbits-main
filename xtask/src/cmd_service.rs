@@ -1,7 +1,39 @@
+use std::path::Path;
 use std::time::Duration;
 
 use crate::*;
 use colored::*;
+
+fn ensure_dynamodb_local() -> CmdResult {
+    let dynamodb_file = "dynamodb_local_latest.tar.gz";
+    let dynamodb_path = format!("third_party/{dynamodb_file}");
+    let dynamodb_dir = "third_party/dynamodb_local";
+
+    // Check if DynamoDB Local is already extracted and ready
+    if Path::new(&format!("{dynamodb_dir}/DynamoDBLocal.jar")).exists() {
+        return Ok(());
+    }
+
+    let download_url = "https://d1ni2b6xgvw0s0.cloudfront.net/v2.x/dynamodb_local_latest.tar.gz";
+
+    // Check if already downloaded
+    if !Path::new(&dynamodb_path).exists() {
+        run_cmd! {
+            info "Downloading DynamoDB Local...";
+            curl -sL -o $dynamodb_path $download_url;
+        }?;
+    }
+
+    run_cmd! {
+        cd third_party;
+        info "Extracting DynamoDB Local...";
+        mkdir -p dynamodb_local;
+        cd dynamodb_local;
+        tar -xzf ../$dynamodb_file;
+    }?;
+
+    Ok(())
+}
 
 pub fn init_service(
     service: ServiceName,
@@ -19,6 +51,7 @@ pub fn init_service(
     )?;
 
     let init_ddb_local = || -> CmdResult {
+        ensure_dynamodb_local()?;
         run_cmd! {
             rm -f data/rss/shared-local-instance.db;
             mkdir -p data/rss;
