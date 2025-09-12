@@ -102,8 +102,8 @@ enum Cmd {
         mode: DeployMode,
     },
 
-    #[clap(about = "Grant S3 build bucket policy")]
-    GrantBuildBucket,
+    #[clap(about = "Cleanup builds bucket (empty and delete)")]
+    DeployCleanup,
 
     #[clap(about = "Run various test suites")]
     RunTests {
@@ -403,7 +403,7 @@ async fn main() -> CmdResult {
             bss_use_i3,
             mode,
         )?,
-        Cmd::GrantBuildBucket => cmd_deploy::update_builds_bucket_access_policy()?,
+        Cmd::DeployCleanup => cmd_deploy::cleanup_builds_bucket()?,
         Cmd::RunTests { test_type } => {
             let test_type = test_type.unwrap_or(TestType::All);
             cmd_run_tests::run_tests(test_type).await?

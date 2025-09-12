@@ -1,9 +1,6 @@
 use crate::*;
 use std::path::Path;
 
-const TARGET_ACCOUNT_ID: &str = "ACCOUNT_ID_TARGET"; // TARGET_EMAIL@example.com
-const BUCKET_OWNER_ACCOUNT_ID: &str = "ACCOUNT_ID_OWNER";
-
 pub fn run_cmd_deploy(
     use_s3_backend: bool,
     enable_dev_mode: bool,
@@ -246,94 +243,29 @@ fn get_build_bucket_name() -> FunResult {
     Ok(format!("fractalbits-builds-{region}-{account_id}"))
 }
 
-pub fn update_builds_bucket_access_policy() -> CmdResult {
-    let current_aws_account = run_fun!(aws sts get-caller-identity --query Account --output text)?;
-    if current_aws_account != BUCKET_OWNER_ACCOUNT_ID {
-        cmd_die!("Only bucket owner could update s3 build bucket policy!");
-    }
-
+pub fn cleanup_builds_bucket() -> CmdResult {
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
-    // Check if the bucket exists; create if it doesn't
+
+    // Check if the bucket exists
     let bucket_exists = run_cmd!(aws s3api head-bucket --bucket $bucket_name &>/dev/null).is_ok();
     if !bucket_exists {
-        run_cmd! {
-            info "Creating bucket $bucket";
-            aws s3 mb $bucket
-        }?;
+        info!("Bucket {bucket} does not exist, nothing to clean up");
+        return Ok(());
     }
 
-    // Remove Block Public Access
-    let new_public_access_conf = r##"{
-"BlockPublicAcls": false,
-"IgnorePublicAcls": false,
-"BlockPublicPolicy": false,
-"RestrictPublicBuckets": false
-}"##;
+    // Empty the bucket first (delete all objects)
     run_cmd! {
-        aws s3api put-public-access-block
-          --bucket $bucket_name
-          --public-access-block-configuration $new_public_access_conf
+        info "Emptying bucket $bucket";
+        aws s3 rm $bucket --recursive;
     }?;
 
-    // Allows s3:GetObject to anyone except anonymous users
-    let new_policy = format!(
-        r##"{{
-"Version": "2012-10-17",
-"Statement": [
-  {{
-    "Sid": "AllowGetObjectToAuthenticatedAWSAccounts",
-    "Effect": "Allow",
-    "Principal": "*",
-    "Action": "s3:GetObject",
-    "Resource": "arn:aws:s3:::{bucket_name}/*",
-    "Condition": {{
-      "StringNotEquals": {{
-        "aws:PrincipalType": "Anonymous"
-      }}
-    }}
-  }},
-  {{
-    "Sid": "DenyAnonymousAccess",
-    "Effect": "Deny",
-    "Principal": "*",
-    "Action": "s3:GetObject",
-    "Resource": "arn:aws:s3:::{bucket_name}/*",
-    "Condition": {{
-      "StringEquals": {{
-        "aws:PrincipalType": "Anonymous"
-      }}
-    }}
-  }},
-  {{
-    "Sid": "AllowPutObjectToTargetAccount",
-    "Effect": "Allow",
-    "Principal": {{
-      "AWS": "arn:aws:iam::{TARGET_ACCOUNT_ID}:root"
-    }},
-    "Action": "s3:PutObject",
-    "Resource": "arn:aws:s3:::{bucket_name}/*"
-  }},
-  {{
-    "Sid": "AllowListBucketToTargetAccount",
-    "Effect": "Allow",
-    "Principal": {{
-      "AWS": "arn:aws:iam::{TARGET_ACCOUNT_ID}:root"
-    }},
-    "Action": "s3:ListBucket",
-    "Resource": "arn:aws:s3:::{bucket_name}"
-  }}
-]
-}}"##
-    );
-
+    // Delete the bucket
     run_cmd! {
-        info "Updating bucket policy for ${bucket_name}";
-        aws s3api put-bucket-policy
-            --bucket $bucket_name
-            --policy $new_policy;
-        info "Updating bucket policy for ${bucket_name} is done";
+        info "Deleting bucket $bucket";
+        aws s3 rb $bucket;
     }?;
 
+    info!("Successfully cleaned up builds bucket: {bucket}");
     Ok(())
 }
