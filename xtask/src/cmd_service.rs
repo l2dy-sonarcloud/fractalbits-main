@@ -777,6 +777,8 @@ Environment="MINIO_REGION=localdev""##
         r##"[Unit]
 Description={service_name} Service
 {dependencies}
+StartLimitIntervalSec=600
+StartLimitBurst=3
 [Service]
 LimitNOFILE=1000000
 LimitCORE=infinity
