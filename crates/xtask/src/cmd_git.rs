@@ -70,33 +70,18 @@ fn list_repos() -> CmdResult {
 }
 
 fn repo_has_changes(path: &str) -> bool {
-    if path == "." {
-        run_cmd!(git diff-index --quiet --cached HEAD --).is_err()
-            || run_cmd!(git diff --quiet).is_err()
-    } else {
-        run_cmd! {
-            cd $path;
-            git diff-index --quiet --cached HEAD --
-        }
-        .is_err()
-            || run_cmd! {
-                cd $path;
-                git diff --quiet
-            }
-            .is_err()
-    }
+    let has_staged_changes =
+        |path: &str| run_cmd!(cd $path; git diff-index --quiet --cached HEAD --).is_err();
+    let has_local_changes = |path: &str| run_cmd!(cd $path; git diff --quiet).is_err();
+    has_staged_changes(path) || has_local_changes(path)
 }
 
 fn repo_has_unpushed_commits(path: &str) -> bool {
-    let count = if path == "." {
-        run_fun!(git rev-list "@{u}..HEAD" --count 2>/dev/null).unwrap_or_else(|_| "0".to_string())
-    } else {
-        run_fun! {
-            cd $path;
-            git rev-list "@{u}..HEAD" --count 2>/dev/null
-        }
-        .unwrap_or_else(|_| "0".to_string())
-    };
+    let count = run_fun! {
+        cd $path;
+        git rev-list "@{u}..HEAD" --count 2>/dev/null
+    }
+    .unwrap_or_else(|_| "0".to_string());
     count.trim() != "0"
 }
 
