@@ -169,9 +169,7 @@ pub fn run_cmd_deploy(
         info!("Copying Zig-built binaries to data/deploy");
         let zig_bins = [
             "nss_server",
-            "mirrord",
             "test_art", // to create test.data for benchmarking nss_rpc
-            "s3_blob_client",
         ];
         for bin in &zig_bins {
             run_cmd!(cp $ZIG_RELEASE_OUT_AARCH64/bin/$bin data/deploy/$arch/$bin)?;
