@@ -73,7 +73,7 @@
           gdb
 
           # Performance tools for benchmarking
-          perf
+          linuxPackages.perf
 
           # Formatting tools
           nixpkgs-fmt
