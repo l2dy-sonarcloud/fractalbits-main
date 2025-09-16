@@ -109,8 +109,7 @@ impl RpcClient {
         blob_id: Uuid,
         block_number: u32,
         volume_id: u16,
-        version: u32,
-        is_new: bool,
+        version: u64,
         body: Bytes,
         timeout: Option<Duration>,
     ) -> Result<(), RpcError> {
@@ -122,7 +121,6 @@ impl RpcClient {
         header.block_number = block_number;
         header.volume_id = volume_id;
         header.version = version;
-        header.is_new = if is_new { 1 } else { 0 };
         header.command = Command::PutMetadataBlob;
         header.size = (MessageHeader::SIZE + body.len()) as u32;
 
@@ -132,7 +130,7 @@ impl RpcClient {
             .await
             .map_err(|e| {
                 if !e.retryable() {
-                    error!(rpc=%"put_metadata_blob", %request_id, %blob_id, %block_number, %volume_id, %version, is_new=%is_new, error=?e, "bss rpc failed");
+                    error!(rpc=%"put_metadata_blob", %request_id, %blob_id, %block_number, %volume_id, %version, error=?e, "bss rpc failed");
                 }
                 e
             })?;
@@ -144,9 +142,9 @@ impl RpcClient {
         blob_id: Uuid,
         block_number: u32,
         volume_id: u16,
-        version: u32,
+        version: u64,
         body: &mut Bytes,
-    ) -> Result<u32, RpcError> {
+    ) -> Result<u64, RpcError> {
         let _guard = InflightRpcGuard::new("bss", "get_metadata_blob");
         let mut header = MessageHeader::default();
         let request_id = self.gen_request_id();

@@ -168,8 +168,7 @@ impl MetadataVgProxy {
         blob_id: Uuid,
         block_number: u32,
         volume_id: u16,
-        version: u32,
-        is_new: bool,
+        version: u64,
         body: Bytes,
         rpc_timeout: Duration,
     ) -> Result<(), RpcError> {
@@ -183,7 +182,6 @@ impl MetadataVgProxy {
                 block_number,
                 volume_id,
                 version,
-                is_new,
                 body,
                 Some(rpc_timeout),
             )
@@ -196,9 +194,9 @@ impl MetadataVgProxy {
         blob_id: Uuid,
         block_number: u32,
         volume_id: u16,
-        version: u32,
+        version: u64,
         _rpc_timeout: Duration,
-    ) -> Result<(Bytes, u32), RpcError> {
+    ) -> Result<(Bytes, u64), RpcError> {
         let client = Self::checkout_bss_client_for_async(bss_connection_pools, bss_address)
             .await
             .map_err(|e| RpcError::InternalResponseError(e.to_string()))?;
@@ -240,8 +238,7 @@ impl MetadataVgProxy {
     pub async fn put_metadata_blob(
         &self,
         blob_guid: MetadataBlobGuid,
-        version: u32,
-        is_new: bool,
+        version: u64,
         content: Bytes,
     ) -> Result<(), DataVgError> {
         let start = Instant::now();
@@ -286,7 +283,6 @@ impl MetadataVgProxy {
                         0, // block_number always 0 for metadata blobs
                         blob_guid.volume_id,
                         version,
-                        is_new,
                         content_clone,
                         rpc_timeout,
                     ),
@@ -362,7 +358,7 @@ impl MetadataVgProxy {
     pub async fn get_metadata_blob(
         &self,
         blob_guid: MetadataBlobGuid,
-        version: u32,
+        version: u64,
     ) -> Result<Bytes, DataVgError> {
         let start = Instant::now();
 
@@ -418,7 +414,7 @@ impl MetadataVgProxy {
         }
 
         let mut successful_reads = 0;
-        let mut successful_responses: Vec<(Bytes, u32)> = Vec::new();
+        let mut successful_responses: Vec<(Bytes, u64)> = Vec::new();
         let mut errors = Vec::new();
 
         // Wait for R successful reads as per quorum requirements
