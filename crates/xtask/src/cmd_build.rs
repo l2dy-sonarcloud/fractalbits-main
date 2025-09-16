@@ -33,11 +33,11 @@ pub fn build_info() -> String {
     format!("{git_branch}:{git_rev}{dirty}, build time: {build_timestamp}")
 }
 
-pub fn build_rewrk_rpc() -> CmdResult {
+pub fn build_bench_rpc() -> CmdResult {
     let build_info = BUILD_INFO.get().unwrap();
     run_cmd! {
         info "Building benchmark tool `rewrk_rpc` ...";
-        cd ./api_server/benches/rewrk_rpc;
+        cd crates/bench_rpc;
         BUILD_INFO=$build_info cargo build --release;
     }
 }
@@ -67,9 +67,8 @@ pub fn build_rust_servers(mode: BuildMode) -> CmdResult {
             run_cmd! {
                 info "Building rust-based servers in debug mode ...";
                 BUILD_INFO=$build_info cargo build --workspace
-                    // --exclude ebs-failover
                     --exclude fractalbits-bootstrap
-                    --exclude rewrk*;
+                    --exclude bench*;
             }
         }
         BuildMode::Release => {
@@ -99,7 +98,7 @@ pub fn build_all(release: bool) -> CmdResult {
     build_rust_servers(build_mode)?;
     build_zig_servers(build_mode)?;
     if release {
-        build_rewrk_rpc()?;
+        build_bench_rpc()?;
     }
     build_ui(crate::UI_DEFAULT_REGION)?;
     Ok(())
@@ -119,7 +118,6 @@ pub fn run_zig_unit_tests() -> CmdResult {
         cd $ZIG_REPO_PATH;
         zig build -p ../$ZIG_DEBUG_OUT test --summary all 2>&1;
     }?;
-    
     crate::cmd_service::stop_service(crate::ServiceName::Bss0)?;
 
     info!("Zig unit tests completed successfully");

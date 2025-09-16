@@ -28,6 +28,10 @@ pub fn run_cmd_precheckin(
 
     init_service_with_data_blob_storage(data_blob_storage)?;
     cmd_build::run_zig_unit_tests()?;
+    run_cmd! {
+        info "Run cargo tests (except s3 api)";
+        cargo test --workspace --exclude api_server;
+    }?;
 
     run_s3_api_tests(false, data_blob_storage)?;
 

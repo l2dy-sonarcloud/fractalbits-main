@@ -306,6 +306,18 @@ mod tests {
         ) -> Result<Self, Self::Error> {
             Ok(mock_conn(addr_key.0.parse().unwrap()))
         }
+
+        async fn new_with_session_and_request_id(
+            addr_key: Self::AddrKey,
+            _session_id: u64,
+            _next_request_id: u32,
+        ) -> Result<Self, Self::Error> {
+            Ok(mock_conn(addr_key.0.parse().unwrap()))
+        }
+
+        fn get_session_state(&self) -> (u64, u32) {
+            (0, 0)
+        }
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]

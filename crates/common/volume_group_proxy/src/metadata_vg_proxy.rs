@@ -646,7 +646,7 @@ mod tests {
 
         // Test Display implementation
         let display_str = format!("{}", guid);
-        assert!(display_str.contains("metadata-vol42"));
+        assert!(display_str.contains(":m42"));
         assert!(display_str.contains(&blob_id.to_string()));
     }
 
@@ -731,20 +731,20 @@ mod tests {
     }
 
     #[test]
-    fn test_metadata_volume_id_is_u8() {
+    fn test_metadata_volume_id_is_u16() {
         let guid = MetadataBlobGuid {
             blob_id: Uuid::now_v7(),
-            volume_id: 255u8, // Max u8 value
+            volume_id: 65535u16, // Max u16 value
         };
 
-        assert_eq!(guid.volume_id, 255u8);
+        assert_eq!(guid.volume_id, 65535u16);
 
         let volume = MetadataVolume {
-            volume_id: 255u8,
+            volume_id: 65535u16,
             bss_nodes: vec![],
         };
 
-        assert_eq!(volume.volume_id, 255u8);
+        assert_eq!(volume.volume_id, 65535u16);
     }
 
     #[test]
