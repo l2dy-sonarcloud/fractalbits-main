@@ -59,11 +59,14 @@ pub struct MessageHeader {
 
     pub checksum_algo: u8,
 
+    /// Flag to indicate if this is a new metadata blob (vs update)
+    pub is_new: u8,
+
     /// Reserved parts for padding
     // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
     // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
     // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
-    reserved0: [u8; 3],
+    reserved0: [u8; 2],
     reserved1: [u8; 32],
     reserved2: [u8; 32],
     reserved3: [u8; 32],

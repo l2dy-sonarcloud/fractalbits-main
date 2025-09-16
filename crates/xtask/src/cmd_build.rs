@@ -107,7 +107,7 @@ pub fn build_all(release: bool) -> CmdResult {
 
 pub fn run_zig_unit_tests() -> CmdResult {
     let working_dir = run_fun!(pwd)?;
-    crate::cmd_service::start_service(crate::ServiceName::Minio)?;
+    crate::cmd_service::start_service(crate::ServiceName::Bss0)?;
 
     run_cmd! {
         info "Formatting nss_server";
@@ -119,6 +119,8 @@ pub fn run_zig_unit_tests() -> CmdResult {
         cd $ZIG_REPO_PATH;
         zig build -p ../$ZIG_DEBUG_OUT test --summary all 2>&1;
     }?;
+    
+    crate::cmd_service::stop_service(crate::ServiceName::Bss0)?;
 
     info!("Zig unit tests completed successfully");
     Ok(())

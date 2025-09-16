@@ -62,7 +62,7 @@ fn run_art_tests() -> CmdResult {
     let ts = ["ts", "-m", TS_FMT];
     let working_dir = run_fun!(pwd)?;
 
-    cmd_service::start_service(ServiceName::Minio)?;
+    cmd_service::start_service(ServiceName::Bss0)?;
     run_cmd! {
         mkdir -p data/logs;
         info "Running art tests (random) with log $rand_log";
@@ -95,6 +95,7 @@ fn run_art_tests() -> CmdResult {
         $working_dir/$ZIG_DEBUG_OUT/bin/test_async_art -p 20 |& $[ts] >>$async_art_log;
     }?;
 
+    cmd_service::stop_service(ServiceName::Bss0)?;
     Ok(())
 }
 

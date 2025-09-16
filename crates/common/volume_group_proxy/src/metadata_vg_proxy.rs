@@ -169,6 +169,7 @@ impl MetadataVgProxy {
         block_number: u32,
         volume_id: u16,
         version: u64,
+        is_new: bool,
         body: Bytes,
         rpc_timeout: Duration,
     ) -> Result<(), RpcError> {
@@ -182,6 +183,7 @@ impl MetadataVgProxy {
                 block_number,
                 volume_id,
                 version,
+                is_new,
                 body,
                 Some(rpc_timeout),
             )
@@ -239,6 +241,7 @@ impl MetadataVgProxy {
         &self,
         blob_guid: MetadataBlobGuid,
         version: u64,
+        is_new: bool,
         content: Bytes,
     ) -> Result<(), DataVgError> {
         let start = Instant::now();
@@ -283,6 +286,7 @@ impl MetadataVgProxy {
                         0, // block_number always 0 for metadata blobs
                         blob_guid.volume_id,
                         version,
+                        is_new,
                         content_clone,
                         rpc_timeout,
                     ),
