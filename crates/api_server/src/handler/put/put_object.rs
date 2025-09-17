@@ -239,7 +239,7 @@ fn should_use_streaming(request: &actix_web::HttpRequest) -> bool {
 // Internal streaming handler that processes chunks as they arrive
 async fn put_object_streaming_internal(
     ctx: ObjectRequestContext,
-    blob_guid: DataBlobGuid,
+    mut blob_guid: DataBlobGuid,
 ) -> Result<HttpResponse, S3Error> {
     let start = Instant::now();
 
@@ -317,6 +317,9 @@ async fn put_object_streaming_internal(
         .map_err(|_| S3Error::InternalError)?;
 
     let total_size = size;
+    if total_size >= ObjectLayout::DEFAULT_BLOCK_SIZE as u64 {
+        blob_guid.volume_id = DataBlobGuid::S3_VOLUME;
+    }
 
     histogram!("object_size", "operation" => "put").record(total_size as f64);
     histogram!("put_object_handler", "stage" => "put_blob")
@@ -533,9 +536,9 @@ async fn put_object_with_no_trailer(
             futures.push(future);
         }
 
-        let results: Vec<Result<DataBlobGuid, S3Error>> = futures::future::join_all(futures).await;
+        let results: Vec<Result<(), S3Error>> = futures::future::join_all(futures).await;
         for result in results {
-            let _blob_guid = result?; // Ignore the returned BlobGuid
+            result?;
         }
     }
 

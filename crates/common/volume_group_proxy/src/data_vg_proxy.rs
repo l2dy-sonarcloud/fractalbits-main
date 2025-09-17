@@ -24,6 +24,10 @@ pub struct DataBlobGuid {
     pub volume_id: u16,
 }
 
+impl DataBlobGuid {
+    pub const S3_VOLUME: u16 = u16::MAX;
+}
+
 impl std::fmt::Display for DataBlobGuid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:d{}", self.blob_id, self.volume_id)

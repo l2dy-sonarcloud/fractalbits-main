@@ -20,19 +20,13 @@ pub fn gen_version_id() -> Uuid {
 impl ObjectLayout {
     pub const DEFAULT_BLOCK_SIZE: u32 = 1024 * 1024 - 256;
 
-    /// Determine if this object should be stored as small blobs (DataVgProxy) or large blobs (S3)
-    /// Small objects: single block with size < DEFAULT_BLOCK_SIZE
-    /// Large objects: everything else
+    #[inline]
     pub fn get_blob_location(&self) -> Result<BlobLocation, S3Error> {
-        let num_blocks = self.num_blocks()?;
-        let object_size = self.size()? as usize;
-
-        if num_blocks == 1 && object_size < Self::DEFAULT_BLOCK_SIZE as usize {
-            // Small object - store all blocks in DataVgProxy
-            Ok(BlobLocation::DataVgProxy)
-        } else {
-            // Large object - store all blocks in S3
+        let blob_guid = self.blob_guid()?;
+        if blob_guid.volume_id == DataBlobGuid::S3_VOLUME {
             Ok(BlobLocation::S3)
+        } else {
+            Ok(BlobLocation::DataVgProxy)
         }
     }
 

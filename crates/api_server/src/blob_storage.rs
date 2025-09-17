@@ -344,7 +344,7 @@ impl BlobStorageImpl {
         volume_id: u16,
         block_number: u32,
         body: Bytes,
-    ) -> Result<DataBlobGuid, BlobStorageError> {
+    ) -> Result<(), BlobStorageError> {
         match self {
             BlobStorageImpl::HybridSingleAz(storage) => {
                 storage
@@ -353,13 +353,7 @@ impl BlobStorageImpl {
             }
             BlobStorageImpl::S3ExpressMultiAz(storage) => {
                 storage
-                    .put_blob(
-                        tracking_root_blob_name,
-                        blob_id,
-                        volume_id,
-                        block_number,
-                        body,
-                    )
+                    .put_blob(tracking_root_blob_name, blob_id, block_number, body)
                     .await
             }
         }

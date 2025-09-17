@@ -191,7 +191,7 @@ impl S3ExpressMultiAzStorage {
     pub fn create_data_blob_guid(&self) -> DataBlobGuid {
         DataBlobGuid {
             blob_id: Uuid::now_v7(),
-            volume_id: 0, // S3 Express Multi AZ doesn't use multi-volume BSS
+            volume_id: DataBlobGuid::S3_VOLUME,
         }
     }
 }
@@ -201,10 +201,9 @@ impl S3ExpressMultiAzStorage {
         &self,
         tracking_root_blob_name: Option<&str>,
         blob_id: Uuid,
-        volume_id: u16,
         block_number: u32,
         body: Bytes,
-    ) -> Result<DataBlobGuid, BlobStorageError> {
+    ) -> Result<(), BlobStorageError> {
         histogram!("blob_size", "operation" => "put", "storage" => "s3_express_multi_az")
             .record(body.len() as f64);
 
@@ -396,7 +395,7 @@ impl S3ExpressMultiAzStorage {
         histogram!("rpc_duration_nanos", "type" => "s3_express_multi_az", "name" => "put_blob")
             .record(start.elapsed().as_nanos() as f64);
 
-        Ok(DataBlobGuid { blob_id, volume_id })
+        Ok(())
     }
 
     pub async fn get_blob(
@@ -407,6 +406,7 @@ impl S3ExpressMultiAzStorage {
     ) -> Result<(), BlobStorageError> {
         let start = Instant::now();
         let s3_key = blob_key(blob_guid.blob_id, block_number);
+        assert_eq!(DataBlobGuid::S3_VOLUME, blob_guid.volume_id);
 
         // Always read from local AZ bucket for better performance
         let response_result = s3_retry!(
@@ -479,6 +479,7 @@ impl S3ExpressMultiAzStorage {
         let s3_key = blob_key(blob_guid.blob_id, block_number);
         let tracking_root = tracking_root_blob_name.expect("No tracking_root_blob_name provided");
         assert!(!tracking_root.is_empty());
+        assert_eq!(DataBlobGuid::S3_VOLUME, blob_guid.volume_id);
 
         // Record deleted blob for tracking
         self.record_deleted_blob(tracking_root, &s3_key).await?;

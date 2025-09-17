@@ -195,7 +195,7 @@ impl BlobClient {
         blob_guid: DataBlobGuid,
         block_number: u32,
         body: Bytes,
-    ) -> Result<DataBlobGuid, BlobStorageError> {
+    ) -> Result<(), BlobStorageError> {
         self.storage
             .put_blob(
                 tracking_root_blob_name,

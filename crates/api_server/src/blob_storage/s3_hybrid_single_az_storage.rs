@@ -71,7 +71,7 @@ impl S3HybridSingleAzStorage {
         volume_id: u16,
         block_number: u32,
         body: Bytes,
-    ) -> Result<DataBlobGuid, BlobStorageError> {
+    ) -> Result<(), BlobStorageError> {
         histogram!("blob_size", "operation" => "put").record(body.len() as f64);
         let start = Instant::now();
 
@@ -102,7 +102,7 @@ impl S3HybridSingleAzStorage {
                 .record(start.elapsed().as_nanos() as f64);
         }
 
-        Ok(blob_guid)
+        Ok(())
     }
 
     pub async fn get_blob(
