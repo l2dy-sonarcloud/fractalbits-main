@@ -228,13 +228,13 @@ fn run_foreach_repo(command: &[String]) -> CmdResult {
         if path == "." {
             run_cmd! {
                 info "Running in main repo";
-                $[command];
+                $[command] 2>&1;
             }?;
         } else {
             run_cmd! {
                 info "Running in repo: $path";
                 cd $path;
-                $[command];
+                $[command] 2>&1;
             }?;
         }
     }
