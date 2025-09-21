@@ -17,8 +17,6 @@ pub const TS_FMT: &str = "%b %d %H:%M:%.S";
 // Need to match with api_server's default config to make authentication work
 pub const UI_DEFAULT_REGION: &str = "localdev";
 pub const ZIG_DEBUG_OUT: &str = "target/debug/zig-out";
-pub const ZIG_RELEASE_OUT_AARCH64: &str = "target/aarch64-unknown-linux-gnu/release/zig-out";
-pub const ZIG_RELEASE_OUT_X86_64: &str = "target/x86_64-unknown-linux-gnu/release/zig-out";
 
 #[derive(Parser)]
 #[clap(name = "xtask", about = "Misc project related tasks")]
@@ -92,20 +90,8 @@ enum Cmd {
         #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
         release: bool,
 
-        #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
-        target_arm: bool,
-
-        #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
-        use_s3_backend: bool,
-
-        #[clap(long)]
-        enable_dev_mode: bool,
-
-        #[clap(long)]
-        bss_use_i3: bool,
-
         #[clap(long, default_value = "all", value_enum)]
-        mode: DeployMode,
+        target: DeployTarget,
     },
 
     #[clap(about = "Run various test suites")]
@@ -224,7 +210,7 @@ pub enum DataBlobStorage {
 }
 
 #[derive(AsRefStr, EnumString, Copy, Clone, Default, PartialEq, clap::ValueEnum)]
-pub enum DeployMode {
+pub enum DeployTarget {
     #[default]
     All,
     Zig,
@@ -426,22 +412,11 @@ async fn main() -> CmdResult {
         Cmd::Tools(tool_kind) => cmd_tool::run_cmd_tool(tool_kind)?,
         Cmd::Deploy {
             command,
-            use_s3_backend,
-            enable_dev_mode,
+            target,
             release,
-            target_arm,
-            bss_use_i3,
-            mode,
         } => match command {
             Some(DeployCommand::Cleanup) => cmd_deploy::cleanup_builds_bucket()?,
-            None => cmd_deploy::run_cmd_deploy(
-                use_s3_backend,
-                enable_dev_mode,
-                release,
-                target_arm,
-                bss_use_i3,
-                mode,
-            )?,
+            None => cmd_deploy::run_cmd_deploy(target, release)?,
         },
         Cmd::RunTests { test_type } => {
             let test_type = test_type.unwrap_or(TestType::All);

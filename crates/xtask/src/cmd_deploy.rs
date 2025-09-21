@@ -1,14 +1,55 @@
 use crate::*;
 use std::path::Path;
 
-pub fn run_cmd_deploy(
-    use_s3_backend: bool,
-    enable_dev_mode: bool,
-    release_mode: bool,
-    target_arm: bool,
-    bss_use_i3: bool,
-    deploy_mode: DeployMode,
-) -> CmdResult {
+#[derive(Clone)]
+struct CpuTarget {
+    name: &'static str,
+    arch: &'static str,
+    rust_target: &'static str,
+    rust_cpu: &'static str,
+    zig_target: &'static str,
+    zig_cpu: &'static str,
+}
+
+const CPU_TARGETS: &[CpuTarget] = &[
+    CpuTarget {
+        name: "i3",
+        arch: "x86_64",
+        rust_target: "x86_64-unknown-linux-gnu",
+        rust_cpu: "skylake",
+        zig_target: "x86_64-linux-gnu",
+        zig_cpu: "skylake",
+    },
+    CpuTarget {
+        name: "graviton3",
+        arch: "aarch64",
+        rust_target: "aarch64-unknown-linux-gnu",
+        rust_cpu: "neoverse-v1",
+        zig_target: "aarch64-linux-gnu",
+        zig_cpu: "neoverse_v1",
+    },
+    CpuTarget {
+        name: "graviton4",
+        arch: "aarch64",
+        rust_target: "aarch64-unknown-linux-gnu",
+        rust_cpu: "neoverse-v2",
+        zig_target: "aarch64-linux-gnu",
+        zig_cpu: "neoverse_v2",
+    },
+];
+
+const RUST_BINS: &[&str] = &[
+    "fractalbits-bootstrap",
+    "root_server",
+    "api_server",
+    "nss_role_agent",
+    "rss_admin",
+    "rewrk_rpc",
+];
+
+const ZIG_BINS: &[&str] = &["nss_server", "bss_server", "test_art"];
+
+pub fn run_cmd_deploy(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     let build_info = BUILD_INFO.get().unwrap();
     let bucket_name = get_build_bucket_name()?;
     let bucket = format!("s3://{bucket_name}");
@@ -22,228 +63,148 @@ pub fn run_cmd_deploy(
         }?;
     }
 
-    let (zig_build_opt, rust_build_opt) = if release_mode {
-        ("--release=safe", "--release")
+    let (zig_build_opt, rust_build_opt, build_dir) = if release_mode {
+        ("--release=safe", "--release", "release")
     } else {
-        ("", "")
+        ("", "", "debug")
     };
-    let (rust_build_target, zig_build_target) = if target_arm {
-        (
-            "aarch64-unknown-linux-gnu",
-            [
-                "-Dtarget=aarch64-linux-gnu",
-                "-Dcpu=neoverse_v1",
-                "-Dbss_cpu=neoverse_v2",
-            ],
-        )
-    } else {
-        (
-            "x86_64-unknown-linux-gnu",
-            ["-Dtarget=x86_64-linux-gnu", "-Dcpu=cascadelake", ""],
-        )
-    };
-    let arch = if target_arm { "aarch64" } else { "x86_64" };
 
-    run_cmd!(mkdir -p data/deploy/$arch)?;
-    if bss_use_i3 && arch != "x86_64" {
-        run_cmd!(mkdir -p data/deploy/x86_64)?;
-    }
-    if deploy_mode == DeployMode::Bootstrap {
-        // Build fractalbits-bootstrap binary only, in debug mode
-        build_bootstrap_only(rust_build_target)?;
-        run_cmd! {
-            cp target/$rust_build_target/debug/fractalbits-bootstrap
-                data/deploy/$arch/fractalbits-bootstrap;
-            info "Syncing fractalbits-bootstrap to S3";
-            aws s3 sync data/deploy $bucket;
-        }?;
-        return Ok(());
+    // Create deploy directories for all CPU targets
+    for target in CPU_TARGETS {
+        let deploy_dir = format!("data/deploy/{}/{}", target.arch, target.name);
+        run_cmd!(mkdir -p $deploy_dir)?;
     }
 
-    // Build and upload Rust projects if mode is rust or all
-    if deploy_mode == DeployMode::Rust || deploy_mode == DeployMode::All {
-        run_cmd! {
-            info "Building Rust projects with zigbuild";
-        }?;
-
-        if target_arm {
-            // Build for all workspaces, and the same workspace may get built again with other targets
+    // Build fractalbits-bootstrap separately for each architecture without CPU flags
+    if deploy_target == DeployTarget::All || deploy_target == DeployTarget::Bootstrap {
+        for arch in ["x86_64", "aarch64"] {
+            let rust_target = format!("{arch}-unknown-linux-gnu");
             run_cmd! {
-                info "Building Rust projects for Graviton3 (neoverse-v1)";
-                RUSTFLAGS="-C target-cpu=neoverse-v1"
+                info "Building fractalbits-bootstrap for $arch";
                 BUILD_INFO=$build_info
-                cargo zigbuild
-                    --workspace --exclude api_server
-                    --target $rust_build_target $rust_build_opt;
-
-                info "Building api_server for Graviton4 (neoverse-v2)";
-                RUSTFLAGS="-C target-cpu=neoverse-v2"
-                BUILD_INFO=$build_info
-                cargo zigbuild
-                    -p api_server
-                    --target $rust_build_target $rust_build_opt;
+                cargo zigbuild -p fractalbits-bootstrap --target $rust_target $rust_build_opt;
             }?;
 
-            if !bss_use_i3 {
-                // Build fractalbits-bootstrap separately with neoverse_n1
-                run_cmd! {
-                    info "Building fractalbits-bootstrap for Graviton2 (neoverse-n1)";
-                    RUSTFLAGS="-C target-cpu=neoverse-n1"
-                    BUILD_INFO=$build_info
-                    cargo zigbuild -p fractalbits-bootstrap --target $rust_build_target $rust_build_opt;
-                }?;
-            } else {
-                let target_cpu = "skylake"; // for i3en Intel Xeon Platinum 8175
-                run_cmd! {
-                    info "Building bss fractalbits-bootstrap & rewrk_rpc for x86_64";
-                    RUSTFLAGS="-C target-cpu=$target_cpu"
-                    BUILD_INFO=$build_info
-                    cargo zigbuild -p fractalbits-bootstrap
-                        --target x86_64-unknown-linux-gnu $rust_build_opt;
-                    RUSTFLAGS="-C target-cpu=$target_cpu"
-                    BUILD_INFO=$build_info
-                    cargo zigbuild -p rewrk_rpc
-                        --target x86_64-unknown-linux-gnu $rust_build_opt;
-                }?;
+            // Copy fractalbits-bootstrap to arch-level directory
+            let src_path = format!("target/{}/{}/fractalbits-bootstrap", rust_target, build_dir);
+            let dst_path = format!("data/deploy/{}/fractalbits-bootstrap", arch);
+            run_cmd!(mkdir -p data/deploy/$arch)?;
+            run_cmd!(cp $src_path $dst_path)?;
+        }
+    }
+
+    // Build other Rust projects with CPU-specific optimizations
+    if deploy_target == DeployTarget::All || deploy_target == DeployTarget::Rust {
+        info!("Building Rust projects for all CPU targets");
+        for target in CPU_TARGETS {
+            let rust_cpu = target.rust_cpu;
+            let rust_target = target.rust_target;
+
+            run_cmd! {
+                info "Building Rust projects for $rust_target ($rust_cpu)";
+                RUSTFLAGS="-C target-cpu=$rust_cpu"
+                BUILD_INFO=$build_info
+                cargo zigbuild --target $rust_target $rust_build_opt;
+            }?;
+
+            // Copy Rust binaries to deploy directory (excluding fractalbits-bootstrap)
+            let deploy_dir = format!("data/deploy/{}/{}", target.arch, target.name);
+            for bin in RUST_BINS {
+                if *bin != "fractalbits-bootstrap" {
+                    let src_path = format!("target/{}/{}/{}", rust_target, build_dir, bin);
+                    let dst_path = format!("{}/{}", deploy_dir, bin);
+                    run_cmd!(cp $src_path $dst_path)?;
+                }
             }
-        } else {
-            // Original behavior for x86
-            run_cmd! {
-                info "Building all Rust projects for x86_64";
-                RUSTFLAGS="-C target-cpu=cascadelake"
-                BUILD_INFO=$build_info
-                cargo zigbuild --target $rust_build_target $rust_build_opt;
-            }?;
-        }
-
-        // Copy Rust binaries to local deploy directory
-        info!("Copying Rust-built binaries to data/deploy");
-        let rust_bins = [
-            "api_server",
-            "root_server",
-            "rss_admin",
-            "fractalbits-bootstrap",
-            "nss_role_agent",
-            // "ebs-failover",
-            "rewrk_rpc",
-        ];
-        let build_dir = if release_mode { "release" } else { "debug" };
-        for bin in &rust_bins {
-            run_cmd!(cp target/$rust_build_target/$build_dir/$bin data/deploy/$arch/$bin)?;
-        }
-
-        // Copy additional x86_64 binaries if bss_use_i3
-        if bss_use_i3 {
-            run_cmd!(cp target/x86_64-unknown-linux-gnu/$build_dir/fractalbits-bootstrap data/deploy/x86_64/fractalbits-bootstrap)?;
-            run_cmd!(cp target/x86_64-unknown-linux-gnu/$build_dir/rewrk_rpc data/deploy/x86_64/rewrk_rpc)?;
         }
     }
 
-    // Build and upload Zig projects if mode is zig or all
-    if deploy_mode == DeployMode::Zig || deploy_mode == DeployMode::All {
-        run_cmd! {
-            info "Building Zig projects";
-            cd ./core;
-            zig build -p ../$ZIG_RELEASE_OUT_AARCH64
-                -Duse_s3_backend=$use_s3_backend
-                -Denable_dev_mode=$enable_dev_mode
-                -Dbuild_info=$build_info
-                $[zig_build_target] $zig_build_opt 2>&1;
-        }?;
+    // Build Zig projects for all CPU targets
+    if deploy_target == DeployTarget::All || deploy_target == DeployTarget::Zig {
+        info!("Building Zig projects for all CPU targets");
+        for target in CPU_TARGETS {
+            let zig_out_dir = if target.arch == "aarch64" {
+                format!("target/aarch64-unknown-linux-gnu/{build_dir}/zig-out")
+            } else {
+                format!("target/x86_64-unknown-linux-gnu/{build_dir}/zig-out")
+            };
 
-        if bss_use_i3 {
-            let target_cpu = "skylake"; // for i3en Intel Xeon Platinum 8175
-            let zig_build_target = ["-Dtarget=x86_64-linux-gnu", &format!("-Dcpu={target_cpu}")];
+            let zig_target = target.zig_target;
+            let zig_cpu = target.zig_cpu;
             run_cmd! {
-                info "Building bss_server for x86_64";
+                info "Building Zig projects for $zig_target ($zig_cpu)";
                 cd ./core;
-                zig build -p ../$ZIG_RELEASE_OUT_X86_64
-                    -Duse_s3_backend=$use_s3_backend
-                    -Denable_dev_mode=$enable_dev_mode
+                zig build -p ../$zig_out_dir
                     -Dbuild_info=$build_info
-                    $[zig_build_target] $zig_build_opt bss_server 2>&1;
+                    -Dtarget=$zig_target -Dcpu=$zig_cpu $zig_build_opt 2>&1;
             }?;
-        }
 
-        // Copy Zig binaries to local deploy directory
-        info!("Copying Zig-built binaries to data/deploy");
-        let zig_bins = [
-            "nss_server",
-            "test_art", // to create test.data for benchmarking nss_rpc
-        ];
-        for bin in &zig_bins {
-            run_cmd!(cp $ZIG_RELEASE_OUT_AARCH64/bin/$bin data/deploy/$arch/$bin)?;
-        }
-
-        // Copy bss_server
-        if bss_use_i3 {
-            run_cmd!(cp $ZIG_RELEASE_OUT_X86_64/bin/bss_server data/deploy/x86_64/bss_server)?;
-        } else {
-            run_cmd!(cp $ZIG_RELEASE_OUT_AARCH64/bin/bss_server data/deploy/$arch/bss_server)?;
+            // Copy Zig binaries to deploy directory
+            let deploy_dir = format!("data/deploy/{}/{}", target.arch, target.name);
+            for bin in ZIG_BINS {
+                let src_path = format!("{}/bin/{}", zig_out_dir, bin);
+                let dst_path = format!("{}/{}", deploy_dir, bin);
+                run_cmd!(cp $src_path $dst_path)?;
+            }
         }
     }
 
-    // Build and copy UI if mode is ui or all
-    if deploy_mode == DeployMode::Ui || deploy_mode == DeployMode::All {
+    // Build and copy UI
+    if deploy_target == DeployTarget::All || deploy_target == DeployTarget::Ui {
         let region = run_fun!(aws configure list | grep region | awk r"{print $2}")?;
         cmd_build::build_ui(&region)?;
         run_cmd!(cp -r ui/dist data/deploy/ui)?;
     }
 
-    // Deploy warp binary
-    if deploy_mode == DeployMode::All {
-        deploy_warp_binary(target_arm)?;
-    }
+    // Deploy warp binary for each architecture
+    deploy_warp_binaries()?;
 
     // Sync all binaries to S3 at once
     run_cmd! {
-        info "Syncing all binaries to S3";
-        aws s3 sync data/deploy $bucket;
+        info "Syncing all binaries to S3 bucket $bucket";
+        aws s3 sync --quiet data/deploy $bucket;
         info "Syncing all binaries done";
     }?;
 
     Ok(())
 }
 
-fn deploy_warp_binary(target_arm: bool) -> CmdResult {
-    let arch = if target_arm { "aarch64" } else { "x86_64" };
-    let linux_arch = if target_arm { "arm64" } else { "x86_64" };
+fn deploy_warp_binaries() -> CmdResult {
+    for arch in ["x86_64", "aarch64"] {
+        let linux_arch = if arch == "aarch64" { "arm64" } else { "x86_64" };
 
-    let warp_version = "v1.3.0";
-    let warp_file = format!("warp_Linux_{linux_arch}.tar.gz");
-    let warp_path = format!("third_party/{warp_file}");
+        let warp_version = "v1.3.0";
+        let warp_file = format!("warp_Linux_{linux_arch}.tar.gz");
+        let warp_path = format!("third_party/{warp_file}");
 
-    let base_url = "https://github.com/minio/warp/releases/download";
-    let download_url = format!("{base_url}/{warp_version}/{warp_file}");
-    let checksums_url = format!("{base_url}/{warp_version}/checksums.txt");
-    // Check if already downloaded
-    if !Path::new(&warp_path).exists() {
+        let base_url = "https://github.com/minio/warp/releases/download";
+        let download_url = format!("{base_url}/{warp_version}/{warp_file}");
+        let checksums_url = format!("{base_url}/{warp_version}/checksums.txt");
+
+        // Check if already downloaded
+        if !Path::new(&warp_path).exists() {
+            run_cmd! {
+                info "Downloading warp binary for $linux_arch";
+                curl -sL -o $warp_path $download_url;
+            }?;
+        }
+
         run_cmd! {
-            info "Downloading warp binary for {linux_arch}";
-            curl -sL -o $warp_path $download_url;
+            cd third_party;
+            info "Verifying warp binary checksum for $linux_arch";
+            curl -sL -o warp_checksums.txt $checksums_url;
+            grep $warp_file warp_checksums.txt | sha256sum -c --quiet;
+            rm -f warp_checksums.txt;
+        }?;
+
+        // Extract warp to arch-level directory
+        let deploy_dir = format!("data/deploy/{}", arch);
+        run_cmd! {
+            info "Extracting warp binary to $deploy_dir for $linux_arch";
+            tar -xzf third_party/$warp_file -C $deploy_dir warp;
         }?;
     }
-    run_cmd! {
-        cd third_party;
-        info "Verifying warp binary checksum";
-        curl -sL -o warp_checksums.txt $checksums_url;
-        grep $warp_file warp_checksums.txt | sha256sum -c --quiet;
-        rm -f warp_checksums.txt;
 
-        info "Extracting warp binary directly to data/deploy";
-        tar -xzf $warp_file -C ../data/deploy/$arch warp;
-    }?;
-
-    Ok(())
-}
-
-fn build_bootstrap_only(rust_build_target: &str) -> CmdResult {
-    let build_info = BUILD_INFO.get().unwrap();
-    run_cmd! {
-        info "Building fractalbits-bootstrap";
-        BUILD_INFO=$build_info
-        cargo zigbuild -p fractalbits-bootstrap --target $rust_build_target;
-    }?;
     Ok(())
 }
 

@@ -50,9 +50,18 @@ fn download_binary(file_name: &str) -> CmdResult {
 
     let builds_bucket = get_builds_bucket()?;
     let cpu_arch = run_fun!(arch)?;
+
+    let download_path = if file_name == "fractalbits-bootstrap" || file_name == "warp" {
+        format!("{builds_bucket}/{cpu_arch}/{file_name}")
+    } else {
+        let instance_type = get_ec2_instance_type()?;
+        let cpu_target = get_cpu_target_from_instance_type(&instance_type);
+        format!("{builds_bucket}/{cpu_arch}/{cpu_target}/{file_name}")
+    };
+
     run_cmd! {
-        info "Downloading $file_name from $builds_bucket to $BIN_PATH";
-        aws s3 cp --no-progress $builds_bucket/$cpu_arch/$file_name $BIN_PATH;
+        info "Downloading $file_name from $download_path to $BIN_PATH";
+        aws s3 cp --no-progress $download_path $BIN_PATH;
         chmod +x $BIN_PATH/$file_name
     }?;
     Ok(())
@@ -195,6 +204,24 @@ pub fn get_current_aws_region() -> FunResult {
 
 pub fn get_instance_id() -> FunResult {
     run_fun!(ec2-metadata --instance-id | awk r"{print $2}")
+}
+
+pub fn get_ec2_instance_type() -> FunResult {
+    run_fun!(ec2-metadata --instance-type | awk r"{print $2}")
+}
+
+pub fn get_cpu_target_from_instance_type(instance_type: &str) -> &'static str {
+    let family = instance_type.split('.').next().unwrap_or("");
+
+    match family {
+        "i3" | "i3en" => "i3",
+        "c7g" | "m7g" | "m7gd" | "r7g" | "r7gd" => "graviton3",
+        "c8g" | "m8g" | "m8gd" | "r8g" | "r8gd" => "graviton4",
+        _ => {
+            let arch = run_fun!(arch).unwrap_or_default();
+            if arch == "aarch64" { "graviton3" } else { "i3" }
+        }
+    }
 }
 
 pub fn get_s3_express_bucket_name(az: &str) -> FunResult {
