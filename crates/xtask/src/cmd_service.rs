@@ -198,9 +198,9 @@ pub fn init_service(
         start_service(ServiceName::Rss)?;
 
         // Initialize api key for testing using RSS RPC
-        let build = build_mode.as_ref();
+        let rss_admin_path = resolve_binary_path("rss_admin", build_mode);
         run_cmd! {
-            ./target/${build}/rss_admin --rss-addr=127.0.0.1:8086 api-key init-test;
+            $rss_admin_path --rss-addr=127.0.0.1:8086 api-key init-test;
         }?;
 
         // Stop services after initialization
@@ -209,18 +209,18 @@ pub fn init_service(
         Ok(())
     };
     let init_nss = || -> CmdResult {
-        let pwd = run_fun!(pwd)?;
         let format_log = "data/logs/format.log";
         create_dirs_for_nss_server()?;
+        let nss_binary = resolve_binary_path("nss_server", build_mode);
         match build_mode {
             BuildMode::Debug => run_cmd! {
                 info "formatting nss_server with default configs";
-                ${pwd}/$ZIG_DEBUG_OUT/bin/nss_server format --init_test_tree
+                $nss_binary format --init_test_tree
                     |& ts -m $TS_FMT >$format_log;
             }?,
             BuildMode::Release => run_cmd! {
                 info "formatting nss_server for benchmarking";
-                ${pwd}/$ZIG_DEBUG_OUT/bin/nss_server format --init_test_tree
+                $nss_binary format --init_test_tree
                     |& ts -m $TS_FMT >$format_log;
             }?,
         }
@@ -237,18 +237,18 @@ pub fn init_service(
         Ok(())
     };
     let init_mirrord = || -> CmdResult {
-        let pwd = run_fun!(pwd)?;
         let format_log = "data/logs/format_mirrord.log";
         create_dirs_for_mirrord_server()?;
+        let nss_binary = resolve_binary_path("nss_server", build_mode);
         match build_mode {
             BuildMode::Debug => run_cmd! {
                 info "formatting mirrord with default configs";
-                WORKING_DIR="./data/nss-B" ${pwd}/$ZIG_DEBUG_OUT/bin/nss_server format
+                WORKING_DIR="./data/nss-B" $nss_binary format
                     |& ts -m $TS_FMT >$format_log;
             }?,
             BuildMode::Release => run_cmd! {
                 info "formatting mirrord for benchmarking";
-                WORKING_DIR="./data/nss-B" ${pwd}/$ZIG_DEBUG_OUT/bin/nss_server format
+                WORKING_DIR="./data/nss-B" $nss_binary format
                     |& ts -m $TS_FMT >$format_log;
             }?,
         }
@@ -745,24 +745,23 @@ Environment="RUST_LOG=warn""##
             // Use bash arithmetic to calculate port dynamically: 8088 + instance_id
             env_settings += r##"
 Environment="BSS_WORKING_DIR=./data/bss%i""##;
-            format!("/bin/bash -c 'BSS_PORT=$((8088 + %i)) {pwd}/{ZIG_DEBUG_OUT}/bin/bss_server'")
+            let bss_binary = resolve_binary_path("bss_server", build_mode);
+            format!("/bin/bash -c 'BSS_PORT=$((8088 + %i)) {bss_binary}'")
         }
-        ServiceName::Nss => match build_mode {
-            BuildMode::Debug => format!("{pwd}/{ZIG_DEBUG_OUT}/bin/nss_server serve"),
-            BuildMode::Release => {
-                format!("{pwd}/{ZIG_DEBUG_OUT}/bin/nss_server serve")
-            }
-        },
-        ServiceName::Mirrord => format!("{pwd}/{ZIG_DEBUG_OUT}/bin/mirrord"),
+        ServiceName::Nss => {
+            let nss_binary = resolve_binary_path("nss_server", build_mode);
+            format!("{nss_binary} serve")
+        }
+        ServiceName::Mirrord => resolve_binary_path("mirrord", build_mode),
         ServiceName::NssRoleAgentA => {
             env_settings += env_rust_log(build_mode);
             env_settings += "\nEnvironment=\"INSTANCE_ID=nss-A\"";
-            format!("{pwd}/target/{build}/nss_role_agent")
+            resolve_binary_path("nss_role_agent", build_mode)
         }
         ServiceName::NssRoleAgentB => {
             env_settings += env_rust_log(build_mode);
             env_settings += "\nEnvironment=\"INSTANCE_ID=nss-B\"";
-            format!("{pwd}/target/{build}/nss_role_agent")
+            resolve_binary_path("nss_role_agent", build_mode)
         }
         ServiceName::Rss => {
             env_settings = r##"
@@ -772,7 +771,7 @@ Environment="AWS_ACCESS_KEY_ID=fakeMyKeyId"
 Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
                 .to_string();
             env_settings += env_rust_log(build_mode);
-            format!("{pwd}/target/{build}/root_server")
+            resolve_binary_path("root_server", build_mode)
         }
         ServiceName::ApiServer => {
             env_settings += env_rust_log(build_mode);
@@ -1029,6 +1028,38 @@ fn register_local_api_server() -> CmdResult {
 
     info!("Local api_server registered in service discovery");
     Ok(())
+}
+
+fn resolve_binary_path(binary_name: &str, build_mode: BuildMode) -> String {
+    let pwd = run_fun!(pwd).unwrap_or_else(|_| ".".to_string());
+    let build = build_mode.as_ref();
+
+    // Check different locations based on binary type
+    let candidates = match binary_name {
+        "bss_server" | "nss_server" | "mirrord" => {
+            vec![
+                format!("{pwd}/target/{build}/zig-out/bin/{binary_name}"),
+                format!("{pwd}/{ZIG_DEBUG_OUT}/bin/{binary_name}"),
+                format!("{pwd}/prebuilt/{binary_name}"),
+            ]
+        }
+        _ => {
+            vec![
+                format!("{pwd}/target/{build}/{binary_name}"),
+                format!("{pwd}/prebuilt/{binary_name}"),
+            ]
+        }
+    };
+
+    // Return first existing path, or default to target/build path
+    for path in &candidates {
+        if Path::new(path).exists() {
+            return path.clone();
+        }
+    }
+
+    // Default to first candidate (target/build path)
+    candidates.into_iter().next().unwrap()
 }
 
 fn generate_https_certificates() -> CmdResult {

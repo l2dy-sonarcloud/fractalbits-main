@@ -43,7 +43,20 @@ pub fn run_build_and_strip() -> CmdResult {
         }?;
     }
 
-    info!("Build and strip complete");
+    // Step 5: Copy stripped binaries to prebuilt directory
+    info!("Copying stripped binaries to prebuilt directory...");
+    run_cmd!(mkdir -p prebuilt)?;
+    for bin in [
+        "nss_role_agent",
+        "root_server",
+        "rss_admin",
+        "zig-out/bin/bss_server",
+        "zig-out/bin/nss_server",
+    ] {
+        run_cmd!(cp -f target/debug/$bin prebuilt/)?;
+    }
+
+    info!("Build, strip, and copy complete");
     Ok(())
 }
 
@@ -53,10 +66,10 @@ pub fn run_git_add() -> CmdResult {
         "nss_role_agent",
         "root_server",
         "rss_admin",
-        "zig-out/bin/bss_server",
-        "zig-out/bin/nss_server",
+        "bss_server",
+        "nss_server",
     ] {
-        run_cmd!(git add -f target/debug/$bin)?;
+        run_cmd!(git add -f prebuilt/$bin)?;
     }
 
     info!("Pre-built binaries added to git");
