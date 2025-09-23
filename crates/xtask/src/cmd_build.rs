@@ -104,14 +104,17 @@ pub fn build_all(release: bool) -> CmdResult {
     Ok(())
 }
 
-pub fn run_zig_unit_tests() -> CmdResult {
+pub fn run_zig_unit_tests(init_config: InitConfig) -> CmdResult {
     if !std::path::Path::new(&format!("{ZIG_REPO_PATH}/build.zig")).exists() {
         info!("Skipping zig unit-tests");
         return Ok(());
     }
 
-    for bss_service in ServiceName::all_bss_services() {
-        cmd_service::start_service(bss_service)?;
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug, init_config)?;
+
+    // Start all BSS instances for testing
+    for id in 0..init_config.bss_count {
+        cmd_service::start_bss_instance(id)?;
     }
 
     let working_dir = run_fun!(pwd)?;
@@ -125,9 +128,8 @@ pub fn run_zig_unit_tests() -> CmdResult {
         cd $ZIG_REPO_PATH;
         zig build -p ../$ZIG_DEBUG_OUT test --summary all 2>&1;
     }?;
-    for bss_service in ServiceName::all_bss_services() {
-        cmd_service::stop_service(bss_service)?;
-    }
+    // Stop all BSS instances
+    cmd_service::stop_service(ServiceName::Bss)?;
 
     info!("Zig unit tests completed successfully");
     Ok(())

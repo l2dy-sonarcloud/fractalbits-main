@@ -131,7 +131,7 @@ async fn main() {
 
     let port = config.port;
     let mgmt_port = config.mgmt_port;
-    let https_config = config.https.clone();
+    let mut https_config = config.https.clone();
 
     // Get web root from environment variable
     let web_root = match std::env::var("GUI_WEB_ROOT") {
@@ -181,6 +181,9 @@ async fn main() {
         .bind(format!("0.0.0.0:{port}"))
         .unwrap();
 
+    if Ok("1".to_string()) == std::env::var("HTTPS_DISABLED") {
+        https_config.enabled = false;
+    }
     // Start HTTPS server if enabled
     let https_server = if https_config.enabled {
         info!("HTTPS server started at port {}", https_config.port);

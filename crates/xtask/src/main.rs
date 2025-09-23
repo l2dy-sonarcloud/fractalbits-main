@@ -175,12 +175,7 @@ pub enum ServiceAction {
 pub enum ServiceName {
     GuiServer,
     ApiServer,
-    Bss0,
-    Bss1,
-    Bss2,
-    Bss3,
-    Bss4,
-    Bss5,
+    Bss,
     NssRoleAgentA,
     Nss,
     NssRoleAgentB,
@@ -194,27 +189,8 @@ pub enum ServiceName {
 }
 
 impl ServiceName {
-    pub fn bss_id(&self) -> Option<u32> {
-        match self {
-            ServiceName::Bss0 => Some(0),
-            ServiceName::Bss1 => Some(1),
-            ServiceName::Bss2 => Some(2),
-            ServiceName::Bss3 => Some(3),
-            ServiceName::Bss4 => Some(4),
-            ServiceName::Bss5 => Some(5),
-            _ => None,
-        }
-    }
-
-    pub fn all_bss_services() -> Vec<ServiceName> {
-        vec![
-            ServiceName::Bss0,
-            ServiceName::Bss1,
-            ServiceName::Bss2,
-            ServiceName::Bss3,
-            ServiceName::Bss4,
-            ServiceName::Bss5,
-        ]
+    pub fn is_bss(&self) -> bool {
+        matches!(self, ServiceName::Bss)
     }
 }
 
@@ -244,11 +220,23 @@ pub enum NssRole {
     Solo,
 }
 
-#[derive(Clone, Default)]
+#[derive(Copy, Clone)]
 pub struct InitConfig {
     pub for_gui: bool,
     pub data_blob_storage: DataBlobStorage,
     pub with_https: bool,
+    pub bss_count: u32,
+}
+
+impl Default for InitConfig {
+    fn default() -> Self {
+        Self {
+            for_gui: false,
+            data_blob_storage: Default::default(),
+            with_https: false,
+            bss_count: 6,
+        }
+    }
 }
 
 #[derive(Parser, Clone)]
@@ -269,6 +257,13 @@ pub enum ServiceCommand {
 
         #[clap(long, long_help = "enable HTTPS certificates generation")]
         with_https: bool,
+
+        #[clap(
+            long,
+            long_help = "number of BSS services to create",
+            default_value = "6"
+        )]
+        bss_count: u32,
     },
     Stop {
         #[clap(default_value = "all", value_enum)]
@@ -355,7 +350,7 @@ async fn main() -> CmdResult {
             Some(build_cmd) => match build_cmd {
                 BuildCommand::All => cmd_build::build_all(release)?,
                 BuildCommand::Zig { command } => match command {
-                    Some(ZigCommand::Test) => cmd_build::run_zig_unit_tests()?,
+                    Some(ZigCommand::Test) => cmd_build::run_zig_unit_tests(InitConfig::default())?,
                     None => {
                         let build_mode = cmd_build::build_mode(release);
                         cmd_build::build_zig_servers(build_mode)?;
@@ -378,14 +373,21 @@ async fn main() -> CmdResult {
             with_art_tests,
             with_https,
             data_blob_storage,
-        } => cmd_precheckin::run_cmd_precheckin(
-            data_blob_storage,
-            s3_api_only,
-            zig_unit_tests_only,
-            debug_api_server,
-            with_art_tests,
-            with_https,
-        )?,
+        } => {
+            let init_config = InitConfig {
+                with_https,
+                data_blob_storage,
+                ..Default::default()
+            };
+
+            cmd_precheckin::run_cmd_precheckin(
+                init_config,
+                s3_api_only,
+                zig_unit_tests_only,
+                debug_api_server,
+                with_art_tests,
+            )?;
+        }
         Cmd::Nightly => cmd_nightly::run_cmd_nightly()?,
         Cmd::Bench {
             service,
@@ -413,11 +415,13 @@ async fn main() -> CmdResult {
                 for_gui,
                 data_blob_storage,
                 with_https,
+                bss_count,
             } => {
                 let init_config = InitConfig {
                     for_gui,
                     data_blob_storage,
                     with_https,
+                    bss_count,
                 };
                 cmd_service::init_service(service, cmd_build::build_mode(release), init_config)?;
             }

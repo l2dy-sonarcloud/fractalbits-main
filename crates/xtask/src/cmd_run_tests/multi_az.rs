@@ -14,6 +14,7 @@ pub async fn run_multi_az_tests(test_type: MultiAzTestType) -> CmdResult {
                 data_blob_storage: crate::DataBlobStorage::S3ExpressMultiAz,
                 for_gui: false,
                 with_https: false,
+                bss_count: 0, // No BSS services in multi-AZ mode
             },
         )?;
         cmd_service::start_service(ServiceName::All)

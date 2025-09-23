@@ -1,23 +1,19 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::InitConfig;
 use crate::*;
 use colored::*;
 
 pub fn init_service(
     service: ServiceName,
     build_mode: BuildMode,
-    init_config: crate::InitConfig,
+    init_config: InitConfig,
 ) -> CmdResult {
     stop_service(service)?;
 
     // Create systemd unit files for the services being initialized
-    create_systemd_unit_files_for_init(
-        service,
-        build_mode,
-        init_config.for_gui,
-        init_config.data_blob_storage,
-    )?;
+    create_systemd_unit_files_for_init(service, build_mode, init_config)?;
 
     let init_ddb_local = || -> CmdResult {
         ensure_dynamodb_local()?;
@@ -233,7 +229,13 @@ pub fn init_service(
     let init_minio = || run_cmd!(mkdir -p data/s3);
     let init_minio_dev_az1 = || run_cmd!(mkdir -p data/s3-localdev-az1);
     let init_minio_dev_az2 = || run_cmd!(mkdir -p data/s3-localdev-az2);
-    let init_bss = |id: u32| create_dirs_for_bss_server(id);
+    let init_all_bss = |count: u32| -> CmdResult {
+        create_bss_service_symlinks(count)?;
+        for id in 0..count {
+            create_dirs_for_bss_server(id)?;
+        }
+        Ok(())
+    };
     let init_mirrord = || -> CmdResult {
         let pwd = run_fun!(pwd)?;
         let format_log = "data/logs/format_mirrord.log";
@@ -263,15 +265,8 @@ pub fn init_service(
         ServiceName::Minio => init_minio()?,
         ServiceName::MinioAz1 => init_minio_dev_az1()?,
         ServiceName::MinioAz2 => init_minio_dev_az2()?,
-        ServiceName::Bss0
-        | ServiceName::Bss1
-        | ServiceName::Bss2
-        | ServiceName::Bss3
-        | ServiceName::Bss4
-        | ServiceName::Bss5 => {
-            if let Some(id) = service.bss_id() {
-                init_bss(id)?;
-            }
+        ServiceName::Bss => {
+            init_all_bss(init_config.bss_count)?;
         }
         ServiceName::Rss => init_rss()?,
         ServiceName::Nss => init_nss()?,
@@ -282,11 +277,7 @@ pub fn init_service(
                 generate_https_certificates()?;
             }
             init_rss()?;
-            for bss_service in ServiceName::all_bss_services() {
-                if let Some(id) = bss_service.bss_id() {
-                    init_bss(id)?;
-                }
-            }
+            init_all_bss(init_config.bss_count)?;
             init_nss()?;
             init_mirrord()?;
             init_minio()?;
@@ -335,6 +326,104 @@ fn ensure_dynamodb_local() -> CmdResult {
     Ok(())
 }
 
+fn get_bss_count_from_config() -> u32 {
+    // Count existing BSS service symlinks using glob pattern
+    match glob::glob("data/etc/bss@[0-9]*.service") {
+        Ok(paths) => paths.filter_map(Result::ok).count() as u32,
+        Err(_) => 0,
+    }
+}
+
+fn get_bss_service_names() -> Vec<String> {
+    // Get all BSS service names (bss@0, bss@1, etc.)
+    let bss_count = get_bss_count_from_config();
+    (0..bss_count).map(|id| format!("bss@{}", id)).collect()
+}
+
+fn for_each_bss_service<F>(mut func: F) -> CmdResult
+where
+    F: FnMut(&str) -> CmdResult,
+{
+    // Apply a function to each BSS service instance
+    for service_name in get_bss_service_names() {
+        func(&service_name)?;
+    }
+    Ok(())
+}
+
+fn get_bss_service_status(service_name: &str) -> String {
+    // Get status for a single BSS service instance
+    match run_fun!(systemctl --user is-active $service_name.service 2>/dev/null) {
+        Ok(output) => match output.trim() {
+            "active" => "active".green().to_string(),
+            status => status.yellow().to_string(),
+        },
+        Err(_) => {
+            if run_cmd!(systemctl --user is-failed --quiet $service_name.service).is_ok() {
+                "failed".red().to_string()
+            } else {
+                "inactive (dead)".bright_black().to_string()
+            }
+        }
+    }
+}
+
+fn create_bss_service_symlinks(bss_count: u32) -> CmdResult {
+    // Remove any existing BSS service symlinks using glob
+    if let Ok(paths) = glob::glob("data/etc/bss@[0-9]*.service") {
+        for path in paths.filter_map(Result::ok) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    // Create symlinks for the specified BSS count
+    for id in 0..bss_count {
+        let service_file = format!("bss@{}.service", id);
+        let template_file = "bss@.service";
+
+        run_cmd! {
+            info "Creating symlink for BSS instance $id";
+            cd data/etc;
+            ln -sf $template_file $service_file;
+        }?;
+    }
+    Ok(())
+}
+
+pub fn start_bss_instance(id: u32) -> CmdResult {
+    let service_name = format!("bss@{}", id);
+    run_cmd!(systemctl --user start $service_name.service)?;
+
+    // Wait for service to be ready
+    let port = 8088 + id;
+    wait_for_port_ready(port as u16, 30)?;
+
+    info!("BSS instance {} (port {}) started successfully", id, port);
+    Ok(())
+}
+
+fn wait_for_port_ready(port: u16, timeout_secs: u32) -> CmdResult {
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs as u64);
+
+    info!(
+        "Waiting for port {} to be ready (timeout: {}s)",
+        port, timeout_secs
+    );
+
+    while start.elapsed() < timeout {
+        if check_port_ready(port) {
+            info!("Port {} is ready", port);
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    cmd_die!("Timeout waiting for port ${port} to be ready after ${timeout_secs}s")
+}
+
 pub fn stop_service(service: ServiceName) -> CmdResult {
     let services: Vec<ServiceName> = match service {
         ServiceName::All => all_services(get_data_blob_storage_setting()),
@@ -351,22 +440,38 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
         service.as_ref()
     );
     for service in services {
-        let service_name = service.as_ref();
-        if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_err() {
-            continue;
-        }
+        if service == ServiceName::Bss {
+            // Handle BSS template instances using helper function
+            for_each_bss_service(|service_name| {
+                if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_err() {
+                    return Ok(());
+                }
+                run_cmd!(systemctl --user stop $service_name.service)?;
 
-        if service == ServiceName::Mirrord {
-            while run_cmd!(systemctl --user is-active --quiet nss.service).is_ok() {
-                // waiting for nss to stop at first, or it may crash nss due to journal mirroring failure
-                std::thread::sleep(Duration::from_secs(1));
+                // make sure the process is really killed
+                if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_ok() {
+                    cmd_die!("Failed to stop $service_name: service is still running");
+                }
+                Ok(())
+            })?;
+        } else {
+            let service_name = service.as_ref();
+            if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_err() {
+                continue;
             }
-        }
-        run_cmd!(systemctl --user stop $service_name.service)?;
 
-        // make sure the process is really killed
-        if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_ok() {
-            cmd_die!("Failed to stop $service_name: service is still running");
+            if service == ServiceName::Mirrord {
+                while run_cmd!(systemctl --user is-active --quiet nss.service).is_ok() {
+                    // waiting for nss to stop at first, or it may crash nss due to journal mirroring failure
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+            run_cmd!(systemctl --user stop $service_name.service)?;
+
+            // make sure the process is really killed
+            if run_cmd!(systemctl --user is-active --quiet $service_name.service).is_ok() {
+                cmd_die!("Failed to stop $service_name: service is still running");
+            }
         }
     }
 
@@ -376,18 +481,15 @@ pub fn stop_service(service: ServiceName) -> CmdResult {
 fn all_services(data_blob_storage: DataBlobStorage) -> Vec<ServiceName> {
     match data_blob_storage {
         DataBlobStorage::S3HybridSingleAz => {
-            let mut services = vec![
+            vec![
                 ServiceName::ApiServer,
                 ServiceName::NssRoleAgentA,
                 ServiceName::Nss,
-            ];
-            services.extend(ServiceName::all_bss_services());
-            services.extend(vec![
+                ServiceName::Bss,
                 ServiceName::Rss,
                 ServiceName::DdbLocal,
                 ServiceName::Minio,
-            ]);
-            services
+            ]
         }
         DataBlobStorage::S3ExpressMultiAz => vec![
             ServiceName::ApiServer,
@@ -419,34 +521,54 @@ pub fn show_service_status(service: ServiceName) -> CmdResult {
             println!("─────────────────────────────────────");
 
             for svc in all_services(get_data_blob_storage_setting()) {
-                let service_name = svc.as_ref();
-                let status = if run_cmd!(systemctl --user list-unit-files --quiet $service_name.service | grep -q $service_name).is_ok() {
-                    // Service exists, get its status
-                    match run_fun!(systemctl --user is-active $service_name.service 2>/dev/null) {
-                        Ok(output) => match output.trim() {
-                            "active" => "active".green().to_string(),
-                            status => status.yellow().to_string(),
-                        },
-                        Err(_) => {
-                            // Command failed, try to get the actual status
-                            if run_cmd!(systemctl --user is-failed --quiet $service_name.service).is_ok() {
-                                "failed".red().to_string()
-                            } else {
-                                "inactive (dead)".bright_black().to_string()
-                            }
-                        }
+                if svc == ServiceName::Bss {
+                    // Handle BSS template instances using helper functions
+                    for bss_service_name in get_bss_service_names() {
+                        let status = get_bss_service_status(&bss_service_name);
+                        println!("{bss_service_name:<16}: {status}");
                     }
                 } else {
-                    "not installed".bright_black().to_string()
-                };
+                    let service_name = svc.as_ref();
+                    let status = if run_cmd!(systemctl --user list-unit-files --quiet $service_name.service | grep -q $service_name).is_ok() {
+                        // Service exists, get its status
+                        match run_fun!(systemctl --user is-active $service_name.service 2>/dev/null) {
+                            Ok(output) => match output.trim() {
+                                "active" => "active".green().to_string(),
+                                status => status.yellow().to_string(),
+                            },
+                            Err(_) => {
+                                // Command failed, try to get the actual status
+                                if run_cmd!(systemctl --user is-failed --quiet $service_name.service).is_ok() {
+                                    "failed".red().to_string()
+                                } else {
+                                    "inactive (dead)".bright_black().to_string()
+                                }
+                            }
+                        }
+                    } else {
+                        "not installed".bright_black().to_string()
+                    };
 
-                println!("{service_name:<16}: {status}");
+                    println!("{service_name:<16}: {status}");
+                }
             }
         }
         single_service => {
-            // Show detailed status for a single service
-            let service_name = single_service.as_ref();
-            run_cmd!(systemctl --user status $service_name.service --no-pager)?;
+            if single_service == ServiceName::Bss {
+                // Show all BSS template instances using helper functions
+                let bss_services = get_bss_service_names();
+                for (i, service_name) in bss_services.iter().enumerate() {
+                    println!("=== {} ===", service_name);
+                    run_cmd!(systemctl --user status $service_name.service --no-pager)?;
+                    if i < bss_services.len() - 1 {
+                        println!(); // Add spacing between services
+                    }
+                }
+            } else {
+                // Show detailed status for a single service
+                let service_name = single_service.as_ref();
+                run_cmd!(systemctl --user status $service_name.service --no-pager)?;
+            }
         }
     }
 
@@ -456,6 +578,15 @@ pub fn show_service_status(service: ServiceName) -> CmdResult {
 pub fn start_service(service: ServiceName) -> CmdResult {
     match service {
         ServiceName::All => start_all_services()?,
+        ServiceName::Bss => {
+            // Start all BSS template instances using helper function
+            for_each_bss_service(|service_name| {
+                let id: u32 = service_name.strip_prefix("bss@").unwrap().parse().unwrap();
+                start_bss_instance(id)
+            })?;
+
+            info!("bss service started successfully");
+        }
         _ => {
             // Start the systemd service
             let service_name = service.as_ref();
@@ -532,8 +663,10 @@ fn start_all_services() -> CmdResult {
     if run_cmd!(grep -q single_az data/etc/api_server.service).is_ok() {
         info!("Starting single_az services");
         start_service(ServiceName::Rss)?;
-        for bss_service in ServiceName::all_bss_services() {
-            start_service(bss_service)?;
+        // Start all BSS instances
+        let bss_count = get_bss_count_from_config();
+        for id in 0..bss_count {
+            start_bss_instance(id)?;
         }
         start_service(ServiceName::NssRoleAgentA)?;
         start_service(ServiceName::ApiServer)?;
@@ -549,46 +682,22 @@ fn start_all_services() -> CmdResult {
     Ok(())
 }
 
-fn create_systemd_unit_file(service: ServiceName, build_mode: BuildMode) -> CmdResult {
-    create_systemd_unit_file_impl(service, build_mode, None)
-}
-
-fn create_systemd_unit_file_with_backend(
-    service: ServiceName,
-    build_mode: BuildMode,
-    data_blob_storage: DataBlobStorage,
-) -> CmdResult {
-    create_systemd_unit_file_impl(service, build_mode, Some(data_blob_storage))
-}
-
 fn create_systemd_unit_files_for_init(
     service: ServiceName,
     build_mode: BuildMode,
-    for_gui: bool,
-    data_blob_storage: DataBlobStorage,
+    init_config: InitConfig,
 ) -> CmdResult {
-    let api_server_service = if for_gui {
+    let api_server_service = if init_config.for_gui {
         ServiceName::GuiServer
     } else {
         ServiceName::ApiServer
     };
     match service {
         ServiceName::ApiServer | ServiceName::GuiServer => {
-            create_systemd_unit_file_with_backend(
-                api_server_service,
-                build_mode,
-                data_blob_storage,
-            )?;
+            create_systemd_unit_file(api_server_service, build_mode, init_config)?;
         }
-        ServiceName::Bss0
-        | ServiceName::Bss1
-        | ServiceName::Bss2
-        | ServiceName::Bss3
-        | ServiceName::Bss4
-        | ServiceName::Bss5 => {
-            create_systemd_unit_file(service, build_mode)?;
-        }
-        ServiceName::Nss
+        ServiceName::Bss
+        | ServiceName::Nss
         | ServiceName::NssRoleAgentA
         | ServiceName::NssRoleAgentB
         | ServiceName::Mirrord
@@ -597,35 +706,21 @@ fn create_systemd_unit_files_for_init(
         | ServiceName::Minio
         | ServiceName::MinioAz1
         | ServiceName::MinioAz2 => {
-            create_systemd_unit_file(service, build_mode)?;
+            create_systemd_unit_file(service, build_mode, init_config)?;
         }
         ServiceName::All => {
-            create_systemd_unit_file(ServiceName::DdbLocal, build_mode)?;
-            create_systemd_unit_file(ServiceName::Minio, build_mode)?;
-            create_systemd_unit_file(ServiceName::MinioAz1, build_mode)?;
-            create_systemd_unit_file(ServiceName::MinioAz2, build_mode)?;
-            create_systemd_unit_file(ServiceName::Rss, build_mode)?;
-            for bss_service in ServiceName::all_bss_services() {
-                create_systemd_unit_file(bss_service, build_mode)?;
+            for service in all_services(init_config.data_blob_storage) {
+                create_systemd_unit_file(service, build_mode, init_config)?;
             }
-            create_systemd_unit_file(ServiceName::NssRoleAgentA, build_mode)?;
-            create_systemd_unit_file(ServiceName::Nss, build_mode)?;
-            create_systemd_unit_file(ServiceName::NssRoleAgentB, build_mode)?;
-            create_systemd_unit_file(ServiceName::Mirrord, build_mode)?;
-            create_systemd_unit_file_with_backend(
-                api_server_service,
-                build_mode,
-                data_blob_storage,
-            )?;
         }
     }
     Ok(())
 }
 
-fn create_systemd_unit_file_impl(
+fn create_systemd_unit_file(
     service: ServiceName,
     build_mode: BuildMode,
-    data_blob_storage: Option<DataBlobStorage>,
+    init_config: InitConfig,
 ) -> CmdResult {
     let pwd = run_fun!(pwd)?;
     let build = build_mode.as_ref();
@@ -645,23 +740,12 @@ Environment="RUST_LOG=warn""##
     };
     let minio_bin = run_fun!(bash -c "command -v minio")?;
     let exec_start = match service {
-        ServiceName::Bss0
-        | ServiceName::Bss1
-        | ServiceName::Bss2
-        | ServiceName::Bss3
-        | ServiceName::Bss4
-        | ServiceName::Bss5 => {
-            if let Some(id) = service.bss_id() {
-                let port = 8088 + id;
-                env_settings += &format!(
-                    r##"
-Environment="BSS_WORKING_DIR=./data/bss{id}"
-Environment="BSS_PORT={port}""##
-                );
-                format!("{pwd}/{ZIG_DEBUG_OUT}/bin/bss_server")
-            } else {
-                unreachable!("BSS service should have valid ID")
-            }
+        ServiceName::Bss => {
+            // Create template for BSS services using %i placeholder
+            // Use bash arithmetic to calculate port dynamically: 8088 + instance_id
+            env_settings += r##"
+Environment="BSS_WORKING_DIR=./data/bss%i""##;
+            format!("/bin/bash -c 'BSS_PORT=$((8088 + %i)) {pwd}/{ZIG_DEBUG_OUT}/bin/bss_server'")
         }
         ServiceName::Nss => match build_mode {
             BuildMode::Debug => format!("{pwd}/{ZIG_DEBUG_OUT}/bin/nss_server serve"),
@@ -692,27 +776,24 @@ Environment="AWS_ENDPOINT_URL_DYNAMODB=http://localhost:8000""##
         }
         ServiceName::ApiServer => {
             env_settings += env_rust_log(build_mode);
-
-            // Add APP_BLOB_STORAGE_BACKEND environment variable if provided
-            if let Some(backend) = data_blob_storage {
-                env_settings += &format!(
-                    "\nEnvironment=\"APP_BLOB_STORAGE_BACKEND={}\"",
-                    backend.as_ref()
-                );
+            env_settings += &format!(
+                "\nEnvironment=\"APP_BLOB_STORAGE_BACKEND={}\"",
+                init_config.data_blob_storage.as_ref()
+            );
+            if !init_config.with_https {
+                env_settings += "\nEnvironment=\"HTTPS_DISABLED=1\"";
             }
             format!("{pwd}/target/{build}/api_server")
         }
         ServiceName::GuiServer => {
             env_settings += env_rust_log(build_mode);
-
-            // Add APP_BLOB_STORAGE_BACKEND environment variable if provided
-            if let Some(backend) = data_blob_storage {
-                env_settings += &format!(
-                    "\nEnvironment=\"APP_BLOB_STORAGE_BACKEND={}\"",
-                    backend.as_ref()
-                );
+            env_settings += &format!(
+                "\nEnvironment=\"APP_BLOB_STORAGE_BACKEND={}\"",
+                init_config.data_blob_storage.as_ref()
+            );
+            if !init_config.with_https {
+                env_settings += "\nEnvironment=\"HTTPS_DISABLED=1\"";
             }
-
             env_settings += r##"
 Environment="GUI_WEB_ROOT=ui/dist""##;
             format!("{pwd}/target/{build}/api_server")
@@ -785,6 +866,7 @@ WantedBy=multi-user.target
     );
     let service_file = match service {
         ServiceName::GuiServer => "api_server.service".to_string(),
+        ServiceName::Bss => "bss@.service".to_string(),
         _ => format!("{service_name}.service"),
     };
 
@@ -864,16 +946,16 @@ pub fn wait_for_service_ready(service: ServiceName, timeout_secs: u32) -> CmdRes
                 ServiceName::MinioAz1 => check_port_ready(9001),
                 ServiceName::MinioAz2 => check_port_ready(9002),
                 ServiceName::Rss => check_port_ready(8086),
-                ServiceName::Bss0
-                | ServiceName::Bss1
-                | ServiceName::Bss2
-                | ServiceName::Bss3
-                | ServiceName::Bss4
-                | ServiceName::Bss5 => {
-                    if let Some(id) = service.bss_id() {
-                        check_port_ready((8088 + id) as u16)
+                ServiceName::Bss => {
+                    // Check all BSS instances
+                    let bss_count = get_bss_count_from_config();
+                    if bss_count == 0 {
+                        true // No BSS services to check, consider ready
                     } else {
-                        false
+                        (0..bss_count).all(|id| {
+                            let port = 8088 + id as u16;
+                            check_port_ready(port)
+                        })
                     }
                 }
                 ServiceName::Nss => check_port_ready(8087),

@@ -1,12 +1,11 @@
 use crate::*;
 
 pub fn run_cmd_precheckin(
-    data_blob_storage: DataBlobStorage,
+    init_config: InitConfig,
     s3_api_only: bool,
     zig_unit_tests_only: bool,
     debug_api_server: bool,
     with_art_tests: bool,
-    with_https: bool,
 ) -> CmdResult {
     if debug_api_server {
         cmd_service::stop_service(ServiceName::ApiServer)?;
@@ -20,21 +19,21 @@ pub fn run_cmd_precheckin(
     }
 
     if s3_api_only {
-        return run_s3_api_tests(data_blob_storage, debug_api_server, with_https);
+        return run_s3_api_tests(init_config, debug_api_server);
     }
 
     if zig_unit_tests_only {
-        return run_zig_unit_tests(data_blob_storage, with_https);
+        return cmd_build::run_zig_unit_tests(init_config);
     }
 
-    init_service_with_data_blob_storage(data_blob_storage, with_https)?;
-    cmd_build::run_zig_unit_tests()?;
+    cmd_service::init_service(ServiceName::All, BuildMode::Debug, init_config)?;
+    cmd_build::run_zig_unit_tests(init_config)?;
     run_cmd! {
         info "Run cargo tests (except s3 api)";
         cargo test --workspace --exclude api_server;
     }?;
 
-    run_s3_api_tests(data_blob_storage, false, with_https)?;
+    run_s3_api_tests(init_config, false)?;
 
     if with_art_tests {
         run_art_tests()?;
@@ -46,19 +45,6 @@ pub fn run_cmd_precheckin(
     }
 
     info!("Precheckin is OK");
-    Ok(())
-}
-
-fn init_service_with_data_blob_storage(data_blob_storage: DataBlobStorage, with_https: bool) -> CmdResult {
-    cmd_service::init_service(
-        ServiceName::All,
-        BuildMode::Debug,
-        InitConfig {
-            for_gui: false,
-            data_blob_storage,
-            with_https,
-        },
-    )?;
     Ok(())
 }
 
@@ -76,8 +62,9 @@ fn run_art_tests() -> CmdResult {
         return Ok(());
     }
 
-    for bss_service in ServiceName::all_bss_services() {
-        cmd_service::start_service(bss_service)?;
+    // Start all BSS instances for testing
+    for id in 0..6 {
+        cmd_service::start_bss_instance(id)?;
     }
     run_cmd! {
         mkdir -p data/logs;
@@ -110,31 +97,16 @@ fn run_art_tests() -> CmdResult {
         $test_async_art -p 20 |& $[ts] >>$async_art_log;
     }?;
 
-    for bss_service in ServiceName::all_bss_services() {
-        cmd_service::stop_service(bss_service)?;
-    }
+    // Stop all BSS instances
+    cmd_service::stop_service(ServiceName::Bss)?;
     Ok(())
 }
 
-fn run_zig_unit_tests(data_blob_storage: DataBlobStorage, with_https: bool) -> CmdResult {
-    init_service_with_data_blob_storage(data_blob_storage, with_https)?;
-    cmd_build::run_zig_unit_tests()?;
-    Ok(())
-}
-
-fn run_s3_api_tests(data_blob_storage: DataBlobStorage, debug_api_server: bool, with_https: bool) -> CmdResult {
+fn run_s3_api_tests(init_config: InitConfig, debug_api_server: bool) -> CmdResult {
     if debug_api_server {
         cmd_service::start_service(ServiceName::ApiServer)?;
     } else {
-        cmd_service::init_service(
-            ServiceName::All,
-            BuildMode::Debug,
-            InitConfig {
-                for_gui: false,
-                data_blob_storage,
-                with_https,
-            },
-        )?;
+        cmd_service::init_service(ServiceName::All, BuildMode::Debug, init_config)?;
         cmd_service::start_service(ServiceName::All)?;
     }
 
@@ -143,7 +115,7 @@ fn run_s3_api_tests(data_blob_storage: DataBlobStorage, debug_api_server: bool, 
         cargo test --package api_server;
     }?;
 
-    if with_https {
+    if init_config.with_https {
         run_cmd! {
             info "Run cargo tests (s3 https api tests)";
             USE_HTTPS_ENDPOINT=true cargo test --package api_server;
