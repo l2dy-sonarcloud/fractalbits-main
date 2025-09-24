@@ -19,16 +19,16 @@ impl std::fmt::Display for DataBlobGuid {
     }
 }
 
-/// MetadataBlobGuid combines blob_id (UUID) with volume_id for multi-BSS metadata support
+/// MetaBlobGuid combines blob_id (UUID) with volume_id for multi-BSS metadata support
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
 )]
-pub struct MetadataBlobGuid {
+pub struct MetaBlobGuid {
     pub blob_id: Uuid,
     pub volume_id: u16,
 }
 
-impl std::fmt::Display for MetadataBlobGuid {
+impl std::fmt::Display for MetaBlobGuid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:m{}", self.blob_id, self.volume_id)
     }

@@ -1,6 +1,6 @@
 use crate::DataVgError;
 use bytes::Bytes;
-use data_types::{MetadataBlobGuid, QuorumConfig};
+use data_types::{MetaBlobGuid, QuorumConfig};
 use futures::stream::{FuturesUnordered, StreamExt};
 use metrics::histogram;
 use rpc_client_bss::RpcClientBss;
@@ -152,7 +152,7 @@ impl MetadataVgProxy {
     async fn put_metadata_blob_to_node(
         bss_connection_pools: &HashMap<String, ConnPool<Arc<RpcClientBss>, String>>,
         bss_address: &str,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         version: u64,
         is_new: bool,
@@ -179,7 +179,7 @@ impl MetadataVgProxy {
     async fn get_metadata_blob_from_node(
         bss_connection_pools: &HashMap<String, ConnPool<Arc<RpcClientBss>, String>>,
         bss_address: &str,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         version: u64,
         rpc_timeout: Duration,
@@ -205,7 +205,7 @@ impl MetadataVgProxy {
     async fn delete_metadata_blob_from_node(
         bss_connection_pools: &HashMap<String, ConnPool<Arc<RpcClientBss>, String>>,
         bss_address: &str,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         rpc_timeout: Duration,
     ) -> Result<(), RpcError> {
@@ -221,16 +221,16 @@ impl MetadataVgProxy {
 
 impl MetadataVgProxy {
     /// Create a new metadata blob GUID with a fresh UUID and selected volume
-    pub fn create_metadata_blob_guid(&self) -> MetadataBlobGuid {
+    pub fn create_metadata_blob_guid(&self) -> MetaBlobGuid {
         let blob_id = Uuid::now_v7();
         let volume_id = self.select_volume_for_blob();
-        MetadataBlobGuid { blob_id, volume_id }
+        MetaBlobGuid { blob_id, volume_id }
     }
 
     /// Multi-BSS put_metadata_blob with quorum-based replication
     pub async fn put_metadata_blob(
         &self,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         version: u64,
         is_new: bool,
         content: Bytes,
@@ -351,7 +351,7 @@ impl MetadataVgProxy {
     /// Multi-BSS get_metadata_blob with quorum-based reads
     pub async fn get_metadata_blob(
         &self,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         version: u64,
     ) -> Result<Bytes, DataVgError> {
         let start = Instant::now();
@@ -479,10 +479,7 @@ impl MetadataVgProxy {
         )))
     }
 
-    pub async fn delete_metadata_blob(
-        &self,
-        blob_guid: MetadataBlobGuid,
-    ) -> Result<(), DataVgError> {
+    pub async fn delete_metadata_blob(&self, blob_guid: MetaBlobGuid) -> Result<(), DataVgError> {
         let start = Instant::now();
 
         let volume_id = blob_guid.volume_id;
@@ -633,7 +630,7 @@ mod tests {
         let blob_id = Uuid::now_v7();
         let volume_id = 42;
 
-        let guid = MetadataBlobGuid { blob_id, volume_id };
+        let guid = MetaBlobGuid { blob_id, volume_id };
 
         assert_eq!(guid.blob_id, blob_id);
         assert_eq!(guid.volume_id, volume_id);
@@ -651,19 +648,19 @@ mod tests {
         let blob_id1 = Uuid::now_v7();
         let blob_id2 = Uuid::now_v7();
 
-        let guid1 = MetadataBlobGuid {
+        let guid1 = MetaBlobGuid {
             blob_id: blob_id1,
             volume_id: 0,
         };
-        let guid2 = MetadataBlobGuid {
+        let guid2 = MetaBlobGuid {
             blob_id: blob_id1,
             volume_id: 0,
         };
-        let guid3 = MetadataBlobGuid {
+        let guid3 = MetaBlobGuid {
             blob_id: blob_id2,
             volume_id: 0,
         };
-        let guid4 = MetadataBlobGuid {
+        let guid4 = MetaBlobGuid {
             blob_id: blob_id1,
             volume_id: 1,
         };
@@ -728,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_metadata_volume_id_is_u16() {
-        let guid = MetadataBlobGuid {
+        let guid = MetaBlobGuid {
             blob_id: Uuid::now_v7(),
             volume_id: 65535u16, // Max u16 value
         };
@@ -745,7 +742,7 @@ mod tests {
 
     #[test]
     fn test_serialization_traits() {
-        let guid = MetadataBlobGuid {
+        let guid = MetaBlobGuid {
             blob_id: Uuid::now_v7(),
             volume_id: 123,
         };

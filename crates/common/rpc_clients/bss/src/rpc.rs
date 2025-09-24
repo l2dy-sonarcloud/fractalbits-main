@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::client::RpcClient;
 use bss_codec::{Command, MessageHeader};
 use bytes::Bytes;
-use data_types::{DataBlobGuid, MetadataBlobGuid};
+use data_types::{DataBlobGuid, MetaBlobGuid};
 use rpc_client_common::{ErrorRetryable, InflightRpcGuard, RpcError};
 use rpc_codec_common::MessageFrame;
 use tracing::error;
@@ -109,7 +109,7 @@ impl RpcClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn put_metadata_blob(
         &self,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         version: u64,
         is_new: bool,
@@ -145,7 +145,7 @@ impl RpcClient {
 
     pub async fn get_metadata_blob(
         &self,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         version: u64,
         body: &mut Bytes,
@@ -180,7 +180,7 @@ impl RpcClient {
 
     pub async fn delete_metadata_blob(
         &self,
-        blob_guid: MetadataBlobGuid,
+        blob_guid: MetaBlobGuid,
         block_number: u32,
         timeout: Option<Duration>,
         retry_count: u32,
