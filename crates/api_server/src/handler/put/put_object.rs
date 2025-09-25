@@ -409,35 +409,44 @@ async fn put_object_streaming_internal(
         if let Ok(size) = old_object.size() {
             histogram!("object_size", "operation" => "delete_old_blob").record(size as f64);
         }
-        let blob_id = old_object.blob_guid().map_err(|e| {
+        let old_blob_guid = old_object.blob_guid().map_err(|e| {
             tracing::error!("Failed to get blob_id from old object: {e}");
             S3Error::InternalError
         })?;
-        let num_blocks = old_object.num_blocks().map_err(|e| {
-            tracing::error!("Failed to get num_blocks from old object: {e}");
-            S3Error::InternalError
-        })?;
 
-        let blob_deletion = ctx.app.get_blob_deletion();
+        // Only delete old blob if it's different from the new one
+        if old_blob_guid != blob_guid {
+            let num_blocks = old_object.num_blocks().map_err(|e| {
+                tracing::error!("Failed to get num_blocks from old object: {e}");
+                S3Error::InternalError
+            })?;
 
-        // Send deletion request for each block
-        let blob_location = old_object.get_blob_location().map_err(|e| {
-            tracing::error!("Failed to get blob_location from old object: {e}");
-            S3Error::InternalError
-        })?;
-        for block_number in 0..num_blocks {
-            let request = BlobDeletionRequest {
-                tracking_root_blob_name: bucket_obj.tracking_root_blob_name.clone(),
-                blob_guid,
-                block_number: block_number as u32,
-                location: blob_location,
-            };
+            let blob_deletion = ctx.app.get_blob_deletion();
 
-            if let Err(e) = blob_deletion.send(request).await {
-                tracing::warn!(
-                    "Failed to send blob {blob_id} block={block_number} for background deletion: {e}"
-                );
+            // Send deletion request for each block
+            let blob_location = old_object.get_blob_location().map_err(|e| {
+                tracing::error!("Failed to get blob_location from old object: {e}");
+                S3Error::InternalError
+            })?;
+            for block_number in 0..num_blocks {
+                let request = BlobDeletionRequest {
+                    tracking_root_blob_name: bucket_obj.tracking_root_blob_name.clone(),
+                    blob_guid: old_blob_guid,
+                    block_number: block_number as u32,
+                    location: blob_location,
+                };
+
+                if let Err(e) = blob_deletion.send(request).await {
+                    tracing::warn!(
+                        "Failed to send blob {old_blob_guid} block={block_number} for background deletion: {e}"
+                    );
+                }
             }
+        } else {
+            tracing::warn!(
+                "Skipping deletion of old blob as it matches new blob GUID: {}",
+                blob_guid.blob_id
+            );
         }
     }
 
@@ -613,31 +622,40 @@ async fn put_object_with_no_trailer(
             tracing::error!("Failed to get blob_guid from old object: {e}");
             S3Error::InternalError
         })?;
-        let num_blocks = old_object.num_blocks().map_err(|e| {
-            tracing::error!("Failed to get num_blocks from old object: {e}");
-            S3Error::InternalError
-        })?;
 
-        let blob_deletion = ctx.app.get_blob_deletion();
+        // Only delete old blob if it's different from the new one
+        if old_blob_guid != blob_guid {
+            let num_blocks = old_object.num_blocks().map_err(|e| {
+                tracing::error!("Failed to get num_blocks from old object: {e}");
+                S3Error::InternalError
+            })?;
 
-        // Send deletion request for each block
-        let blob_location = old_object.get_blob_location().map_err(|e| {
-            tracing::error!("Failed to get blob_location from old object: {e}");
-            S3Error::InternalError
-        })?;
-        for block_number in 0..num_blocks {
-            let request = BlobDeletionRequest {
-                tracking_root_blob_name: bucket.tracking_root_blob_name.clone(),
-                blob_guid: old_blob_guid,
-                block_number: block_number as u32,
-                location: blob_location,
-            };
+            let blob_deletion = ctx.app.get_blob_deletion();
 
-            if let Err(e) = blob_deletion.send(request).await {
-                tracing::warn!(
-                    "Failed to send blob {old_blob_guid} block={block_number} for background deletion: {e}"
-                );
+            // Send deletion request for each block
+            let blob_location = old_object.get_blob_location().map_err(|e| {
+                tracing::error!("Failed to get blob_location from old object: {e}");
+                S3Error::InternalError
+            })?;
+            for block_number in 0..num_blocks {
+                let request = BlobDeletionRequest {
+                    tracking_root_blob_name: bucket.tracking_root_blob_name.clone(),
+                    blob_guid: old_blob_guid,
+                    block_number: block_number as u32,
+                    location: blob_location,
+                };
+
+                if let Err(e) = blob_deletion.send(request).await {
+                    tracing::warn!(
+                        "Failed to send blob {old_blob_guid} block={block_number} for background deletion: {e}"
+                    );
+                }
             }
+        } else {
+            tracing::warn!(
+                "Skipping deletion of old blob as it matches new blob GUID: {}",
+                blob_guid.blob_id
+            );
         }
     }
 
