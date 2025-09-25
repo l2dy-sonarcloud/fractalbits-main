@@ -1,15 +1,10 @@
-use aws_config::{BehaviorVersion, Region};
-use aws_sdk_dynamodb::types::{
-    AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ProvisionedThroughput,
-    ScalarAttributeType,
-};
 use cmd_lib::*;
 use colored::*;
 use std::collections::HashMap;
+use std::thread::sleep;
 use std::time::Duration;
-use tokio::time::sleep;
 
-pub async fn run_leader_election_tests() -> CmdResult {
+pub fn run_leader_election_tests() -> CmdResult {
     info!("Running leader election tests...");
 
     // Run all leader election test scenarios
@@ -17,13 +12,13 @@ pub async fn run_leader_election_tests() -> CmdResult {
         "{}",
         "=== Test 1: Single Instance Becomes Leader ===".bold()
     );
-    if let Err(e) = test_single_instance_becomes_leader().await {
+    if let Err(e) = test_single_instance_becomes_leader() {
         eprintln!("{}: {}", "Test 1 FAILED".red().bold(), e);
         return Err(e);
     }
 
     println!("{}", "=== Test 2: Leader Failover ===".bold());
-    if let Err(e) = test_leader_failover().await {
+    if let Err(e) = test_leader_failover() {
         eprintln!("{}: {}", "Test 2 FAILED".red().bold(), e);
         return Err(e);
     }
@@ -32,19 +27,19 @@ pub async fn run_leader_election_tests() -> CmdResult {
         "{}",
         "=== Test 3: Fence Token Prevents Split Brain ===".bold()
     );
-    if let Err(e) = test_fence_token_prevents_split_brain().await {
+    if let Err(e) = test_fence_token_prevents_split_brain() {
         eprintln!("{}: {}", "Test 3 FAILED".red().bold(), e);
         return Err(e);
     }
 
     println!("{}", "=== Test 4: Clock Skew Detection ===".bold());
-    if let Err(e) = test_clock_skew_detection().await {
+    if let Err(e) = test_clock_skew_detection() {
         eprintln!("{}: {}", "Test 4 FAILED".red().bold(), e);
         return Err(e);
     }
 
     println!("{}", "=== Test 5: Manual Leadership Resignation ===".bold());
-    if let Err(e) = test_manual_leadership_resignation().await {
+    if let Err(e) = test_manual_leadership_resignation() {
         eprintln!("{}: {}", "Test 5 FAILED".red().bold(), e);
         return Err(e);
     }
@@ -85,7 +80,7 @@ impl TestProcessTracker {
             // Try graceful termination first
             let _ = run_cmd!(kill $pid);
             // Wait a moment for graceful shutdown
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            sleep(std::time::Duration::from_secs(2));
             // Force kill if still running
             let _ = run_cmd!(kill -9 $pid);
         }
@@ -98,7 +93,7 @@ impl TestProcessTracker {
             // Send SIGTERM and wait longer for resignation
             let _ = run_cmd!(kill -TERM $pid);
             // Wait longer for graceful shutdown and resignation
-            std::thread::sleep(std::time::Duration::from_secs(8));
+            sleep(std::time::Duration::from_secs(8));
             // Force kill if still running
             let _ = run_cmd!(kill -9 $pid);
         }
@@ -114,110 +109,127 @@ impl TestProcessTracker {
     }
 }
 
-async fn setup_test_table(table_name: &str) -> aws_sdk_dynamodb::Client {
-    // Set up DynamoDB client
-    let config_builder = aws_config::defaults(BehaviorVersion::latest())
-        .region(Region::new("fakeRegion"))
-        .endpoint_url(DDB_ENDPOINT);
-
-    let config = config_builder.load().await;
-    let client = aws_sdk_dynamodb::Client::new(&config);
-
+fn setup_test_table(table_name: &str) -> CmdResult {
     // Clean up any existing table
-    let _ = client.delete_table().table_name(table_name).send().await;
+    let _ = run_cmd!(
+        aws dynamodb delete-table --table-name $table_name --endpoint-url $DDB_ENDPOINT 2>/dev/null
+    );
 
     // Wait longer for deletion to complete - DDB Local can be slow
-    sleep(Duration::from_secs(3)).await;
+    sleep(Duration::from_secs(3));
 
-    // Create test table using DDB client directly
-    let _ = client
-        .create_table()
-        .table_name(table_name)
-        .attribute_definitions(
-            AttributeDefinition::builder()
-                .attribute_name("key")
-                .attribute_type(ScalarAttributeType::S)
-                .build()
-                .expect("Failed to build attribute definition"),
-        )
-        .key_schema(
-            KeySchemaElement::builder()
-                .attribute_name("key")
-                .key_type(KeyType::Hash)
-                .build()
-                .expect("Failed to build key schema"),
-        )
-        .provisioned_throughput(
-            ProvisionedThroughput::builder()
-                .read_capacity_units(1)
-                .write_capacity_units(1)
-                .build()
-                .expect("Failed to build provisioned throughput"),
-        )
-        .send()
-        .await;
+    // Create test table using AWS CLI with compact JSON output
+    run_cmd!(
+        aws dynamodb create-table
+            --table-name $table_name
+            --attribute-definitions AttributeName=key,AttributeType=S
+            --key-schema AttributeName=key,KeyType=HASH
+            --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
+            --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    )?;
 
     // Wait longer for table to be ready
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
-    client
+    Ok(())
 }
 
-async fn cleanup_test_table(client: &aws_sdk_dynamodb::Client, table_name: &str) {
+fn cleanup_test_table(table_name: &str) -> CmdResult {
     // First try to clear any remaining items
-    let _ = client
-        .delete_item()
-        .table_name(table_name)
-        .key("key", AttributeValue::S(LEADER_KEY.to_string()))
-        .send()
-        .await;
+    let _ = run_cmd!(
+        aws dynamodb delete-item
+            --table-name $table_name
+            --key "{\"key\":{\"S\":\"$LEADER_KEY\"}}"
+            --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    );
 
     // Then delete the table
-    let _ = client.delete_table().table_name(table_name).send().await;
+    let _ = run_cmd!(
+        aws dynamodb delete-table --table-name $table_name --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    );
 
     // Wait for cleanup to complete
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
+    Ok(())
 }
 
-async fn get_current_leader(client: &aws_sdk_dynamodb::Client, table_name: &str) -> Option<String> {
-    let result = client
-        .get_item()
-        .table_name(table_name)
-        .key("key", AttributeValue::S(LEADER_KEY.to_string()))
-        .send()
-        .await;
+fn get_current_leader(table_name: &str) -> Option<String> {
+    // Get the full item using AWS CLI with compact JSON
+    let result = run_fun!(
+        aws dynamodb get-item
+            --table-name $table_name
+            --key "{\"key\":{\"S\":\"$LEADER_KEY\"}}"
+            --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    );
 
     match result {
-        Ok(result) => {
-            if let Some(item) = result.item {
-                println!("DDB item found: {item:?}");
-                if let Some(AttributeValue::S(id)) = item.get("instance_id") {
-                    // Check if lease is still valid
-                    if let Some(AttributeValue::N(expiry)) = item.get("lease_expiry") {
-                        let expiry_time: u64 = expiry.parse().unwrap_or(0);
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        println!(
-                            "Lease check: expiry={}, now={}, valid={}",
-                            expiry_time,
-                            now,
-                            expiry_time > now
+        Ok(output) => {
+            if output.trim().is_empty() || output.contains("\"Item\": {}") {
+                println!("No DDB item found for key {LEADER_KEY}");
+                return None;
+            }
+
+            println!("DDB item found: {}", output.trim());
+
+            // Extract instance_id using AWS CLI query
+            let instance_id_result = run_fun!(
+            aws dynamodb get-item
+                --table-name $table_name
+                --key "{\"key\":{\"S\":\"$LEADER_KEY\"}}"
+                --query "Item.instance_id.S"
+                --output text
+                --endpoint-url $DDB_ENDPOINT
+                );
+
+            if let Ok(instance_id) = instance_id_result {
+                let instance_id = instance_id.trim();
+                if instance_id == "None" || instance_id.is_empty() {
+                    println!("No instance_id found in item");
+                    return None;
+                }
+
+                // Check if lease is still valid by getting lease_expiry
+                let lease_expiry_result = run_fun!(
+                aws dynamodb get-item
+                    --table-name $table_name
+                    --key "{\"key\":{\"S\":\"$LEADER_KEY\"}}"
+                    --query "Item.lease_expiry.N"
+                    --output text
+                    --endpoint-url $DDB_ENDPOINT
                         );
-                        if expiry_time > now {
-                            return Some(id.clone());
-                        } else {
-                            println!("Lease expired for instance {id}");
+
+                if let Ok(expiry_str) = lease_expiry_result {
+                    let expiry_str = expiry_str.trim();
+                    if expiry_str != "None" && !expiry_str.is_empty() {
+                        if let Ok(expiry_time) = expiry_str.parse::<u64>() {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs();
+                            println!(
+                                "Lease check: expiry={}, now={}, valid={}",
+                                expiry_time,
+                                now,
+                                expiry_time > now
+                            );
+                            if expiry_time > now {
+                                return Some(instance_id.to_string());
+                            } else {
+                                println!("Lease expired for instance {instance_id}");
+                            }
                         }
                     } else {
                         println!("No lease_expiry found in item");
                     }
                 } else {
-                    println!("No instance_id found in item");
+                    println!("Failed to get lease_expiry");
                 }
             } else {
-                println!("No DDB item found for key {LEADER_KEY}");
+                println!("Failed to get instance_id");
             }
         }
         Err(e) => {
@@ -263,17 +275,17 @@ fn start_test_instance(
     Ok(())
 }
 
-async fn test_single_instance_becomes_leader() -> CmdResult {
+fn test_single_instance_becomes_leader() -> CmdResult {
     let mut process_tracker = TestProcessTracker::new();
 
     // Clean up any existing test instances first
     cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
     let table_name = get_test_table_name("single_instance");
-    let client = setup_test_table(&table_name).await;
+    setup_test_table(&table_name)?;
 
     // Start a single instance
     start_test_instance(
@@ -290,8 +302,8 @@ async fn test_single_instance_becomes_leader() -> CmdResult {
     // Poll for leader every 5 seconds for up to 60 seconds
     let mut leader = None;
     for attempt in 1..=12 {
-        sleep(Duration::from_secs(5)).await;
-        leader = get_current_leader(&client, &table_name).await;
+        sleep(Duration::from_secs(5));
+        leader = get_current_leader(&table_name);
         println!("Attempt {attempt}: Current leader: {leader:?}");
 
         if leader.is_some() {
@@ -309,23 +321,23 @@ async fn test_single_instance_becomes_leader() -> CmdResult {
     );
 
     // Clean up table
-    cleanup_test_table(&client, &table_name).await;
+    cleanup_test_table(&table_name)?;
 
     println!("SUCCESS: Single instance becomes leader test completed!");
     Ok(())
 }
 
-async fn test_leader_failover() -> CmdResult {
+fn test_leader_failover() -> CmdResult {
     let mut process_tracker = TestProcessTracker::new();
 
     // Clean up any existing test instances first
     cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
     let table_name = get_test_table_name("leader_failover");
-    let client = setup_test_table(&table_name).await;
+    setup_test_table(&table_name)?;
 
     // Start first instance
     start_test_instance(
@@ -338,9 +350,9 @@ async fn test_leader_failover() -> CmdResult {
     )?;
 
     // Wait for first instance to become leader (may take up to lease duration)
-    sleep(Duration::from_secs(15)).await;
+    sleep(Duration::from_secs(15));
     assert_eq!(
-        get_current_leader(&client, &table_name).await,
+        get_current_leader(&table_name),
         Some("failover-instance-1".to_string())
     );
 
@@ -350,7 +362,7 @@ async fn test_leader_failover() -> CmdResult {
     // Wait for lease to expire before starting second instance
     // With a 20-second lease, wait 25 seconds to ensure expiration
     // This also avoids metrics port conflict
-    sleep(Duration::from_secs(25)).await;
+    sleep(Duration::from_secs(25));
 
     // Now start second instance after first is dead
     start_test_instance(
@@ -363,10 +375,10 @@ async fn test_leader_failover() -> CmdResult {
     )?;
 
     // Wait for second instance to acquire leadership
-    sleep(Duration::from_secs(15)).await;
+    sleep(Duration::from_secs(15));
 
     // Second instance should now be leader
-    let current_leader = get_current_leader(&client, &table_name).await;
+    let current_leader = get_current_leader(&table_name);
     println!("Current leader after failover: {current_leader:?}");
     assert_eq!(
         current_leader,
@@ -376,21 +388,21 @@ async fn test_leader_failover() -> CmdResult {
 
     // Clean up all remaining processes
     process_tracker.kill_all()?;
-    cleanup_test_table(&client, &table_name).await;
+    cleanup_test_table(&table_name)?;
 
     println!("SUCCESS: Leader failover test completed!");
     Ok(())
 }
 
-async fn test_fence_token_prevents_split_brain() -> CmdResult {
+fn test_fence_token_prevents_split_brain() -> CmdResult {
     // Clean up any existing test instances first
     cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
     let table_name = get_test_table_name("fence_token");
-    let client = setup_test_table(&table_name).await;
+    setup_test_table(&table_name)?;
 
     // Manually create a leader entry with high fence token
     let high_fence_token = 999999999u64;
@@ -399,26 +411,25 @@ async fn test_fence_token_prevents_split_brain() -> CmdResult {
         .unwrap()
         .as_secs();
 
-    client
-        .put_item()
-        .table_name(&table_name)
-        .item("key", AttributeValue::S(LEADER_KEY.to_string()))
-        .item(
-            "instance_id",
-            AttributeValue::S("manual-leader".to_string()),
-        )
-        .item("ip_address", AttributeValue::S("127.0.0.1".to_string()))
-        .item("port", AttributeValue::N("8086".to_string()))
-        .item("lease_expiry", AttributeValue::N((now + 300).to_string())) // 5 minutes in future
-        .item(
-            "fence_token",
-            AttributeValue::N(high_fence_token.to_string()),
-        )
-        .item("renewal_count", AttributeValue::N("1".to_string()))
-        .item("last_heartbeat", AttributeValue::N(now.to_string()))
-        .send()
-        .await
-        .expect("Failed to create manual leader");
+    let lease_expiry = now + 300; // 5 minutes in future
+
+    run_cmd!(
+        aws dynamodb put-item
+            --table-name $table_name
+            --item "{
+                \"key\": {\"S\": \"$LEADER_KEY\"},
+                \"instance_id\": {\"S\": \"manual-leader\"},
+                \"ip_address\": {\"S\": \"127.0.0.1\"},
+                \"port\": {\"N\": \"8086\"},
+                \"lease_expiry\": {\"N\": \"$lease_expiry\"},
+                \"fence_token\": {\"N\": \"$high_fence_token\"},
+                \"renewal_count\": {\"N\": \"1\"},
+                \"last_heartbeat\": {\"N\": \"$now\"}
+            }"
+            --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    )
+    .expect("Failed to create manual leader");
 
     // Try to start an instance - it should not become leader due to fence token
     let mut process_tracker = TestProcessTracker::new();
@@ -432,31 +443,31 @@ async fn test_fence_token_prevents_split_brain() -> CmdResult {
     )?;
 
     // Wait for leader election attempts
-    sleep(Duration::from_secs(20)).await;
+    sleep(Duration::from_secs(20));
 
     // Manual leader should still be the leader
     assert_eq!(
-        get_current_leader(&client, &table_name).await,
+        get_current_leader(&table_name),
         Some("manual-leader".to_string())
     );
 
     // Clean up
     process_tracker.kill_all()?;
-    cleanup_test_table(&client, &table_name).await;
+    cleanup_test_table(&table_name)?;
 
     println!("SUCCESS: Fence token prevents split brain test completed!");
     Ok(())
 }
 
-async fn test_clock_skew_detection() -> CmdResult {
+fn test_clock_skew_detection() -> CmdResult {
     // Clean up any existing test instances first
     cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
     let table_name = get_test_table_name("clock_skew");
-    let client = setup_test_table(&table_name).await;
+    setup_test_table(&table_name)?;
 
     // Create a leader entry with timestamp far in the past (simulating clock skew)
     let now = std::time::SystemTime::now()
@@ -465,23 +476,25 @@ async fn test_clock_skew_detection() -> CmdResult {
         .as_secs();
     let skewed_time = now - 120; // 2 minutes in the past
 
-    client
-        .put_item()
-        .table_name(&table_name)
-        .item("key", AttributeValue::S(LEADER_KEY.to_string()))
-        .item(
-            "instance_id",
-            AttributeValue::S("skewed-leader".to_string()),
-        )
-        .item("ip_address", AttributeValue::S("127.0.0.1".to_string()))
-        .item("port", AttributeValue::N("8086".to_string()))
-        .item("lease_expiry", AttributeValue::N((now + 30).to_string()))
-        .item("fence_token", AttributeValue::N("1".to_string()))
-        .item("renewal_count", AttributeValue::N("1".to_string()))
-        .item("last_heartbeat", AttributeValue::N(skewed_time.to_string()))
-        .send()
-        .await
-        .expect("Failed to create skewed leader");
+    let lease_expiry = now + 30;
+
+    run_cmd!(
+        aws dynamodb put-item
+            --table-name $table_name
+            --item "{
+                \"key\": {\"S\": \"$LEADER_KEY\"},
+                \"instance_id\": {\"S\": \"skewed-leader\"},
+                \"ip_address\": {\"S\": \"127.0.0.1\"},
+                \"port\": {\"N\": \"8086\"},
+                \"lease_expiry\": {\"N\": \"$lease_expiry\"},
+                \"fence_token\": {\"N\": \"1\"},
+                \"renewal_count\": {\"N\": \"1\"},
+                \"last_heartbeat\": {\"N\": \"$skewed_time\"}
+            }"
+            --endpoint-url $DDB_ENDPOINT
+            --output json | jq -c
+    )
+    .expect("Failed to create skewed leader");
 
     // Start an instance - it should detect clock skew
     let mut process_tracker = TestProcessTracker::new();
@@ -495,15 +508,15 @@ async fn test_clock_skew_detection() -> CmdResult {
     )?;
 
     // Wait for leader election attempts
-    sleep(Duration::from_secs(15)).await;
+    sleep(Duration::from_secs(15));
 
     // The instance should not become leader due to clock skew detection
-    let leader = get_current_leader(&client, &table_name).await;
+    let leader = get_current_leader(&table_name);
     assert_ne!(leader, Some("clock-skew-instance-1".to_string()));
 
     // Clean up
     process_tracker.kill_all()?;
-    cleanup_test_table(&client, &table_name).await;
+    cleanup_test_table(&table_name)?;
 
     println!("SUCCESS: Clock skew detection test completed!");
     Ok(())
@@ -535,7 +548,7 @@ fn start_test_root_server_instance(
     }?;
 
     // Give the instance a moment to start
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    sleep(std::time::Duration::from_secs(2));
 
     Ok(proc)
 }
@@ -545,17 +558,17 @@ pub fn cleanup_test_root_server_instances() -> CmdResult {
     Ok(())
 }
 
-async fn test_manual_leadership_resignation() -> CmdResult {
+fn test_manual_leadership_resignation() -> CmdResult {
     let mut process_tracker = TestProcessTracker::new();
 
     // Clean up any existing test instances first
     cleanup_test_root_server_instances()?;
 
     // DDB local should already be started by the test runner
-    sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2));
 
     let table_name = get_test_table_name("manual_resignation");
-    let client = setup_test_table(&table_name).await;
+    setup_test_table(&table_name)?;
 
     // Start first instance
     start_test_instance(
@@ -569,9 +582,9 @@ async fn test_manual_leadership_resignation() -> CmdResult {
 
     // Wait for first instance to become leader
     println!("Waiting for first instance to become leader...");
-    sleep(Duration::from_secs(15)).await;
+    sleep(Duration::from_secs(15));
 
-    let initial_leader = get_current_leader(&client, &table_name).await;
+    let initial_leader = get_current_leader(&table_name);
     assert_eq!(
         initial_leader,
         Some("resignation-instance-1".to_string()),
@@ -590,10 +603,10 @@ async fn test_manual_leadership_resignation() -> CmdResult {
     )?;
 
     // Wait a moment for second instance to start
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(5));
 
     // Leader should still be the first instance
-    let still_first_leader = get_current_leader(&client, &table_name).await;
+    let still_first_leader = get_current_leader(&table_name);
     assert_eq!(
         still_first_leader,
         Some("resignation-instance-1".to_string()),
@@ -608,10 +621,10 @@ async fn test_manual_leadership_resignation() -> CmdResult {
 
     // Wait a short time for resignation to take effect and second instance to acquire leadership
     // The resignation should be immediate, so we don't need to wait for lease expiration
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(5));
 
     // Second instance should now be leader (resignation should enable immediate takeover)
-    let final_leader = get_current_leader(&client, &table_name).await;
+    let final_leader = get_current_leader(&table_name);
     println!("Final leader after resignation: {:?}", final_leader);
 
     // Note: We expect either the second instance to be leader, or no leader (if the second instance
@@ -630,8 +643,8 @@ async fn test_manual_leadership_resignation() -> CmdResult {
         println!("SUCCESS: No leader in DDB (leadership record was successfully deleted)");
 
         // Wait a bit more for second instance to acquire leadership
-        sleep(Duration::from_secs(10)).await;
-        let eventual_leader = get_current_leader(&client, &table_name).await;
+        sleep(Duration::from_secs(10));
+        let eventual_leader = get_current_leader(&table_name);
         assert_eq!(
             eventual_leader,
             Some("resignation-instance-2".to_string()),
@@ -642,7 +655,7 @@ async fn test_manual_leadership_resignation() -> CmdResult {
 
     // Clean up all remaining processes
     process_tracker.kill_all()?;
-    cleanup_test_table(&client, &table_name).await;
+    cleanup_test_table(&table_name)?;
 
     println!("SUCCESS: Manual leadership resignation test completed!");
     Ok(())

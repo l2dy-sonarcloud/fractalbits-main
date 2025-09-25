@@ -8,10 +8,10 @@ use crate::{
 };
 
 pub async fn run_tests(test_type: TestType) -> CmdResult {
-    let test_leader_election = || async {
+    let test_leader_election = || {
         cmd_service::init_service(ServiceName::All, BuildMode::Debug, InitConfig::default())?;
         cmd_service::start_service(ServiceName::DdbLocal)?;
-        leader_election::run_leader_election_tests().await?;
+        leader_election::run_leader_election_tests()?;
         leader_election::cleanup_test_root_server_instances()?;
         Ok(())
     };
@@ -21,9 +21,9 @@ pub async fn run_tests(test_type: TestType) -> CmdResult {
     cmd_build::build_rust_servers(BuildMode::Debug)?;
     match test_type {
         TestType::MultiAz { subcommand } => multi_az::run_multi_az_tests(subcommand).await,
-        TestType::LeaderElection => test_leader_election().await,
+        TestType::LeaderElection => test_leader_election(),
         TestType::All => {
-            test_leader_election().await?;
+            test_leader_election()?;
             multi_az::run_multi_az_tests(MultiAzTestType::All).await
         }
     }
