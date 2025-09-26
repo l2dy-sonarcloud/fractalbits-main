@@ -2,6 +2,7 @@
 members = [
     "crates/**",
     "vpc/fractalbits-bootstrap",
+    "xtask",
 ]
 # workaround due to cargo's limitations
 # (no wildcard support in exclude, or optional/nested workspace)
@@ -25,8 +26,6 @@ exclude = [
     "crates/common/rpc_codecs/rss_codec/src",
     "crates/common/test_common/src",
     "crates/common/volume_group_proxy/src",
-    "crates/xtask/src",
-    "crates/xtask/tools/src",
     "crates/ha/multi_az",
     "crates/ha/nss_role_agent/src",
     "crates/ha/single_az",
@@ -53,7 +52,7 @@ bss_codec = { path = "crates/common/rpc_codecs/bss_codec" }
 nss_codec = { path = "crates/common/rpc_codecs/nss_codec" }
 rss_codec = { path = "crates/common/rpc_codecs/rss_codec" }
 test_common = { path = "crates/common/test_common" }
-xtask_tools = { path = "crates/xtask/tools" }
+xtask_tools = { path = "xtask/tools" }
 
 tokio-util = { version = "0.7.12", features = ["codec"] }
 tokio-stream = "0.1.16"
