@@ -121,7 +121,7 @@ where
         Ok(client)
     }
 
-    /// Create client with existing session state (bypassing handshake for reconnection)
+    /// Create client with existing session state (performing handshake for reconnection)
     pub async fn new_with_session_and_request_id(
         stream: TcpStream,
         session_id: u64,
@@ -133,6 +133,14 @@ where
         let client = Self::new_internal(stream, session_id).await?;
         // Set the next request ID to continue from where we left off
         client.next_id.store(next_request_id, Ordering::SeqCst);
+
+        // For reconnection with existing session state, perform handshake with session_id
+        let rpc_type = Codec::RPC_TYPE;
+        if rpc_type != "rss" {
+            // For NSS and BSS, perform handshake with existing session_id for routing
+            client.perform_handshake_with_session_id(session_id).await?;
+        }
+
         Ok(client)
     }
 
