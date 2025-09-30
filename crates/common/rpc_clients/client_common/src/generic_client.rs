@@ -171,8 +171,6 @@ where
                 .await
                 {
                     warn!(%socket_fd, %e, "send task failed");
-                    sender_is_closed.store(true, Ordering::SeqCst);
-                    Self::drain_requests(&sender_requests, DrainFrom::SendTask);
                 }
             });
         }
@@ -182,12 +180,16 @@ where
             let receiver_requests = requests.clone();
             let receiver_is_closed = is_closed.clone();
             tasks.spawn(async move {
-                if let Err(e) =
-                    Self::receive_task(reader, &receiver_requests, socket_fd, rpc_type).await
+                if let Err(e) = Self::receive_task(
+                    reader,
+                    &receiver_requests,
+                    socket_fd,
+                    &receiver_is_closed,
+                    rpc_type,
+                )
+                .await
                 {
                     warn!(%socket_fd, %e, "receive task failed");
-                    receiver_is_closed.store(true, Ordering::SeqCst);
-                    Self::drain_requests(&receiver_requests, DrainFrom::ReceiveTask);
                 }
             });
         }
@@ -235,6 +237,7 @@ where
         receiver: OwnedReadHalf,
         requests: &RequestMap<Header>,
         socket_fd: RawFd,
+        is_closed: &Arc<AtomicBool>,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
         let decoder = Codec::default();
@@ -258,6 +261,8 @@ where
                 warn!(%socket_fd, %request_id, "oneshot response send failed");
             }
         }
+        is_closed.store(true, Ordering::SeqCst);
+        Self::drain_requests(requests, DrainFrom::ReceiveTask);
         warn!(%socket_fd, "connection closed, receive message task quit");
         Ok(())
     }
