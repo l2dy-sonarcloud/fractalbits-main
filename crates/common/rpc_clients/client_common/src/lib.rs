@@ -39,7 +39,12 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for RpcError {
 
 impl ErrorRetryable for RpcError {
     fn retryable(&self) -> bool {
-        matches!(self, RpcError::OneshotRecvError(_))
+        matches!(
+            self,
+            RpcError::OneshotRecvError(_)
+                | RpcError::InternalRequestError(_)
+                | RpcError::InternalResponseError(_)
+        )
     }
 }
 

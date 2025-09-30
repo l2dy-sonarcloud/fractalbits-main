@@ -160,18 +160,11 @@ where
             let sender_requests = requests.clone();
             let sender_is_closed = is_closed.clone();
             tasks.spawn(async move {
-                if let Err(e) = Self::send_task(
-                    writer,
-                    receiver,
-                    &sender_requests,
-                    socket_fd,
-                    &sender_is_closed,
-                    rpc_type,
-                )
-                .await
-                {
+                if let Err(e) = Self::send_task(writer, receiver, socket_fd, rpc_type).await {
                     warn!(%rpc_type, %socket_fd, %e, "send task failed");
                 }
+                sender_is_closed.store(true, Ordering::SeqCst);
+                Self::drain_requests(&sender_requests, DrainFrom::SendTask);
             });
         }
 
@@ -180,17 +173,13 @@ where
             let receiver_requests = requests.clone();
             let receiver_is_closed = is_closed.clone();
             tasks.spawn(async move {
-                if let Err(e) = Self::receive_task(
-                    reader,
-                    &receiver_requests,
-                    socket_fd,
-                    &receiver_is_closed,
-                    rpc_type,
-                )
-                .await
+                if let Err(e) =
+                    Self::receive_task(reader, &receiver_requests, socket_fd, rpc_type).await
                 {
                     warn!(%rpc_type, %socket_fd, %e, "receive task failed");
                 }
+                receiver_is_closed.store(true, Ordering::SeqCst);
+                Self::drain_requests(&receiver_requests, DrainFrom::ReceiveTask);
             });
         }
 
@@ -211,9 +200,7 @@ where
     async fn send_task(
         mut writer: OwnedWriteHalf,
         mut receiver: Receiver<MessageFrame<Header>>,
-        requests: &RequestMap<Header>,
         socket_fd: RawFd,
-        is_closed: &Arc<AtomicBool>,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
         while let Some(frame) = receiver.recv().await {
@@ -227,8 +214,6 @@ where
             writer.write_all(&buf).await.map_err(RpcError::IoError)?;
             counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
         }
-        is_closed.store(true, Ordering::SeqCst);
-        Self::drain_requests(requests, DrainFrom::SendTask);
         warn!(%rpc_type, %socket_fd, "sender closed, send message task quit");
         Ok(())
     }
@@ -237,7 +222,6 @@ where
         receiver: OwnedReadHalf,
         requests: &RequestMap<Header>,
         socket_fd: RawFd,
-        is_closed: &Arc<AtomicBool>,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
         let decoder = Codec::default();
@@ -261,8 +245,6 @@ where
                 warn!(%rpc_type, %socket_fd, %request_id, "oneshot response send failed");
             }
         }
-        is_closed.store(true, Ordering::SeqCst);
-        Self::drain_requests(requests, DrainFrom::ReceiveTask);
         warn!(%rpc_type, %socket_fd, "connection closed, receive message task quit");
         Ok(())
     }
