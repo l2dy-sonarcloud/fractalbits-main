@@ -10,25 +10,13 @@ pub fn bootstrap(
     download_binaries(&["api_server"])?;
 
     let is_multi_az = remote_az.is_some();
-    let bss_ip = if remote_az.is_some() {
-        info!("Using S3 Express multi-az setup, skipping BSS server");
-        String::new()
-    } else {
-        info!("Waiting for bss");
-        let bss_ip = get_service_ips("bss-server", 1)[0].clone();
-        for (role, endpoint) in [
-            ("bss", bss_ip.as_str()),
-            ("rss", rss_endpoint),
-            ("nss", nss_endpoint),
-        ] {
-            info!("Waiting for {role} node {endpoint} to be ready");
-            while run_cmd!(nc -z $endpoint 8088 &>/dev/null).is_err() {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-            info!("{role} node can be reached (`nc -z {endpoint} 8088` is ok)");
+    for (role, endpoint) in [("rss", rss_endpoint), ("nss", nss_endpoint)] {
+        info!("Waiting for {role} node {endpoint} to be ready");
+        while run_cmd!(nc -z $endpoint 8088 &>/dev/null).is_err() {
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
-        bss_ip
-    };
+        info!("{role} node can be reached (`nc -z {endpoint} 8088` is ok)");
+    }
 
     // For S3 Express multi-az setup, only wait for RSS and NSS
     if is_multi_az {
@@ -41,7 +29,7 @@ pub fn bootstrap(
         }
     }
 
-    create_config(bucket, &bss_ip, nss_endpoint, rss_endpoint, remote_az)?;
+    create_config(bucket, nss_endpoint, rss_endpoint, remote_az)?;
 
     if for_bench {
         // Try to download tools for micro-benchmarking
@@ -59,7 +47,6 @@ pub fn bootstrap(
 
 pub fn create_config(
     bucket: Option<&str>,
-    bss_ip: &str,
     nss_endpoint: &str,
     rss_endpoint: &str,
     remote_az: Option<&str>,
@@ -106,7 +93,6 @@ local_az_bucket = "{local_bucket}"
 remote_az_bucket = "{remote_bucket}"
 local_az = "{local_az}"
 remote_az = "{remote_az}"
-force_path_style = false
 
 [blob_storage.s3_express_multi_az.ratelimit]
 enabled = false
@@ -127,10 +113,8 @@ backoff_multiplier = 1.0
         let bucket_name =
             bucket.ok_or_else(|| std::io::Error::other("Bucket name required for hybrid mode"))?;
         format!(
-            r##"bss_addr = "{bss_ip}:8088"
-nss_addr = "{nss_endpoint}:8088"
+            r##"nss_addr = "{nss_endpoint}:8088"
 rss_addr = "{rss_endpoint}:8088"
-bss_conn_num = {num_cores}
 nss_conn_num = {num_cores}
 rss_conn_num = 1
 region = "{aws_region}"
@@ -151,10 +135,6 @@ force_http1_only = false
 
 [blob_storage]
 backend = "s3_hybrid_single_az"
-
-[blob_storage.bss]
-addr = "{bss_ip}:8088"
-conn_num = {num_cores}
 
 [blob_storage.s3_hybrid_single_az]
 s3_host = "http://s3.{aws_region}.amazonaws.com"
