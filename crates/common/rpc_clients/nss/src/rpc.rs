@@ -230,6 +230,7 @@ impl RpcClient {
         bucket: &str,
         az_mirroring: bool,
         timeout: Option<Duration>,
+        retry_count: u32,
     ) -> Result<CreateRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "create_root_inode");
         let body = CreateRootInodeRequest {
@@ -242,6 +243,7 @@ impl RpcClient {
         header.id = request_id;
         header.command = Command::CreateRootInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+        header.retry_count = retry_count;
 
         let mut body_bytes = BytesMut::new();
         body.encode(&mut body_bytes)
@@ -266,6 +268,7 @@ impl RpcClient {
         &self,
         root_blob_name: &str,
         timeout: Option<Duration>,
+        retry_count: u32,
     ) -> Result<DeleteRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "delete_root_inode");
         let body = DeleteRootInodeRequest {
@@ -277,6 +280,7 @@ impl RpcClient {
         header.id = request_id;
         header.command = Command::DeleteRootInode;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+        header.retry_count = retry_count;
 
         let mut body_bytes = BytesMut::new();
         body.encode(&mut body_bytes)
