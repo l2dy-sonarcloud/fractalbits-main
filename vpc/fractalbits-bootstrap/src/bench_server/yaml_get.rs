@@ -80,7 +80,7 @@ pub fn create_get_workload_config(
     duration: {duration}
 
     # Concurrent operations to run per warp instance.
-    concurrent: 48
+    concurrent: 96
 
     # The number of objects to upload before starting the benchmark.
     # Upload enough objects to ensure that any remote caching is bypassed.
