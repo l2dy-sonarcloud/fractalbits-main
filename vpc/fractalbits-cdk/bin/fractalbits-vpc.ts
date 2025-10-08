@@ -11,6 +11,7 @@ const app = new cdk.App();
 
 const numApiServers = app.node.tryGetContext("numApiServers") ?? 1;
 const numBenchClients = app.node.tryGetContext("numBenchClients") ?? 1;
+const numBssNodes = app.node.tryGetContext("numBssNodes") ?? 6;
 const benchType = app.node.tryGetContext("benchType") ?? null;
 const bssInstanceTypes =
   app.node.tryGetContext("bssInstanceTypes") ?? "i8g.xlarge";
@@ -38,6 +39,7 @@ const vpcStack = new FractalbitsVpcStack(app, "FractalbitsVpcStack", {
   browserIp: browserIp,
   numApiServers: numApiServers,
   numBenchClients: numBenchClients,
+  numBssNodes: numBssNodes,
   benchType: benchType,
   azPair: azPair,
   bssInstanceTypes: bssInstanceTypes,

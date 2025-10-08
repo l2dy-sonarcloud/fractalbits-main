@@ -22,6 +22,7 @@ import {
 export interface FractalbitsVpcStackProps extends cdk.StackProps {
   numApiServers: number;
   numBenchClients: number;
+  numBssNodes: number;
   benchType?: "service_endpoint" | "external" | null;
   azPair: string;
   bssInstanceTypes: string;
@@ -292,8 +293,8 @@ export class FractalbitsVpcStack extends cdk.Stack {
         ec2Role,
         props.bssInstanceTypes.split(","),
         bssBootstrapOptions,
-        6,
-        6,
+        props.numBssNodes,
+        props.numBssNodes,
       );
       // Add lifecycle hook for bss_server ASG
       addAsgDynamoDbDeregistrationLifecycleHook(
@@ -457,7 +458,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
           `--follower_id=${instances["rss-B"].instanceId}` +
           (dataBlobStorage === "s3ExpressMultiAz"
             ? ` --remote_az=${azPair[1]}`
-            : ""),
+            : ` --num_bss_nodes=${props.numBssNodes}`),
       },
       {
         id: "rss-B",

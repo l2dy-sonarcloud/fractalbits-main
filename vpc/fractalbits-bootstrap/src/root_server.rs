@@ -24,6 +24,7 @@ pub fn bootstrap(
     volume_b_id: Option<&str>,
     follower_id: Option<&str>,
     remote_az: Option<&str>,
+    num_bss_nodes: Option<usize>,
     _for_bench: bool,
 ) -> CmdResult {
     // download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
@@ -55,7 +56,8 @@ pub fn bootstrap(
 
         // Initialize BSS volume group configurations in DynamoDB (only for single-AZ mode)
         if remote_az.is_none() {
-            initialize_bss_volume_groups_in_ddb()?;
+            let total_bss_nodes = num_bss_nodes.unwrap_or(TOTAL_BSS_NODES);
+            initialize_bss_volume_groups_in_ddb(total_bss_nodes)?;
         }
 
         // Format nss-B first if it exists, then nss-A
@@ -136,13 +138,13 @@ fn initialize_nss_roles_in_ddb(nss_a_id: &str, nss_b_id: Option<&str>) -> CmdRes
     Ok(())
 }
 
-fn initialize_bss_volume_groups_in_ddb() -> CmdResult {
+fn initialize_bss_volume_groups_in_ddb(total_bss_nodes: usize) -> CmdResult {
     let region = get_current_aws_region()?;
 
     info!("Waiting for all BSS nodes to register in service discovery...");
 
     // Wait for all BSS nodes to register
-    wait_for_all_bss_nodes(&region, TOTAL_BSS_NODES)?;
+    wait_for_all_bss_nodes(&region, total_bss_nodes)?;
 
     // Now retrieve all BSS addresses
     let bss_instances = get_all_bss_addresses(&region)?;
@@ -159,11 +161,29 @@ fn initialize_bss_volume_groups_in_ddb() -> CmdResult {
 
     info!("All BSS nodes registered. Initializing volume group configurations...");
 
+    // Adjust quorum settings for single BSS node deployments
+    let (data_vg_quorum_n, data_vg_quorum_r, data_vg_quorum_w) = if total_bss_nodes == 1 {
+        (1, 1, 1)
+    } else {
+        (DATA_VG_QUORUM_N, DATA_VG_QUORUM_R, DATA_VG_QUORUM_W)
+    };
+
+    let (metadata_vg_quorum_n, metadata_vg_quorum_r, metadata_vg_quorum_w) = if total_bss_nodes == 1
+    {
+        (1, 1, 1)
+    } else {
+        (
+            META_DATA_VG_QUORUM_N,
+            META_DATA_VG_QUORUM_R,
+            META_DATA_VG_QUORUM_W,
+        )
+    };
+
     let bss_data_vg_config_json = build_volume_group_config(
         &bss_addresses,
-        DATA_VG_QUORUM_N,
-        DATA_VG_QUORUM_R,
-        DATA_VG_QUORUM_W,
+        data_vg_quorum_n,
+        data_vg_quorum_r,
+        data_vg_quorum_w,
     );
 
     let bss_data_vg_config_item = format!(
@@ -183,9 +203,9 @@ fn initialize_bss_volume_groups_in_ddb() -> CmdResult {
 
     let bss_metadata_vg_config_json = build_volume_group_config(
         &bss_addresses,
-        META_DATA_VG_QUORUM_N,
-        META_DATA_VG_QUORUM_R,
-        META_DATA_VG_QUORUM_W,
+        metadata_vg_quorum_n,
+        metadata_vg_quorum_r,
+        metadata_vg_quorum_w,
     );
 
     let bss_metadata_vg_config_item = format!(

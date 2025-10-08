@@ -123,6 +123,9 @@ enum Command {
 
         #[clap(long, long_help = "Remote AZ for S3 Express multi-AZ setup")]
         remote_az: Option<String>,
+
+        #[clap(long, long_help = "Number of BSS nodes")]
+        num_bss_nodes: Option<usize>,
     },
 
     #[clap(
@@ -232,6 +235,7 @@ fn main() -> CmdResult {
             volume_b_id,
             follower_id,
             remote_az,
+            num_bss_nodes,
         } => root_server::bootstrap(
             &nss_endpoint,
             &nss_a_id,
@@ -240,6 +244,7 @@ fn main() -> CmdResult {
             volume_b_id.as_deref(),
             follower_id.as_deref(),
             remote_az.as_deref(),
+            num_bss_nodes,
             for_bench,
         )?,
         Command::FormatNss { ebs_dev } => nss_server::format_nss(ebs_dev)?,
