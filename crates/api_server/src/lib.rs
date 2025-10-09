@@ -41,11 +41,14 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(config: Arc<Config>) -> Self {
+    const PER_CORE_RPC_POOL_SIZE: u16 = 1;
+    const PER_CORE_CACHE_CAPACITY: u64 = 10_000;
+
+    pub async fn new_per_core(config: Arc<Config>) -> Self {
         let rpc_clients_rss =
-            Self::new_rpc_clients_pool_rss(&config.rss_addr, config.rss_conn_num).await;
+            Self::new_rpc_clients_pool_rss(&config.rss_addr, Self::PER_CORE_RPC_POOL_SIZE).await;
         let rpc_clients_nss =
-            Self::new_rpc_clients_pool_nss(&config.nss_addr, config.nss_conn_num).await;
+            Self::new_rpc_clients_pool_nss(&config.nss_addr, Self::PER_CORE_RPC_POOL_SIZE).await;
 
         let (tx, rx) = mpsc::channel(1024 * 1024);
         let data_blob_tracker = Arc::new(DataBlobTracker::with_pools(
@@ -58,7 +61,7 @@ impl AppState {
         let cache = Arc::new(
             Cache::builder()
                 .time_to_idle(Duration::from_secs(300))
-                .max_capacity(10_000)
+                .max_capacity(Self::PER_CORE_CACHE_CAPACITY)
                 .build(),
         );
 
@@ -66,7 +69,7 @@ impl AppState {
             &config.blob_storage,
             rx,
             config.rpc_timeout(),
-            config.bss_conn_num,
+            Self::PER_CORE_RPC_POOL_SIZE,
             Some(data_blob_tracker.clone()),
             Some(Arc::new(rpc_clients_rss.clone())),
             Some(config.rss_addr.clone()),

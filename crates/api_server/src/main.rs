@@ -113,13 +113,15 @@ async fn main() {
         }
     }
 
+    let config = Arc::new(config);
     let port = config.port;
     let mgmt_port = config.mgmt_port;
-    let app_state = AppState::new(Arc::new(config)).await;
-    let app_state_arc = Arc::new(app_state);
-
     let worker_count = num_cpus::get();
     let uring_config = UringConfig::default();
+
+    let http_app_states = Arc::new(build_per_core_app_states(worker_count, config.clone()).await);
+    let mgmt_app_states = Arc::new(build_per_core_app_states(worker_count, config.clone()).await);
+
     let http_per_core = PerCoreBuilder::new(PerCoreConfig {
         uring: uring_config.clone(),
     });
@@ -144,16 +146,21 @@ async fn main() {
         worker_count, "HTTP server started with reuseport listeners"
     );
     let mut http_server = HttpServer::new({
-        let app_state_arc = app_state_arc.clone();
         let per_core_builder = http_per_core.clone();
+        let app_states = http_app_states.clone();
         move || {
             let per_core_ctx = per_core_builder
                 .build_context()
                 .unwrap_or_else(|e| panic!("failed to init per-core context: {e}"));
             per_core_builder.pin_current_thread(per_core_ctx.worker_index());
+            let worker_index = per_core_ctx.worker_index();
+            let app_state = app_states
+                .get(worker_index)
+                .unwrap_or_else(|| panic!("missing app state for worker {worker_index}"))
+                .clone();
 
             App::new()
-                .app_data(web::Data::new(app_state_arc.clone()))
+                .app_data(web::Data::new(app_state))
                 .app_data(web::Data::new(per_core_ctx))
                 .app_data(web::PayloadConfig::default().limit(5_368_709_120))
                 .wrap(Logger::default())
@@ -181,16 +188,21 @@ async fn main() {
         worker_count, "Management server started with reuseport listeners"
     );
     let mut mgmt_server = HttpServer::new({
-        let app_state_arc = app_state_arc.clone();
         let per_core_builder = mgmt_per_core.clone();
+        let app_states = mgmt_app_states.clone();
         move || {
             let per_core_ctx = per_core_builder
                 .build_context()
                 .unwrap_or_else(|e| panic!("failed to init per-core context: {e}"));
             per_core_builder.pin_current_thread(per_core_ctx.worker_index());
+            let worker_index = per_core_ctx.worker_index();
+            let app_state = app_states
+                .get(worker_index)
+                .unwrap_or_else(|| panic!("missing mgmt app state for worker {worker_index}"))
+                .clone();
 
             App::new()
-                .app_data(web::Data::new(app_state_arc.clone()))
+                .app_data(web::Data::new(app_state))
                 .app_data(web::Data::new(per_core_ctx))
                 .wrap(Logger::default())
                 .service(
@@ -234,4 +246,13 @@ async fn main() {
             }
         }
     }
+}
+
+async fn build_per_core_app_states(worker_count: usize, config: Arc<Config>) -> Vec<Arc<AppState>> {
+    let mut states = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
+        let state = AppState::new_per_core(config.clone()).await;
+        states.push(Arc::new(state));
+    }
+    states
 }
