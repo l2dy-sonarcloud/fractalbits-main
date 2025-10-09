@@ -70,27 +70,6 @@ impl Default for S3ExpressMultiAzConfig {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct HttpsConfig {
-    pub enabled: bool,
-    pub port: u16,
-    pub cert_file: String,
-    pub key_file: String,
-    pub force_http1_only: bool,
-}
-
-impl Default for HttpsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            port: 8443,
-            cert_file: "data/etc/cert.pem".to_string(),
-            key_file: "data/etc/key.pem".to_string(),
-            force_http1_only: false,
-        }
-    }
-}
-
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct Config {
     pub nss_addr: String,
@@ -101,7 +80,6 @@ pub struct Config {
 
     pub port: u16,
     pub mgmt_port: u16,
-    pub https: HttpsConfig,
     pub region: String,
     pub root_domain: String,
     pub with_metrics: bool,
@@ -150,7 +128,6 @@ impl Config {
             bss_conn_num: 2,
             port: 8080,
             mgmt_port: 18080,
-            https: HttpsConfig::default(),
             region: "localdev".into(),
             root_domain: ".localhost".into(),
             with_metrics: true,
@@ -174,7 +151,6 @@ impl Config {
             bss_conn_num: 2,
             port: 8080,
             mgmt_port: 18080,
-            https: HttpsConfig::default(),
             region: "localdev".into(),
             root_domain: ".localhost".into(),
             with_metrics: true,

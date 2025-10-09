@@ -1,18 +1,12 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{fs::File, io::Read};
-use std::{net::SocketAddr, path::PathBuf};
 
 mod api_key_routes;
 mod cache_mgmt;
 
-use actix_files::Files;
 use actix_web::{App, HttpServer, middleware::Logger, web};
 use api_server::{AppState, Config, handler::any_handler};
 use clap::Parser;
-use openssl::{
-    pkey::{PKey, Private},
-    ssl::{SslAcceptor, SslMethod},
-};
 use tracing::{error, info};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -23,22 +17,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[clap(name = "api_server", about = "API server")]
 struct Opt {
     #[clap(short = 'c', long = "config", long_help = "Config file path")]
-    config_file: Option<PathBuf>,
-}
-
-fn load_private_key(key_path: &str) -> Result<PKey<Private>, Box<dyn std::error::Error>> {
-    let mut file = File::open(key_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    // Try to load as encrypted key first (with password)
-    if let Ok(key) = PKey::private_key_from_pem_passphrase(&buffer, b"password") {
-        return Ok(key);
-    }
-
-    // Fall back to unencrypted key
-    let key = PKey::private_key_from_pem(&buffer)?;
-    Ok(key)
+    config_file: Option<std::path::PathBuf>,
 }
 
 #[actix_web::main]
@@ -73,7 +52,7 @@ async fn main() {
     eprintln!("build info: {}", build_info);
 
     let opt = Opt::parse();
-    let mut config = match opt.config_file {
+    let config = match opt.config_file {
         Some(config_file) => config::Config::builder()
             .add_source(config::File::from(config_file).required(true))
             .add_source(config::Environment::with_prefix("APP"))
@@ -131,107 +110,38 @@ async fn main() {
 
     let port = config.port;
     let mgmt_port = config.mgmt_port;
-    let mut https_config = config.https.clone();
-
-    // Get web root from environment variable
-    let web_root = match std::env::var("GUI_WEB_ROOT") {
-        Ok(gui_web_root) => {
-            config.allow_missing_or_bad_signature = true;
-            Some(PathBuf::from(gui_web_root))
-        }
-        Err(_) => None,
-    };
     let app_state = AppState::new(Arc::new(config)).await;
     let app_state_arc = Arc::new(app_state);
 
     // Create app factory closure
     let create_app = {
         let app_state_arc = app_state_arc.clone();
-        let web_root = web_root.clone();
         move || {
-            let web_root = web_root.clone();
-            let mut app = App::new()
+            App::new()
                 .app_data(web::Data::new(app_state_arc.clone()))
                 // Configure payload size limits for S3 operations
                 // S3 supports up to 5GB per object, but multipart uploads can be up to 5TB
                 // Set a reasonable limit for testing and production use
                 .app_data(web::PayloadConfig::default().limit(5_368_709_120)) // 5GB limit
-                .wrap(Logger::default());
-
-            if let Some(web_root) = web_root {
-                app = app
-                    .service(Files::new("/ui", web_root).index_file("index.html"))
-                    .service(
-                        web::scope("/api_keys")
-                            .route("/", web::post().to(api_key_routes::create_api_key))
-                            .route("/", web::get().to(api_key_routes::list_api_keys))
-                            .route(
-                                "/{key_id}",
-                                web::delete().to(api_key_routes::delete_api_key),
-                            ),
-                    )
-            }
-            app.default_service(web::route().to(any_handler))
+                .wrap(Logger::default())
+                .service(
+                    web::scope("/api_keys")
+                        .route("/", web::post().to(api_key_routes::create_api_key))
+                        .route("/", web::get().to(api_key_routes::list_api_keys))
+                        .route(
+                            "/{key_id}",
+                            web::delete().to(api_key_routes::delete_api_key),
+                        ),
+                )
+                .default_service(web::route().to(any_handler))
         }
     };
 
     // Start HTTP server
     info!("HTTP server started at port {port}");
-    let http_server = HttpServer::new(create_app.clone())
+    let http_server = HttpServer::new(create_app)
         .bind(format!("0.0.0.0:{port}"))
         .unwrap();
-
-    if Ok("1".to_string()) == std::env::var("HTTPS_DISABLED") {
-        https_config.enabled = false;
-    }
-    // Start HTTPS server if enabled
-    let https_server = if https_config.enabled {
-        info!("HTTPS server started at port {}", https_config.port);
-
-        // Build TLS config from files
-        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-
-        // Load private key
-        let key_path = &https_config.key_file;
-        let cert_path = &https_config.cert_file;
-
-        // Try to load the private key (handles both encrypted and unencrypted keys)
-        match load_private_key(key_path) {
-            Ok(private_key) => {
-                builder.set_private_key(&private_key).unwrap();
-            }
-            Err(e) => {
-                error!("Failed to load private key from {}: {}", key_path, e);
-                error!("If using mkcert, ensure the key is unencrypted");
-                error!("If using OpenSSL, ensure the password is correct");
-                std::process::exit(1);
-            }
-        }
-
-        // Set certificate chain
-        if let Err(e) = builder.set_certificate_chain_file(cert_path) {
-            error!("Failed to load certificate chain from {}: {}", cert_path, e);
-            std::process::exit(1);
-        }
-
-        // Configure ALPN protocols based on configuration
-        if https_config.force_http1_only {
-            info!("Configuring HTTPS for HTTP/1.1 only");
-            // ALPN protocol format: length-prefixed strings
-            builder.set_alpn_protos(b"\x08http/1.1").unwrap();
-        } else {
-            info!("Configuring HTTPS for both HTTP/1.1 and HTTP/2");
-        }
-
-        Some(
-            HttpServer::new(create_app)
-                .bind_openssl(format!("0.0.0.0:{}", https_config.port), builder)
-                .unwrap(),
-        )
-    } else {
-        info!("HTTPS is disabled");
-        None
-    };
 
     // Start management server
     info!("Management server started at port {mgmt_port}");
@@ -267,39 +177,15 @@ async fn main() {
     let http_server_future = http_server.run();
     let mgmt_server_future = mgmt_server.run();
 
-    match https_server {
-        Some(https_server) => {
-            let https_server_future = https_server.run();
-            tokio::select! {
-                result = http_server_future => {
-                    if let Err(e) = result {
-                        tracing::error!("HTTP server stopped: {e}");
-                    }
-                }
-                result = https_server_future => {
-                    if let Err(e) = result {
-                        tracing::error!("HTTPS server stopped: {e}");
-                    }
-                }
-                result = mgmt_server_future => {
-                    if let Err(e) = result {
-                        tracing::error!("Management server stopped: {e}");
-                    }
-                }
+    tokio::select! {
+        result = http_server_future => {
+            if let Err(e) = result {
+                tracing::error!("HTTP server stopped: {e}");
             }
         }
-        None => {
-            tokio::select! {
-                result = http_server_future => {
-                    if let Err(e) = result {
-                        tracing::error!("HTTP server stopped: {e}");
-                    }
-                }
-                result = mgmt_server_future => {
-                    if let Err(e) = result {
-                        tracing::error!("Management server stopped: {e}");
-                    }
-                }
+        result = mgmt_server_future => {
+            if let Err(e) = result {
+                tracing::error!("Management server stopped: {e}");
             }
         }
     }
