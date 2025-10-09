@@ -14,7 +14,7 @@ pub fn bootstrap(meta_stack_testing: bool, for_bench: bool) -> CmdResult {
     run_cmd!(mkdir -p "/data/local/stats")?;
 
     if meta_stack_testing || for_bench {
-        download_binaries(&["rewrk_rpc"])?;
+        let _ = download_binaries(&["rewrk_rpc"]); // i3, i3en may not compile rewrk_rpc tool
         xtask_tools::gen_uuids(1_000_000, "/data/uuids.data")?;
     }
 
