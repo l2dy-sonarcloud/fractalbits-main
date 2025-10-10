@@ -412,37 +412,56 @@ where
         requests: &RequestMap<Header>,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
-        const RECV_CHUNK_SIZE: usize = 64 * 1024;
-        let mut decoder = Codec::default();
-        let mut buffer = BytesMut::with_capacity(128 * 1024);
+        use std::io;
+
+        async fn read_exact(
+            driver: &Arc<dyn IoUringDriver>,
+            fd: RawFd,
+            mut remaining: usize,
+        ) -> Result<Vec<u8>, RpcError> {
+            let mut buffer = Vec::with_capacity(remaining);
+            while remaining > 0 {
+                let chunk = driver
+                    .recv(fd, remaining)
+                    .await
+                    .map_err(RpcError::IoError)?;
+
+                if chunk.is_empty() {
+                    return Err(RpcError::IoError(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "io_uring recv returned 0 bytes",
+                    )));
+                }
+
+                remaining = remaining.saturating_sub(chunk.len());
+                buffer.extend_from_slice(&chunk);
+            }
+            Ok(buffer)
+        }
 
         loop {
-            let chunk = driver
-                .recv(socket_fd, RECV_CHUNK_SIZE)
-                .await
-                .map_err(RpcError::IoError)?;
-
-            if chunk.is_empty() {
-                if let Some(frame) = decoder
-                    .decode_eof(&mut buffer)
-                    .map_err(|e| RpcError::DecodeError(e.to_string()))?
-                {
-                    Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
+            // Read the fixed-size header first
+            let header_buf = match read_exact(&driver, socket_fd, Header::SIZE).await {
+                Ok(bytes) => bytes,
+                Err(RpcError::IoError(err)) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                    // Remote end closed cleanly
+                    break;
                 }
-                break;
-            }
+                Err(err) => return Err(err),
+            };
 
-            buffer.extend_from_slice(&chunk);
+            let header_bytes = Bytes::from(header_buf);
+            let header = Header::decode(&header_bytes);
+            let body_len = header.get_body_size();
 
-            loop {
-                match decoder.decode(&mut buffer) {
-                    Ok(Some(frame)) => {
-                        Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
-                    }
-                    Ok(None) => break,
-                    Err(e) => return Err(RpcError::DecodeError(e.to_string())),
-                }
-            }
+            let body_bytes = if body_len > 0 {
+                Bytes::from(read_exact(&driver, socket_fd, body_len).await?)
+            } else {
+                Bytes::new()
+            };
+
+            let frame = MessageFrame::new(header, body_bytes);
+            Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
         }
 
         Ok(())
