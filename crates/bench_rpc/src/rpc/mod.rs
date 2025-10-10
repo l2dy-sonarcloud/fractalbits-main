@@ -211,7 +211,7 @@ async fn benchmark_bss_write(
     for _ in 0..io_depth {
         if let Some(uuid) = uuids.pop_front() {
             let rpc_client = rpc_client.clone();
-            let content = Bytes::from(vec![0; 4096 - 256]);
+            let content = Bytes::from(vec![0; 8192 - 256]);
             let blob_guid = DataBlobGuid {
                 blob_id: Uuid::parse_str(&uuid).unwrap(),
                 volume_id: 1,
