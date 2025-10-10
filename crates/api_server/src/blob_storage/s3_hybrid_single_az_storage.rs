@@ -2,12 +2,13 @@ use super::{BlobLocation, BlobStorageError, DataVgProxy, blob_key, create_s3_cli
 use crate::{config::S3HybridSingleAzConfig, object_layout::ObjectLayout};
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
-use data_types::DataBlobGuid;
+use data_types::{DataBlobGuid, DataVgInfo};
 use metrics::histogram;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::OnceCell;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -17,6 +18,8 @@ pub struct S3HybridSingleAzStorage {
     data_blob_in_s3_bucket: String,
 }
 
+static DATA_VG_INFO: OnceCell<DataVgInfo> = OnceCell::const_new();
+
 impl S3HybridSingleAzStorage {
     pub async fn new(
         rss_client: Arc<rpc_client_rss::RpcClientRss>,
@@ -24,20 +27,28 @@ impl S3HybridSingleAzStorage {
         rpc_timeout: Duration,
         bss_conn_num: u16,
     ) -> Result<Self, BlobStorageError> {
-        debug!("Fetching DataVg configuration from RSS...");
-
-        // Fetch DataVg configuration from RSS
-        let data_vg_info = rss_client
-            .get_data_vg_info(Some(rpc_timeout))
-            .await
-            .map_err(|e| {
-                BlobStorageError::Config(format!("Failed to fetch DataVg config: {}", e))
-            })?;
+        let data_vg_info = DATA_VG_INFO
+            .get_or_try_init(|| {
+                let rss_client = rss_client.clone();
+                async move {
+                    debug!("Fetching DataVg configuration from RSS...");
+                    rss_client
+                        .get_data_vg_info(Some(rpc_timeout))
+                        .await
+                        .map_err(|e| {
+                            BlobStorageError::Config(format!(
+                                "Failed to fetch DataVg config: {}",
+                                e
+                            ))
+                        })
+                }
+            })
+            .await?
+            .clone();
 
         let volume_count = data_vg_info.volumes.len();
         info!("Initializing DataVgProxy with {volume_count} volumes, bss_conn_num={bss_conn_num}");
 
-        // Initialize DataVgProxy with the fetched configuration
         let data_vg_proxy = Arc::new(
             DataVgProxy::new(data_vg_info, rpc_timeout, bss_conn_num)
                 .await
