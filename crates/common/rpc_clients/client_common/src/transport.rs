@@ -9,6 +9,8 @@ use std::sync::Arc;
 pub trait RpcTransport: Send + Sync + 'static {
     async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<usize>;
 
+    async fn recv(&self, fd: RawFd, len: usize) -> io::Result<Bytes>;
+
     fn name(&self) -> &'static str;
 }
 

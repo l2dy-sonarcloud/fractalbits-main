@@ -9,6 +9,7 @@ use api_server::runtime::{listeners, per_core::PerCoreBuilder};
 use api_server::uring::{config::UringConfig, reactor, ring::PerCoreRing};
 use api_server::{AppState, Config, handler::any_handler};
 use clap::Parser;
+use rpc_client_common::transport::set_current_transport;
 use tracing::{error, info};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -183,6 +184,9 @@ async fn main() {
                 .build_context()
                 .unwrap_or_else(|e| panic!("failed to init per-core context: {e}"));
             per_core_builder.pin_current_thread(per_core_ctx.worker_index());
+            set_current_transport(Some(Arc::new(reactor::ReactorTransport::new(
+                per_core_ctx.reactor(),
+            ))));
             let worker_index = per_core_ctx.worker_index();
             let app_state = app_states
                 .get(worker_index)
@@ -225,6 +229,9 @@ async fn main() {
                 .build_context()
                 .unwrap_or_else(|e| panic!("failed to init per-core context: {e}"));
             per_core_builder.pin_current_thread(per_core_ctx.worker_index());
+            set_current_transport(Some(Arc::new(reactor::ReactorTransport::new(
+                per_core_ctx.reactor(),
+            ))));
             let worker_index = per_core_ctx.worker_index();
             let app_state = app_states
                 .get(worker_index)

@@ -1,6 +1,8 @@
-use super::{ring::PerCoreRing, rpc::UringRpcSender};
-use bytes::Bytes;
+use super::ring::PerCoreRing;
+use async_trait::async_trait;
+use bytes::{Bytes, BytesMut};
 use crossbeam_channel::{Receiver, Sender, select, unbounded};
+use libc;
 use metrics::gauge;
 use rpc_client_common::transport::RpcTransport;
 use std::io;
@@ -12,10 +14,13 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
+const RECV_BUFFER_SIZE: usize = 64 * 1024;
+
 #[derive(Debug)]
 pub enum RpcTask {
     Noop,
     ZeroCopySend(ZeroCopySendTask),
+    Recv(RecvTask),
 }
 
 #[derive(Debug)]
@@ -24,6 +29,13 @@ pub struct ZeroCopySendTask {
     pub header: Bytes,
     pub body: Bytes,
     pub completion: oneshot::Sender<io::Result<usize>>,
+}
+
+#[derive(Debug)]
+pub struct RecvTask {
+    pub fd: RawFd,
+    pub len: usize,
+    pub completion: oneshot::Sender<io::Result<Bytes>>,
 }
 
 #[derive(Debug, Default)]
@@ -42,32 +54,22 @@ impl ReactorMetrics {
     }
 }
 
-#[derive(Debug)]
-pub enum RpcCommand {
-    Shutdown,
-    Task(RpcTask),
-}
-
 pub struct RpcReactorHandle {
     worker_index: usize,
     sender: Sender<RpcCommand>,
     closed: AtomicBool,
     join_handle: Mutex<Option<JoinHandle<()>>>,
-    zero_copy: Arc<UringRpcSender>,
+    io: Arc<ReactorIo>,
 }
 
 impl RpcReactorHandle {
-    fn new(
-        worker_index: usize,
-        sender: Sender<RpcCommand>,
-        zero_copy: Arc<UringRpcSender>,
-    ) -> Self {
+    fn new(worker_index: usize, sender: Sender<RpcCommand>, io: Arc<ReactorIo>) -> Self {
         Self {
             worker_index,
             sender,
             closed: AtomicBool::new(false),
             join_handle: Mutex::new(None),
-            zero_copy,
+            io,
         }
     }
 
@@ -118,6 +120,24 @@ impl RpcReactorHandle {
         }
         rx
     }
+
+    pub fn submit_recv(&self, fd: RawFd, len: usize) -> oneshot::Receiver<io::Result<Bytes>> {
+        let (tx, mut rx) = oneshot::channel();
+        let task = RpcTask::Recv(RecvTask {
+            fd,
+            len,
+            completion: tx,
+        });
+        if let Err(err) = self.sender.send(RpcCommand::Task(task)) {
+            let _ = rx.close();
+            warn!(
+                worker_index = self.worker_index,
+                error = %err,
+                "failed to enqueue recv task"
+            );
+        }
+        rx
+    }
 }
 
 impl Drop for RpcReactorHandle {
@@ -139,65 +159,38 @@ impl Drop for RpcReactorHandle {
     }
 }
 
-#[derive(Clone)]
-pub struct ReactorTransport {
-    handle: Arc<RpcReactorHandle>,
-}
-
-impl ReactorTransport {
-    pub fn new(handle: Arc<RpcReactorHandle>) -> Self {
-        Self { handle }
-    }
-}
-
-use async_trait::async_trait;
-
-#[async_trait]
-impl RpcTransport for ReactorTransport {
-    async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<usize> {
-        let rx = self.handle.submit_zero_copy_send(fd, header, body);
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::ConnectionAborted,
-                "rpc reactor send cancelled",
-            )),
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        "reactor_zero_copy"
-    }
+#[derive(Debug)]
+pub enum RpcCommand {
+    Shutdown,
+    Task(RpcTask),
 }
 
 pub fn spawn_rpc_reactor(worker_index: usize, ring: Arc<PerCoreRing>) -> Arc<RpcReactorHandle> {
     let (tx, rx) = unbounded::<RpcCommand>();
-    let zero_copy = UringRpcSender::new(ring.clone());
-    let handle = Arc::new(RpcReactorHandle::new(worker_index, tx, zero_copy));
+    let io = Arc::new(ReactorIo::new(ring));
+    let handle = Arc::new(RpcReactorHandle::new(worker_index, tx, io));
     let thread_handle = Arc::clone(&handle);
     let join = thread::Builder::new()
         .name(format!("rpc-reactor-{worker_index}"))
-        .spawn(move || reactor_thread(thread_handle, ring, rx))
+        .spawn(move || reactor_thread(thread_handle, rx))
         .expect("failed to spawn rpc reactor thread");
     handle.attach_join_handle(join);
     handle
 }
 
-fn reactor_thread(handle: Arc<RpcReactorHandle>, ring: Arc<PerCoreRing>, rx: Receiver<RpcCommand>) {
+fn reactor_thread(handle: Arc<RpcReactorHandle>, rx: Receiver<RpcCommand>) {
     info!(
         worker_index = handle.worker_index,
         "rpc reactor thread started"
     );
-    let _ring = ring; // actual IO submission will arrive in later stages.
 
     let mut running = true;
     let mut shutdown_seen = false;
     let mut metrics = ReactorMetrics::default();
 
     while running {
-        // Drain any already queued commands before we block again.
         while let Ok(cmd) = rx.try_recv() {
-            if !process_command(&handle, &_ring, cmd) {
+            if !process_command(&handle, cmd) {
                 running = false;
                 break;
             }
@@ -212,7 +205,7 @@ fn reactor_thread(handle: Arc<RpcReactorHandle>, ring: Arc<PerCoreRing>, rx: Rec
         select! {
             recv(rx) -> msg => match msg {
                 Ok(cmd) => {
-                    if !process_command(&handle, &_ring, cmd) {
+                    if !process_command(&handle, cmd) {
                         running = false;
                     }
                 }
@@ -225,7 +218,6 @@ fn reactor_thread(handle: Arc<RpcReactorHandle>, ring: Arc<PerCoreRing>, rx: Rec
                 if shutdown_seen {
                     running = false;
                 }
-                // Future: poll completion queue here when submissions exist.
             }
         }
 
@@ -239,11 +231,7 @@ fn reactor_thread(handle: Arc<RpcReactorHandle>, ring: Arc<PerCoreRing>, rx: Rec
     );
 }
 
-fn process_command(
-    handle: &Arc<RpcReactorHandle>,
-    ring: &Arc<PerCoreRing>,
-    cmd: RpcCommand,
-) -> bool {
+fn process_command(handle: &Arc<RpcReactorHandle>, cmd: RpcCommand) -> bool {
     match cmd {
         RpcCommand::Shutdown => {
             debug!(
@@ -260,20 +248,15 @@ fn process_command(
                         "rpc reactor handled noop task"
                     );
                 }
-                RpcTask::ZeroCopySend(task) => {
-                    handle_zero_copy_send(handle, ring, task);
-                }
+                RpcTask::ZeroCopySend(task) => handle_zero_copy_send(handle, task),
+                RpcTask::Recv(task) => handle_recv(handle, task),
             }
             true
         }
     }
 }
 
-fn handle_zero_copy_send(
-    handle: &Arc<RpcReactorHandle>,
-    _ring: &Arc<PerCoreRing>,
-    task: ZeroCopySendTask,
-) {
+fn handle_zero_copy_send(handle: &Arc<RpcReactorHandle>, task: ZeroCopySendTask) {
     let ZeroCopySendTask {
         fd,
         header,
@@ -283,17 +266,14 @@ fn handle_zero_copy_send(
 
     let mut total_written = 0usize;
     let result = handle
-        .zero_copy
+        .io
         .send_slice(fd, header.as_ref())
         .and_then(|written| {
             total_written += written;
             if body.is_empty() {
                 Ok(0)
             } else {
-                handle
-                    .zero_copy
-                    .send_slice(fd, body.as_ref())
-                    .map(|written| written as i64)
+                handle.io.send_slice(fd, body.as_ref()).map(|w| w as i64)
             }
         })
         .map(|additional| {
@@ -308,5 +288,221 @@ fn handle_zero_copy_send(
             worker_index = handle.worker_index,
             fd, "zero-copy send completion receiver dropped"
         );
+    }
+}
+
+fn handle_recv(handle: &Arc<RpcReactorHandle>, task: RecvTask) {
+    let RecvTask {
+        fd,
+        len,
+        completion,
+    } = task;
+    let mut buffer = BytesMut::with_capacity(len.max(RECV_BUFFER_SIZE));
+    match handle.io.recv_chunk(fd, buffer.capacity()) {
+        Ok(bytes) => {
+            buffer.extend_from_slice(&bytes);
+            let bytes = buffer.freeze();
+            let _ = completion.send(Ok(bytes));
+        }
+        Err(err) => {
+            let _ = completion.send(Err(err));
+        }
+    }
+}
+
+struct ReactorIo {
+    ring: Arc<PerCoreRing>,
+    zerocopy_configured: AtomicBool,
+}
+
+impl ReactorIo {
+    fn new(ring: Arc<PerCoreRing>) -> Self {
+        Self {
+            ring,
+            zerocopy_configured: AtomicBool::new(false),
+        }
+    }
+
+    fn send_slice(&self, fd: RawFd, mut buf: &[u8]) -> io::Result<usize> {
+        let mut total = 0usize;
+        while !buf.is_empty() {
+            let bytes_written = if buf.len() >= 16 * 1024 {
+                self.send_zero_copy(fd, buf)?
+            } else {
+                self.send_write(fd, buf)?
+            };
+
+            if bytes_written == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "io_uring send returned zero bytes",
+                ));
+            }
+
+            total += bytes_written;
+            buf = &buf[bytes_written..];
+        }
+        Ok(total)
+    }
+
+    fn send_write(&self, fd: RawFd, buf: &[u8]) -> io::Result<usize> {
+        self.ring.with_lock(|ring| {
+            let entry = io_uring::opcode::Write::new(
+                io_uring::types::Fd(fd),
+                buf.as_ptr(),
+                buf.len() as u32,
+            )
+            .build();
+            unsafe {
+                ring.submission()
+                    .push(&entry)
+                    .map_err(|_| io::Error::other("submission queue full"))?;
+            }
+            ring.submit_and_wait(1)?;
+            let mut cq = ring.completion();
+            let cqe = cq
+                .next()
+                .ok_or_else(|| io::Error::other("missing completion"))?;
+            let res = cqe.result();
+            if res < 0 {
+                Err(io::Error::from_raw_os_error(-res))
+            } else {
+                Ok(res as usize)
+            }
+        })
+    }
+
+    fn send_zero_copy(&self, fd: RawFd, buf: &[u8]) -> io::Result<usize> {
+        self.ensure_zero_copy(fd)?;
+        self.ring.with_lock(|ring| {
+            let entry = io_uring::opcode::SendZc::new(
+                io_uring::types::Fd(fd),
+                buf.as_ptr(),
+                buf.len() as u32,
+            )
+            .flags(libc::MSG_ZEROCOPY | libc::MSG_NOSIGNAL)
+            .build();
+            unsafe {
+                ring.submission()
+                    .push(&entry)
+                    .map_err(|_| io::Error::other("submission queue full"))?;
+            }
+            ring.submit_and_wait(1)?;
+
+            let mut cq = ring.completion();
+            let mut result: Option<usize> = None;
+            while let Some(cqe) = cq.next() {
+                if io_uring::cqueue::notif(cqe.flags()) {
+                    continue;
+                }
+                if result.is_none() {
+                    let res = cqe.result();
+                    if res < 0 {
+                        return Err(io::Error::from_raw_os_error(-res));
+                    }
+                    result = Some(res as usize);
+                }
+                if !io_uring::cqueue::more(cqe.flags()) {
+                    break;
+                }
+            }
+
+            result.ok_or_else(|| io::Error::other("missing zero-copy completion"))
+        })
+    }
+
+    fn recv_chunk(&self, fd: RawFd, len: usize) -> io::Result<Vec<u8>> {
+        let mut buffer = vec![0u8; len];
+        let read = self.ring.with_lock(|ring| {
+            let entry = io_uring::opcode::Recv::new(
+                io_uring::types::Fd(fd),
+                buffer.as_mut_ptr(),
+                len as u32,
+            )
+            .flags(libc::MSG_NOSIGNAL)
+            .build();
+            unsafe {
+                ring.submission()
+                    .push(&entry)
+                    .map_err(|_| io::Error::other("submission queue full"))?;
+            }
+            ring.submit_and_wait(1)?;
+            let mut cq = ring.completion();
+            let cqe = cq
+                .next()
+                .ok_or_else(|| io::Error::other("missing completion"))?;
+            Ok::<_, io::Error>(cqe.result())
+        })?;
+
+        if read < 0 {
+            Err(io::Error::from_raw_os_error(-read))
+        } else {
+            let read = read as usize;
+            buffer.truncate(read);
+            Ok(buffer)
+        }
+    }
+
+    fn ensure_zero_copy(&self, fd: RawFd) -> io::Result<()> {
+        if self
+            .zerocopy_configured
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            let enable: libc::c_int = 1;
+            let ret = unsafe {
+                libc::setsockopt(
+                    fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_ZEROCOPY,
+                    &enable as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&enable) as libc::socklen_t,
+                )
+            };
+            if ret == -1 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct ReactorTransport {
+    handle: Arc<RpcReactorHandle>,
+}
+
+impl ReactorTransport {
+    pub fn new(handle: Arc<RpcReactorHandle>) -> Self {
+        Self { handle }
+    }
+}
+
+#[async_trait]
+impl RpcTransport for ReactorTransport {
+    async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<usize> {
+        let rx = self.handle.submit_zero_copy_send(fd, header, body);
+        match rx.await {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "rpc reactor send cancelled",
+            )),
+        }
+    }
+
+    async fn recv(&self, fd: RawFd, len: usize) -> io::Result<Bytes> {
+        let rx = self.handle.submit_recv(fd, len);
+        match rx.await {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "rpc reactor recv cancelled",
+            )),
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "reactor_io_uring"
     }
 }

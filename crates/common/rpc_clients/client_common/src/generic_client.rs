@@ -244,6 +244,7 @@ where
             let receiver_requests = requests.clone();
             let is_closed = is_closed.clone();
             let io_uring_driver = io_uring_driver.clone();
+            let transport = transport.clone();
             tasks.spawn(async move {
                 if let Err(e) = Self::receive_task(
                     reader,
@@ -251,6 +252,7 @@ where
                     socket_fd,
                     rpc_type,
                     io_uring_driver,
+                    transport,
                 )
                 .await
                 {
@@ -335,21 +337,68 @@ where
         socket_fd: RawFd,
         rpc_type: &'static str,
         io_uring_driver: Option<Arc<dyn IoUringDriver>>,
+        transport: Option<Arc<dyn RpcTransport>>,
     ) -> Result<(), RpcError> {
-        if let Some(driver) = io_uring_driver {
+        if let Some(tp) = transport {
             drop(receiver);
-            Self::receive_task_uring(driver, socket_fd, requests, rpc_type).await?;
+            Self::receive_task_transport(tp, socket_fd, &requests, rpc_type).await
+        } else if let Some(driver) = io_uring_driver {
+            drop(receiver);
+            Self::receive_task_uring(driver, socket_fd, &requests, rpc_type).await?;
             warn!(%rpc_type, %socket_fd, "connection closed, receive message task quit");
             Ok(())
         } else {
-            Self::receive_task_tokio(receiver, requests, socket_fd, rpc_type).await
+            Self::receive_task_tokio(receiver, &requests, socket_fd, rpc_type).await
         }
+    }
+
+    async fn receive_task_transport(
+        transport: Arc<dyn RpcTransport>,
+        socket_fd: RawFd,
+        requests: &RequestMap<Header>,
+        rpc_type: &'static str,
+    ) -> Result<(), RpcError> {
+        const TRANSPORT_CHUNK_SIZE: usize = 64 * 1024;
+        let mut decoder = Codec::default();
+        let mut buffer = BytesMut::with_capacity(128 * 1024);
+
+        loop {
+            let chunk = transport
+                .recv(socket_fd, TRANSPORT_CHUNK_SIZE)
+                .await
+                .map_err(RpcError::IoError)?;
+
+            if chunk.is_empty() {
+                if let Some(frame) = decoder
+                    .decode_eof(&mut buffer)
+                    .map_err(|e| RpcError::DecodeError(e.to_string()))?
+                {
+                    Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
+                }
+                break;
+            }
+
+            buffer.extend_from_slice(&chunk);
+
+            loop {
+                match decoder.decode(&mut buffer) {
+                    Ok(Some(frame)) => {
+                        Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
+                    }
+                    Ok(None) => break,
+                    Err(e) => return Err(RpcError::DecodeError(e.to_string())),
+                }
+            }
+        }
+
+        warn!(%rpc_type, %socket_fd, "connection closed, receive message task quit");
+        Ok(())
     }
 
     async fn receive_task_uring(
         driver: Arc<dyn IoUringDriver>,
         socket_fd: RawFd,
-        requests: RequestMap<Header>,
+        requests: &RequestMap<Header>,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
         const RECV_CHUNK_SIZE: usize = 64 * 1024;
@@ -390,7 +439,7 @@ where
 
     async fn receive_task_tokio(
         receiver: OwnedReadHalf,
-        requests: RequestMap<Header>,
+        requests: &RequestMap<Header>,
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
