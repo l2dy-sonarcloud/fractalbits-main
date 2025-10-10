@@ -5,11 +5,8 @@ mod api_key_routes;
 mod cache_mgmt;
 
 use actix_web::{App, HttpServer, middleware::Logger, web};
-use api_server::runtime::{
-    listeners,
-    per_core::{PerCoreBuilder, PerCoreConfig},
-};
-use api_server::uring::config::UringConfig;
+use api_server::runtime::{listeners, per_core::PerCoreBuilder};
+use api_server::uring::{config::UringConfig, ring::PerCoreRing};
 use api_server::{AppState, Config, handler::any_handler};
 use clap::Parser;
 use tracing::{error, info};
@@ -116,24 +113,31 @@ async fn main() {
     let config = Arc::new(config);
     let port = config.port;
     let mgmt_port = config.mgmt_port;
-    let worker_count = num_cpus::get();
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
     let uring_config = UringConfig::default();
 
-    let http_app_states = Arc::new(build_per_core_app_states(worker_count, config.clone()).await);
-    let mgmt_app_states = Arc::new(build_per_core_app_states(worker_count, config.clone()).await);
+    let per_core_rings: Arc<Vec<Arc<PerCoreRing>>> = Arc::new(
+        (0..worker_count)
+            .map(|idx| {
+                Arc::new(
+                    PerCoreRing::new(idx, &uring_config)
+                        .expect("failed to create per-core io_uring ring"),
+                )
+            })
+            .collect(),
+    );
 
-    let http_per_core = PerCoreBuilder::new(
-        worker_count,
-        PerCoreConfig {
-            uring: uring_config.clone(),
-        },
+    let http_app_states = Arc::new(
+        build_per_core_app_states(worker_count, config.clone(), per_core_rings.clone()).await,
     );
-    let mgmt_per_core = PerCoreBuilder::new(
-        worker_count,
-        PerCoreConfig {
-            uring: uring_config.clone(),
-        },
+    let mgmt_app_states = Arc::new(
+        build_per_core_app_states(worker_count, config.clone(), per_core_rings.clone()).await,
     );
+
+    let http_per_core = PerCoreBuilder::new(per_core_rings.clone());
+    let mgmt_per_core = PerCoreBuilder::new(per_core_rings.clone());
 
     let http_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
     let mgmt_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), mgmt_port);
@@ -254,10 +258,18 @@ async fn main() {
     }
 }
 
-async fn build_per_core_app_states(worker_count: usize, config: Arc<Config>) -> Vec<Arc<AppState>> {
+async fn build_per_core_app_states(
+    worker_count: usize,
+    config: Arc<Config>,
+    rings: Arc<Vec<Arc<PerCoreRing>>>,
+) -> Vec<Arc<AppState>> {
     let mut states = Vec::with_capacity(worker_count);
-    for _ in 0..worker_count {
-        let state = AppState::new_per_core(config.clone()).await;
+    for idx in 0..worker_count {
+        let ring = rings
+            .get(idx)
+            .expect("missing per-core ring for app state")
+            .clone();
+        let state = AppState::new_per_core(config.clone(), ring).await;
         states.push(Arc::new(state));
     }
     states

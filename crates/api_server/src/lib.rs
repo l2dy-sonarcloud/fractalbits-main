@@ -38,13 +38,14 @@ pub struct AppState {
     blob_client: Arc<BlobClient>,
     blob_deletion: Sender<BlobDeletionRequest>,
     pub data_blob_tracker: Arc<DataBlobTracker>,
+    pub per_core_ring: Arc<PerCoreRing>,
 }
 
 impl AppState {
     const PER_CORE_RPC_POOL_SIZE: u16 = 1;
     const PER_CORE_CACHE_CAPACITY: u64 = 10_000;
 
-    pub async fn new_per_core(config: Arc<Config>) -> Self {
+    pub async fn new_per_core(config: Arc<Config>, per_core_ring: Arc<PerCoreRing>) -> Self {
         let rpc_clients_rss =
             Self::new_rpc_clients_pool_rss(&config.rss_addr, Self::PER_CORE_RPC_POOL_SIZE).await;
         let rpc_clients_nss =
@@ -86,6 +87,7 @@ impl AppState {
             cache,
             az_status_cache,
             data_blob_tracker,
+            per_core_ring,
         }
     }
 
