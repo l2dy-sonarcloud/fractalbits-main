@@ -1,8 +1,5 @@
 pub mod data_vg_proxy;
-pub mod metadata_vg_proxy;
-
 pub use data_vg_proxy::DataVgProxy;
-pub use metadata_vg_proxy::MetadataVgProxy;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataVgError {
