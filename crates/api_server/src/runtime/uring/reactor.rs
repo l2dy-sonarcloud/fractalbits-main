@@ -1,6 +1,7 @@
 use super::ring::PerCoreRing;
 use async_trait::async_trait;
 use bytes::Bytes;
+use core_affinity;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use libc;
 use metrics::gauge;
@@ -190,10 +191,28 @@ pub fn spawn_rpc_reactor(worker_index: usize, ring: Arc<PerCoreRing>) -> Arc<Rpc
 }
 
 fn reactor_thread(handle: Arc<RpcReactorHandle>, rx: Receiver<RpcCommand>) {
-    info!(
-        worker_index = handle.worker_index,
-        "rpc reactor thread started"
-    );
+    let worker_index = handle.worker_index;
+
+    if let Some(core_ids) = core_affinity::get_core_ids() {
+        if !core_ids.is_empty() {
+            let core = core_ids[worker_index % core_ids.len()];
+            if core_affinity::set_for_current(core) {
+                info!(
+                    worker_index,
+                    core_id = core.id,
+                    "rpc reactor thread pinned to core"
+                );
+            } else {
+                warn!(
+                    worker_index,
+                    core_id = core.id,
+                    "failed to pin rpc reactor thread to core"
+                );
+            }
+        }
+    } else {
+        info!(worker_index, "rpc reactor thread started (no core pinning)");
+    }
 
     let mut running = true;
     let mut metrics = ReactorMetrics::default();
