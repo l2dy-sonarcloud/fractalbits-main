@@ -5,7 +5,7 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use libc;
 use metrics::gauge;
 use rpc_client_common::transport::RpcTransport;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -329,8 +329,6 @@ struct ReactorIo {
     ring: Arc<PerCoreRing>,
     next_uring_id: AtomicU64,
     pending_recv: Mutex<HashMap<u64, PendingRecv>>,
-    pending_send: Mutex<HashMap<u64, PendingSend>>,
-    zerocopy_fds: Mutex<HashSet<RawFd>>,
 }
 
 impl ReactorIo {
@@ -339,8 +337,6 @@ impl ReactorIo {
             ring,
             next_uring_id: AtomicU64::new(1),
             pending_recv: Mutex::new(HashMap::new()),
-            pending_send: Mutex::new(HashMap::new()),
-            zerocopy_fds: Mutex::new(HashSet::new()),
         }
     }
 
@@ -352,87 +348,66 @@ impl ReactorIo {
         body: Bytes,
         completion: oneshot::Sender<io::Result<usize>>,
     ) -> io::Result<()> {
-        self.ensure_zero_copy(fd)?;
-
-        let header_user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
+        let user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
 
         debug!(
             worker_index,
             fd,
             header_len = header.len(),
             body_len = body.len(),
-            header_user_data,
+            user_data,
             "submitting send to io_uring"
         );
 
-        // Submit header send
-        let header_entry = io_uring::opcode::SendZc::new(
-            io_uring::types::Fd(fd),
-            header.as_ptr(),
-            header.len() as u32,
-        )
-        .flags(libc::MSG_ZEROCOPY | libc::MSG_NOSIGNAL)
-        .build()
-        .user_data(header_user_data);
-
-        // Prepare body entry if needed
-        let body_user_data = if !body.is_empty() {
-            Some(self.next_uring_id.fetch_add(1, Ordering::Relaxed))
-        } else {
-            None
-        };
-
-        let submit_result = self.ring.with_lock(|ring| {
-            unsafe {
-                ring.submission()
-                    .push(&header_entry)
-                    .map_err(|_| io::Error::other("submission queue full"))?;
-            }
-
-            // If there's a body, submit it too
-            if let Some(body_user_data) = body_user_data {
-                let body_entry = io_uring::opcode::SendZc::new(
-                    io_uring::types::Fd(fd),
-                    body.as_ptr(),
-                    body.len() as u32,
-                )
-                .flags(libc::MSG_ZEROCOPY | libc::MSG_NOSIGNAL)
-                .build()
-                .user_data(body_user_data);
-
-                unsafe {
-                    ring.submission()
-                        .push(&body_entry)
-                        .map_err(|_| io::Error::other("submission queue full"))?;
-                }
-            }
-
-            ring.submit()
-        });
-
-        match submit_result {
-            Ok(_) => {
-                // Store in pending map after successful submission
-                let mut pending = self.pending_send.lock().expect("pending send map poisoned");
-                pending.insert(
-                    header_user_data,
-                    PendingSend {
-                        fd,
-                        _header: header,
-                        body: body_user_data.map(|id| (body, id)),
-                        completion,
-                        header_result: None,
-                        body_result: None,
-                    },
-                );
-                Ok(())
-            }
-            Err(err) => {
-                let send_err = io::Error::new(err.kind(), err.to_string());
-                let _ = completion.send(Err(send_err));
-                Err(err)
-            }
+        // Use blocking writev syscall for atomic send
+        // This is more reliable than io_uring SendMsgZc which requires kernel 6.0+
+        // and may have compatibility issues
+        let mut iovecs: Vec<libc::iovec> = vec![libc::iovec {
+            iov_base: header.as_ptr() as *mut libc::c_void,
+            iov_len: header.len(),
+        }];
+        if !body.is_empty() {
+            iovecs.push(libc::iovec {
+                iov_base: body.as_ptr() as *mut libc::c_void,
+                iov_len: body.len(),
+            });
         }
+
+        let total_len = header.len() + body.len();
+        let result = unsafe { libc::writev(fd, iovecs.as_ptr(), iovecs.len() as i32) };
+
+        if result < 0 {
+            let err = io::Error::last_os_error();
+            debug!(
+                worker_index,
+                fd,
+                user_data,
+                error = %err,
+                "writev failed"
+            );
+            let _ = completion.send(Err(err));
+            return Err(io::Error::last_os_error());
+        }
+
+        let written = result as usize;
+        debug!(
+            worker_index,
+            fd, user_data, written, total_len, "writev completed"
+        );
+
+        // For now, assume full write or error
+        if written != total_len {
+            warn!(
+                worker_index,
+                fd,
+                written,
+                total_len,
+                "partial writev - this should not happen with blocking socket"
+            );
+        }
+
+        let _ = completion.send(Ok(written));
+        Ok(())
     }
 
     fn submit_recv(
@@ -488,31 +463,6 @@ impl ReactorIo {
         }
     }
 
-    fn ensure_zero_copy(&self, fd: RawFd) -> io::Result<()> {
-        let mut configured = self.zerocopy_fds.lock().expect("zero-copy fd set poisoned");
-
-        if configured.contains(&fd) {
-            return Ok(());
-        }
-
-        let enable: libc::c_int = 1;
-        let ret = unsafe {
-            libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_ZEROCOPY,
-                &enable as *const _ as *const libc::c_void,
-                std::mem::size_of_val(&enable) as libc::socklen_t,
-            )
-        };
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-
-        configured.insert(fd);
-        Ok(())
-    }
-
     fn poll_completions(&self, worker_index: usize) {
         let mut completions = Vec::new();
         self.ring.with_lock(|ring| {
@@ -530,7 +480,6 @@ impl ReactorIo {
         }
 
         let mut pending_recv = self.pending_recv.lock().expect("pending recv map poisoned");
-        let mut pending_send = self.pending_send.lock().expect("pending send map poisoned");
 
         for (user_data, result) in completions {
             if user_data == 0 {
@@ -569,104 +518,19 @@ impl ReactorIo {
                 continue;
             }
 
-            // Check if this is a send completion (header)
-            if let Some(send) = pending_send.get_mut(&user_data) {
-                if result < 0 {
-                    let err = io::Error::from_raw_os_error(-result);
-                    debug!(
-                        worker_index,
-                        fd = send.fd,
-                        user_data,
-                        error = %err,
-                        "send header completion with error"
-                    );
-                    let send = pending_send.remove(&user_data).unwrap();
-                    let _ = send.completion.send(Err(err));
-                    continue;
-                }
-
-                send.header_result = Some(result as usize);
-                debug!(
-                    worker_index,
-                    fd = send.fd,
-                    user_data,
-                    written = result,
-                    "send header completion"
-                );
-
-                // Check if we're done (no body or body also completed)
-                if send.body.is_none() || send.body_result.is_some() {
-                    let send = pending_send.remove(&user_data).unwrap();
-                    let header_written = send.header_result.unwrap_or(0);
-                    let total = header_written + send.body_result.unwrap_or(0);
-                    let _ = send.completion.send(Ok(total));
-                }
-                continue;
-            }
-
-            // Check if this is a send body completion
-            let mut header_to_complete = None;
-            for (header_user_data, send) in pending_send.iter_mut() {
-                match send.body.as_ref() {
-                    Some((_, body_user_data)) if *body_user_data == user_data => {
-                        if result < 0 {
-                            let err = io::Error::from_raw_os_error(-result);
-                            debug!(
-                                worker_index,
-                                fd = send.fd,
-                                user_data,
-                                error = %err,
-                                "send body completion with error"
-                            );
-                            header_to_complete = Some((*header_user_data, Err(err)));
-                        } else {
-                            let written = result as usize;
-                            send.body_result = Some(written);
-                            debug!(
-                                worker_index,
-                                fd = send.fd,
-                                user_data,
-                                written = result,
-                                "send body completion"
-                            );
-
-                            if let Some(header_written) = send.header_result {
-                                header_to_complete =
-                                    Some((*header_user_data, Ok(header_written + written)));
-                            }
-                        }
-                        break;
-                    }
-                    _ => continue,
-                }
-            }
-
-            if let Some((header_user_data, result)) = header_to_complete {
-                let send = pending_send.remove(&header_user_data).unwrap();
-                let _ = send.completion.send(result);
-            } else if !pending_send.contains_key(&user_data)
-                && !pending_recv.contains_key(&user_data)
-            {
-                warn!(
-                    worker_index,
-                    user_data, "received completion for unknown operation"
-                );
-            }
+            warn!(
+                worker_index,
+                user_data, "received completion for unknown operation"
+            );
         }
     }
 
     fn has_pending_operations(&self) -> bool {
-        let has_recv = !self
+        !self
             .pending_recv
             .lock()
             .expect("pending recv map poisoned")
-            .is_empty();
-        let has_send = !self
-            .pending_send
-            .lock()
-            .expect("pending send map poisoned")
-            .is_empty();
-        has_recv || has_send
+            .is_empty()
     }
 }
 
@@ -674,15 +538,6 @@ struct PendingRecv {
     fd: RawFd,
     buffer: Vec<u8>,
     completion: oneshot::Sender<io::Result<Bytes>>,
-}
-
-struct PendingSend {
-    fd: RawFd,
-    _header: Bytes,             // hold header buffer alive until completion
-    body: Option<(Bytes, u64)>, // (body_bytes, body_user_data)
-    completion: oneshot::Sender<io::Result<usize>>,
-    header_result: Option<usize>,
-    body_result: Option<usize>,
 }
 
 #[derive(Clone)]

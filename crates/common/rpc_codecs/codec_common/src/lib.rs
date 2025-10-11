@@ -47,6 +47,12 @@ impl<H: MessageHeaderTrait> Decoder for MessageCodec<H> {
         }
 
         let size = H::get_size(src);
+        if size < header_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Frame size {size} is smaller than header size {header_size}"),
+            ));
+        }
         if size > MAX {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
