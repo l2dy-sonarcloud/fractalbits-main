@@ -174,7 +174,9 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     }
 
     // Build (extract) warp binary for each architecture
-    build_warp_binaries()?;
+    if deploy_target == DeployTarget::All {
+        build_warp_binaries()?;
+    }
 
     info!("Deploy build is done");
 

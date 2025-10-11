@@ -680,7 +680,7 @@ net.core.default_qdisc = fq
         mkdir -p $ETC_PATH;
         echo $content > $ETC_PATH/$NETWORK_TUNING_SYS_CONFIG;
         ln -nsf $ETC_PATH/$NETWORK_TUNING_SYS_CONFIG /etc/sysctl.d/;
-        sysctl --system --quiet;
+        sysctl --system --quiet &> /dev/null;
 
     }?;
     Ok(())

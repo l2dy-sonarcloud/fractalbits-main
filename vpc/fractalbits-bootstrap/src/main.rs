@@ -147,6 +147,26 @@ enum Command {
 
     #[clap(about = "Run on bench_client instance to benchmark fractalbits service(s)")]
     BenchClient,
+
+    #[clap(about = "Run tool related commands")]
+    #[command(subcommand)]
+    Tools(ToolKind),
+}
+
+#[derive(Parser, Clone)]
+enum ToolKind {
+    GenUuids {
+        #[clap(short = 'n', long_help = "Number of uuids", default_value = "5000000")]
+        num: usize,
+
+        #[clap(
+            short = 'f',
+            long_help = "File output",
+            default_value = "/data/uuids.data"
+        )]
+        file: String,
+    },
+    DumpVgConfig,
 }
 
 #[cmd_lib::main]
@@ -183,7 +203,16 @@ fn main() -> CmdResult {
     let opts = Opts::parse();
     let for_bench = opts.common.for_bench;
     let command = opts.command.as_ref().to_owned();
-    common_setup()?;
+    if matches!(
+        opts.command,
+        Command::ApiServer { .. }
+            | Command::GuiServer { .. }
+            | Command::BssServer { .. }
+            | Command::NssServer { .. }
+            | Command::RootServer { .. }
+    ) {
+        common_setup()?;
+    }
     match opts.command {
         Command::ApiServer {
             bucket,
@@ -251,6 +280,14 @@ fn main() -> CmdResult {
             bench_client_num,
         } => bench_server::bootstrap(api_server_endpoint, bench_client_num)?,
         Command::BenchClient => bench_client::bootstrap()?,
+        Command::Tools(tool_kind) => match tool_kind {
+            ToolKind::GenUuids { num, file } => {
+                xtask_tools::gen_uuids(num, &file)?;
+            }
+            ToolKind::DumpVgConfig => {
+                xtask_tools::dump_vg_config(false)?;
+            }
+        },
     }
 
     run_cmd! {

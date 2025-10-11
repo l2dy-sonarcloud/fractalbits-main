@@ -326,7 +326,7 @@ pub enum GitCommand {
 #[derive(Parser, Clone)]
 enum ToolKind {
     GenUuids {
-        #[clap(short = 'n', long_help = "Number of uuids", default_value = "5000000")]
+        #[clap(short = 'n', long_help = "Number of uuids", default_value = "1000000")]
         num: usize,
 
         #[clap(short = 'f', long_help = "File output", default_value = "uuids.data")]

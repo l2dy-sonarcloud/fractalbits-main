@@ -34,8 +34,6 @@ pub fn bootstrap(
     if for_bench {
         // Try to download tools for micro-benchmarking
         download_binaries(&["rewrk_rpc", "test_art"])?;
-        // Testing data for bss-rpc
-        xtask_tools::gen_uuids(5_000_000, "/data/uuids.data")?;
     }
 
     // setup_cloudwatch_agent()?;

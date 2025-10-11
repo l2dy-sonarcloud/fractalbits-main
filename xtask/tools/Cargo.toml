@@ -8,3 +8,4 @@ cmd_lib.workspace = true
 num_cpus.workspace = true
 rayon.workspace = true
 uuid.workspace = true
+serde_json.workspace = true
