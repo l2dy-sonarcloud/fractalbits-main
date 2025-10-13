@@ -36,6 +36,8 @@ pub fn bootstrap(
         download_binaries(&["rewrk_rpc", "test_art"])?;
     }
 
+    configure_ena_interrupts()?;
+
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("api_server", true)?;
     create_ddb_register_and_deregister_service("api-server")?;
@@ -162,5 +164,70 @@ backoff_multiplier = 1.8
         mkdir -p $ETC_PATH;
         echo $config_content > $ETC_PATH/$API_SERVER_CONFIG
     }?;
+    Ok(())
+}
+
+fn configure_ena_interrupts() -> CmdResult {
+    info!("Configuring ENA interrupt affinity");
+
+    run_cmd! {
+        info "Disabled irqbalance";
+        systemctl disable --now irqbalance
+    }?;
+
+    let iface =
+        run_fun!(grep -o r"ens[0-9]*-Tx-Rx" /proc/interrupts | head -1 | sed r"s/-Tx-Rx//")?;
+    info!("Detected ENA interface: {}", iface);
+
+    let num_queues = run_fun!(grep "$iface-Tx-Rx-" /proc/interrupts | wc -l)?
+        .parse()
+        .unwrap_or_else(|_| panic!("failed to get queues number of ENA {iface}"));
+    info!("Found {} queues", num_queues);
+
+    let num_cpus = num_cpus()?;
+    info!("System has {} CPUs", num_cpus);
+
+    for queue in 0..num_queues {
+        let pattern = format!("{}-Tx-Rx-{}", iface, queue);
+        let irq = run_fun!(grep $pattern /proc/interrupts | awk -F: r"{print $1}" | tr -d " ")?;
+
+        if !irq.is_empty() {
+            let cpu = (queue % (num_cpus - 1)) + 1;
+            let mask = format!("{:x}", 1u64 << cpu);
+
+            run_cmd! {
+                echo $mask > /proc/irq/$irq/smp_affinity;
+                info "IRQ ${irq} (${iface}-Tx-Rx-${queue}) -> CPU ${cpu} (mask: 0x${mask})";
+            }?;
+        }
+    }
+
+    let mgmt_irq = run_fun! {
+        grep -E "ena-mgmnt|${iface}-mgmnt" /proc/interrupts
+            | awk -F: r"{print $1}"
+            | tr -d " "
+            | head -1
+    }?;
+    if !mgmt_irq.is_empty() {
+        run_cmd! {
+            echo 1 > /proc/irq/${mgmt_irq}/smp_affinity;
+            info "Management IRQ ${mgmt_irq} -> CPU 0";
+        }?;
+    }
+
+    info!("Done! Current ENA IRQ affinity:");
+    for queue in 0..num_queues {
+        let irq = run_fun! {
+            grep "${iface}-Tx-Rx-${queue}" /proc/interrupts
+                | awk -F: r"{print $1}"
+                | tr -d " "
+        }?;
+        if !irq.is_empty() {
+            let affinity_path = format!("/proc/irq/{}/smp_affinity", irq);
+            let affinity = run_fun!(cat $affinity_path)?;
+            info!("Queue {queue} (IRQ {irq}): affinity mask = 0x{affinity}");
+        }
+    }
+
     Ok(())
 }

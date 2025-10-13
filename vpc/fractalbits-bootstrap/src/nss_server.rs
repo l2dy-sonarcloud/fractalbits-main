@@ -80,11 +80,7 @@ fn create_nss_config(volume_dev: &str) -> CmdResult {
     // Calculate art_journal_segment_size based on EBS volume size
     let art_journal_segment_size = calculate_art_journal_segment_size(volume_dev)?;
 
-    let num_cores_str = run_fun!(nproc)?;
-    let num_cores = num_cores_str
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| Error::other(format!("invalid num_cores: {num_cores_str}")))?;
+    let num_cores = num_cpus()?;
     let net_worker_thread_count = num_cores / 2;
     let art_thread_dataop_count = num_cores / 2;
     let art_thread_count = art_thread_dataop_count + 4;

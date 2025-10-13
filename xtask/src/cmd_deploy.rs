@@ -73,7 +73,10 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     }
 
     // Build fractalbits-bootstrap separately for each architecture without CPU flags
-    if deploy_target == DeployTarget::Bootstrap || deploy_target == DeployTarget::All {
+    if matches!(
+        deploy_target,
+        DeployTarget::Bootstrap | DeployTarget::Rust | DeployTarget::All
+    ) {
         let build_envs = cmd_build::get_build_envs();
         for arch in ["x86_64", "aarch64"] {
             let rust_target = format!("{arch}-unknown-linux-gnu");
@@ -94,7 +97,7 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     }
 
     // Build other Rust projects with CPU-specific optimizations
-    if deploy_target == DeployTarget::Rust || deploy_target == DeployTarget::All {
+    if matches!(deploy_target, DeployTarget::Rust | DeployTarget::All) {
         info!("Building Rust projects for all CPU targets");
         let build_envs = cmd_build::get_build_envs();
 
@@ -128,7 +131,7 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     }
 
     // Build Zig projects for all CPU targets
-    if (deploy_target == DeployTarget::Zig || deploy_target == DeployTarget::All)
+    if matches!(deploy_target, DeployTarget::Zig | DeployTarget::All)
         && Path::new(ZIG_REPO_PATH).exists()
     {
         info!("Building Zig projects for all CPU targets");
@@ -162,7 +165,7 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
     }
 
     // Build and copy UI
-    if (deploy_target == DeployTarget::Ui || deploy_target == DeployTarget::All)
+    if matches!(deploy_target, DeployTarget::Ui | DeployTarget::All)
         && Path::new(UI_REPO_PATH).exists()
     {
         let region = run_fun!(aws configure list | grep region | awk r"{print $2}")?;

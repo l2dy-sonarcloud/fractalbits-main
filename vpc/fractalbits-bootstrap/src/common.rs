@@ -1,4 +1,5 @@
 use cmd_lib::*;
+use std::io::Error;
 use std::time::{Duration, Instant};
 
 pub const BIN_PATH: &str = "/opt/fractalbits/bin/";
@@ -684,4 +685,13 @@ net.core.default_qdisc = fq
 
     }?;
     Ok(())
+}
+
+pub fn num_cpus() -> Result<u64, Error> {
+    let num_cpus_str = run_fun!(nproc)?;
+    let num_cpus = num_cpus_str
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| Error::other(format!("invalid num_cores: {num_cpus_str}")))?;
+    Ok(num_cpus)
 }
