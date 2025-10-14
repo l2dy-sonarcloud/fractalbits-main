@@ -59,12 +59,22 @@ const RUST_BINS: &[&str] = &[
 
 const ZIG_BINS: &[&str] = &["nss_server", "bss_server", "test_art"];
 
-pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
+pub fn build(
+    deploy_target: DeployTarget,
+    release_mode: bool,
+    zig_extra_build: Vec<String>,
+) -> CmdResult {
     let (zig_build_opt, rust_build_opt, build_dir) = if release_mode {
         ("--release=safe", "--release", "release")
     } else {
         ("", "", "debug")
     };
+
+    // Format Zig extra build options as -Dkey=value
+    let zig_extra_opts: &Vec<String> = &zig_extra_build
+        .iter()
+        .map(|opt| format!("-D{}", opt))
+        .collect();
 
     // Create deploy directories for all CPU targets
     for target in CPU_TARGETS {
@@ -151,7 +161,7 @@ pub fn build(deploy_target: DeployTarget, release_mode: bool) -> CmdResult {
                 cd $ZIG_REPO_PATH;
                 $[build_envs] zig build
                     -p ../$zig_out_dir
-                    -Dtarget=$zig_target -Dcpu=$zig_cpu $zig_build_opt 2>&1;
+                    -Dtarget=$zig_target -Dcpu=$zig_cpu $zig_build_opt $[zig_extra_opts] 2>&1;
             }?;
 
             // Copy Zig binaries to deploy directory

@@ -133,6 +133,13 @@ pub enum DeployCommand {
 
         #[clap(long, action=ArgAction::Set, default_value = "true", num_args = 0..=1)]
         release: bool,
+
+        #[clap(
+            long,
+            value_delimiter = ',',
+            long_help = "Zig extra build options in format: key=value,key2=value2"
+        )]
+        zig_extra_build: Vec<String>,
     },
 
     #[clap(about = "Upload prebuilt binaries to s3 builds bucket")]
@@ -460,7 +467,11 @@ async fn main() -> CmdResult {
         },
         Cmd::Tools(tool_kind) => cmd_tool::run_cmd_tool(tool_kind)?,
         Cmd::Deploy(deploy_cmd) => match deploy_cmd {
-            DeployCommand::Build { target, release } => cmd_deploy::build(target, release)?,
+            DeployCommand::Build {
+                target,
+                release,
+                zig_extra_build,
+            } => cmd_deploy::build(target, release, zig_extra_build)?,
             DeployCommand::Upload => cmd_deploy::upload()?,
             DeployCommand::CreateVpc => cmd_deploy::create_vpc()?,
             DeployCommand::DestroyVpc => cmd_deploy::destroy_vpc()?,
