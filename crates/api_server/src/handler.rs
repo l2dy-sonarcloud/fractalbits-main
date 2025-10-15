@@ -7,7 +7,7 @@ mod head;
 mod post;
 mod put;
 
-use crate::{AppState, runtime::per_core::PerCoreContext};
+use crate::AppState;
 use actix_web::{
     HttpRequest, HttpResponse, ResponseError,
     web::{self, Payload},
@@ -31,7 +31,6 @@ use tracing::{debug, error, warn};
 
 pub struct BucketRequestContext {
     pub app: Arc<AppState>,
-    pub per_core: Arc<PerCoreContext>,
     pub request: HttpRequest,
     pub api_key: Versioned<ApiKey>,
     pub bucket_name: String,
@@ -41,7 +40,6 @@ pub struct BucketRequestContext {
 impl BucketRequestContext {
     pub fn new(
         app: Arc<AppState>,
-        per_core: Arc<PerCoreContext>,
         request: HttpRequest,
         api_key: Versioned<ApiKey>,
         bucket_name: String,
@@ -49,7 +47,6 @@ impl BucketRequestContext {
     ) -> Self {
         Self {
             app,
-            per_core,
             request,
             api_key,
             bucket_name,
@@ -64,7 +61,6 @@ impl BucketRequestContext {
 
 pub struct ObjectRequestContext {
     pub app: Arc<AppState>,
-    pub per_core: Arc<PerCoreContext>,
     pub request: HttpRequest,
     pub api_key: Option<Versioned<ApiKey>>,
     pub auth: Option<Authentication>,
@@ -78,7 +74,6 @@ impl ObjectRequestContext {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         app: Arc<AppState>,
-        per_core: Arc<PerCoreContext>,
         request: HttpRequest,
         api_key: Option<Versioned<ApiKey>>,
         auth: Option<Authentication>,
@@ -89,7 +84,6 @@ impl ObjectRequestContext {
     ) -> Self {
         Self {
             app,
-            per_core,
             request,
             api_key,
             auth,
@@ -164,16 +158,11 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
         .app_data::<web::Data<Arc<AppState>>>()
         .ok_or(S3Error::InternalError)?;
     let app = app_data.get_ref().clone();
-    let per_core_data = req
-        .app_data::<web::Data<Arc<PerCoreContext>>>()
-        .ok_or(S3Error::InternalError)?;
-    let per_core = per_core_data.get_ref().clone();
 
     let result = tokio::time::timeout(
         Duration::from_secs(app.config.http_request_timeout_seconds),
         any_handler_inner(
             app,
-            per_core,
             bucket.clone(),
             key.clone(),
             auth,
@@ -214,7 +203,6 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
 #[allow(clippy::too_many_arguments)]
 async fn any_handler_inner(
     app: Arc<AppState>,
-    per_core: Arc<PerCoreContext>,
     bucket: String,
     key: String,
     auth: Option<Authentication>,
@@ -250,20 +238,13 @@ async fn any_handler_inner(
 
     match endpoint {
         Endpoint::Bucket(bucket_endpoint) => {
-            let bucket_ctx = BucketRequestContext::new(
-                app,
-                per_core.clone(),
-                request.clone(),
-                api_key,
-                bucket,
-                payload,
-            );
+            let bucket_ctx =
+                BucketRequestContext::new(app, request.clone(), api_key, bucket, payload);
             bucket_handler(bucket_ctx, bucket_endpoint).await
         }
         ref _object_endpoints => {
             let object_ctx = ObjectRequestContext::new(
                 app,
-                per_core,
                 request.clone(),
                 Some(api_key),
                 auth,

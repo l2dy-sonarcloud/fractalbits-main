@@ -1,14 +1,14 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use std::{fs::File, io::Read};
 
 mod api_key_routes;
 mod cache_mgmt;
 
 use actix_files::Files;
-use actix_web::{App, HttpServer, middleware::Logger, web};
-use api_server::runtime::{listeners, per_core::PerCoreBuilder};
+use actix_web::{App, HttpServer, middleware::Logger, rt::System, web};
 use api_server::{AppState, CacheCoordinator, Config, handler::any_handler};
 use clap::Parser;
 use data_types::Versioned;
@@ -16,6 +16,7 @@ use openssl::{
     pkey::{PKey, Private},
     ssl::{SslAcceptor, SslMethod},
 };
+use socket2::{Domain, Protocol, Socket, Type};
 use tracing::{error, info};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -42,8 +43,27 @@ fn load_private_key(key_path: &PathBuf) -> Result<PKey<Private>, Box<dyn std::er
     Ok(key)
 }
 
+fn make_reuseport_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
+    let domain = Domain::for_address(addr);
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+    socket.set_reuse_address(true)?;
+    socket.set_reuse_port(true)?;
+
+    socket.set_nodelay(true)?;
+    socket.set_recv_buffer_size(16 * 1024 * 1024)?;
+    socket.set_send_buffer_size(16 * 1024 * 1024)?;
+
+    socket.bind(&addr.into())?;
+    socket.listen(65536)?;
+
+    let listener: TcpListener = socket.into();
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> std::io::Result<()> {
     // AWS SDK suppression filter
     let third_party_filter = "tower_http=warn,hyper_util=warn,aws_smithy=warn,aws_sdk=warn,actix_web=warn,actix_server=warn,h2=warn";
     tracing_subscriber::registry()
@@ -163,10 +183,9 @@ async fn main() {
     {
         https_config.enabled = false;
     }
-    let web_root = gui_web_root.clone();
-    let worker_count = std::thread::available_parallelism()
-        .map(|n| n.get().saturating_sub(1).max(1))
-        .unwrap_or(1);
+
+    let core_ids = core_affinity::get_core_ids().expect("Failed to get core IDs");
+    let worker_count = core_ids.len();
 
     let cache_coordinator: Arc<CacheCoordinator<Versioned<String>>> =
         Arc::new(CacheCoordinator::new());
@@ -174,159 +193,147 @@ async fn main() {
 
     let http_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
     let mgmt_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), mgmt_port);
-
-    let http_listeners = listeners::bind_reuseport(http_addr, worker_count).unwrap_or_else(|e| {
-        error!("Failed to bind HTTP listeners on {http_addr}: {e}");
-        std::process::exit(1);
-    });
-    let mgmt_listeners = listeners::bind_reuseport(mgmt_addr, worker_count).unwrap_or_else(|e| {
-        error!("Failed to bind management listeners on {mgmt_addr}: {e}");
-        std::process::exit(1);
-    });
+    let https_addr = if https_config.enabled {
+        Some(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            https_config.port,
+        ))
+    } else {
+        None
+    };
 
     info!(
         port,
-        mgmt_port,
-        worker_count,
-        "Starting unified server with reuseport listeners (thread-per-core)"
+        mgmt_port, worker_count, "Starting server with per-core threads (SO_REUSEPORT)"
     );
 
-    // Pre-create one AppState per possible worker index
-    // Note: PerCoreBuilder may return worker_index up to core_count (not worker_count)
-    // due to how the factory is called multiple times per worker
-    let max_worker_index = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    let app_states: Vec<Arc<AppState>> = (0..max_worker_index)
-        .map(|_| {
-            Arc::new(AppState::new_per_core_sync(
-                config.clone(),
-                cache_coordinator.clone(),
-                az_status_coordinator.clone(),
-            ))
-        })
-        .collect();
-    let app_states = Arc::new(app_states);
+    let mut handles = Vec::with_capacity(worker_count);
 
-    let web_root_clone = web_root.clone();
-    let per_core_builder = PerCoreBuilder::new();
-    let mut server = HttpServer::new(move || {
-        let per_core_ctx = per_core_builder
-            .build_context()
-            .unwrap_or_else(|e| panic!("failed to init per-core context: {e}"));
-        per_core_builder.pin_current_thread(per_core_ctx.worker_index());
+    for (worker_idx, core_id) in core_ids.iter().enumerate() {
+        let http_listener = make_reuseport_listener(http_addr)?;
+        let mgmt_listener = make_reuseport_listener(mgmt_addr)?;
+        let https_listener = https_addr.map(make_reuseport_listener).transpose()?;
 
-        // Use the pre-created AppState for this worker
-        let worker_index = per_core_ctx.worker_index();
-        let app_state = app_states[worker_index].clone();
+        let config = config.clone();
+        let cache_coordinator = cache_coordinator.clone();
+        let az_status_coordinator = az_status_coordinator.clone();
+        let web_root = gui_web_root.clone();
+        let https_config = https_config.clone();
+        let core_id = *core_id;
 
-        let mut app = App::new()
-            .app_data(web::Data::new(app_state))
-            .app_data(web::Data::new(per_core_ctx))
-            .app_data(web::PayloadConfig::default().limit(5_368_709_120))
-            .wrap(Logger::default())
-            .service(
-                web::scope("/mgmt")
-                    .route("/health", web::get().to(cache_mgmt::mgmt_health))
-                    .route(
-                        "/cache/invalidate/bucket/{name}",
-                        web::post().to(cache_mgmt::invalidate_bucket),
-                    )
-                    .route(
-                        "/cache/invalidate/api_key/{id}",
-                        web::post().to(cache_mgmt::invalidate_api_key),
-                    )
-                    .route(
-                        "/cache/update/az_status/{id}",
-                        web::post().to(cache_mgmt::update_az_status),
-                    )
-                    .route("/cache/clear", web::post().to(cache_mgmt::clear_cache)),
-            )
-            .service(
-                web::scope("/api_keys")
-                    .route("/", web::post().to(api_key_routes::create_api_key))
-                    .route("/", web::get().to(api_key_routes::list_api_keys))
-                    .route(
-                        "/{key_id}",
-                        web::delete().to(api_key_routes::delete_api_key),
-                    ),
-            );
-
-        if let Some(ref web_root) = web_root_clone {
-            let static_dir = web_root.clone();
-            app = app.service(Files::new("/ui", static_dir).index_file("index.html"));
-        }
-
-        app.default_service(web::route().to(any_handler))
-    });
-
-    server = server
-        .workers(worker_count)
-        .max_connections(65536)
-        .max_connection_rate(65536);
-
-    for listener in http_listeners {
-        server = server.listen(listener).unwrap();
-    }
-
-    for listener in mgmt_listeners {
-        server = server.listen(listener).unwrap();
-    }
-
-    if https_config.enabled {
-        let https_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), https_config.port);
-        let https_listeners =
-            listeners::bind_reuseport(https_addr, worker_count).unwrap_or_else(|e| {
-                error!("Failed to bind HTTPS listeners on {https_addr}: {e}");
-                std::process::exit(1);
-            });
-
-        info!(
-            https_port = https_config.port,
-            "HTTPS enabled on unified server"
-        );
-
-        let key_path = PathBuf::from(&https_config.key_file);
-        let private_key = match load_private_key(&key_path) {
-            Ok(private_key) => private_key,
-            Err(e) => {
-                error!(
-                    "Failed to load private key from {}: {e}",
-                    key_path.display()
+        let handle = thread::Builder::new()
+            .name(format!("actix-core-{worker_idx}"))
+            .spawn(move || {
+                core_affinity::set_for_current(core_id);
+                info!(
+                    worker_idx,
+                    core_id = core_id.id,
+                    "Worker thread pinned to core"
                 );
-                error!("If using mkcert, ensure the key is unencrypted");
-                std::process::exit(1);
-            }
-        };
 
-        let cert_path = PathBuf::from(&https_config.cert_file);
+                System::new().block_on(async move {
+                    let app_state = Arc::new(AppState::new_per_core_sync(
+                        config.clone(),
+                        cache_coordinator,
+                        az_status_coordinator,
+                    ));
 
-        if https_config.force_http1_only {
-            info!("Configuring HTTPS for HTTP/1.1 only");
-        } else {
-            info!("Configuring HTTPS for both HTTP/1.1 and HTTP/2");
-        }
+                    let mut server = HttpServer::new(move || {
+                        core_affinity::set_for_current(core_id);
+                        let app_state = app_state.clone();
 
-        for listener in https_listeners {
-            let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-            builder.set_private_key(&private_key).unwrap();
-            if let Err(e) = builder.set_certificate_chain_file(&cert_path) {
-                error!(
-                    "Failed to load certificate chain from {}: {e}",
-                    cert_path.display()
-                );
-                std::process::exit(1);
-            }
+                        let mut app = App::new()
+                            .app_data(web::Data::new(app_state))
+                            .app_data(web::PayloadConfig::default().limit(5_368_709_120))
+                            .wrap(Logger::default())
+                            .service(
+                                web::scope("/mgmt")
+                                    .route("/health", web::get().to(cache_mgmt::mgmt_health))
+                                    .route(
+                                        "/cache/invalidate/bucket/{name}",
+                                        web::post().to(cache_mgmt::invalidate_bucket),
+                                    )
+                                    .route(
+                                        "/cache/invalidate/api_key/{id}",
+                                        web::post().to(cache_mgmt::invalidate_api_key),
+                                    )
+                                    .route(
+                                        "/cache/update/az_status/{id}",
+                                        web::post().to(cache_mgmt::update_az_status),
+                                    )
+                                    .route("/cache/clear", web::post().to(cache_mgmt::clear_cache)),
+                            )
+                            .service(
+                                web::scope("/api_keys")
+                                    .route("/", web::post().to(api_key_routes::create_api_key))
+                                    .route("/", web::get().to(api_key_routes::list_api_keys))
+                                    .route(
+                                        "/{key_id}",
+                                        web::delete().to(api_key_routes::delete_api_key),
+                                    ),
+                            );
 
-            if https_config.force_http1_only {
-                builder.set_alpn_protos(b"\x08http/1.1").unwrap();
-            }
+                        if let Some(ref web_root) = web_root {
+                            let static_dir = web_root.clone();
+                            app =
+                                app.service(Files::new("/ui", static_dir).index_file("index.html"));
+                        }
 
-            server = server.listen_openssl(listener, builder).unwrap();
-        }
-    } else {
-        info!("HTTPS is disabled");
+                        app.default_service(web::route().to(any_handler))
+                    });
+
+                    server = server
+                        .workers(1)
+                        .max_connections(65536)
+                        .max_connection_rate(65536);
+
+                    server = server.listen(http_listener).unwrap();
+                    server = server.listen(mgmt_listener).unwrap();
+
+                    if let Some(https_listener) = https_listener {
+                        let key_path = PathBuf::from(&https_config.key_file);
+                        let private_key = match load_private_key(&key_path) {
+                            Ok(private_key) => private_key,
+                            Err(e) => {
+                                error!(
+                                    "Failed to load private key from {}: {e}",
+                                    key_path.display()
+                                );
+                                std::process::exit(1);
+                            }
+                        };
+
+                        let cert_path = PathBuf::from(&https_config.cert_file);
+                        let mut builder =
+                            SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+                        builder.set_private_key(&private_key).unwrap();
+                        if let Err(e) = builder.set_certificate_chain_file(&cert_path) {
+                            error!(
+                                "Failed to load certificate chain from {}: {e}",
+                                cert_path.display()
+                            );
+                            std::process::exit(1);
+                        }
+
+                        if https_config.force_http1_only {
+                            builder.set_alpn_protos(b"\x08http/1.1").unwrap();
+                        }
+
+                        server = server.listen_openssl(https_listener, builder).unwrap();
+                    }
+
+                    server.run().await
+                })
+            })?;
+
+        handles.push(handle);
     }
 
-    server.run().await.unwrap()
+    for (idx, handle) in handles.into_iter().enumerate() {
+        if let Err(e) = handle.join() {
+            error!("Worker thread {idx} panicked: {e:?}");
+        }
+    }
+
+    Ok(())
 }

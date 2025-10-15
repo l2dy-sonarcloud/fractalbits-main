@@ -4,7 +4,6 @@ mod cache_registry;
 mod config;
 pub mod handler;
 mod object_layout;
-pub mod runtime;
 
 pub use blob_client::BlobClient;
 use blob_client::BlobDeletionRequest;
@@ -16,7 +15,6 @@ use moka::future::Cache;
 use rpc_client_common::{RpcError, checkout_rpc_client, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
-pub use runtime::per_core::PerCoreContext;
 
 pub use cache_registry::CacheCoordinator;
 use std::{

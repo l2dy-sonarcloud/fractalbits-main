@@ -233,7 +233,6 @@ pub async fn copy_object_handler(
     // Use the existing put_object handler to store the copied object
     let new_ctx = ObjectRequestContext::new(
         ctx.app,
-        ctx.per_core,
         ctx.request,
         Some(api_key),
         ctx.auth,
