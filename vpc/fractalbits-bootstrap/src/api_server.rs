@@ -36,7 +36,7 @@ pub fn bootstrap(
         download_binaries(&["rewrk_rpc", "test_art"])?;
     }
 
-    configure_ena_interrupts()?;
+    create_ena_irq_affinity_service()?;
 
     // setup_cloudwatch_agent()?;
     create_systemd_unit_file("api_server", true)?;
@@ -167,118 +167,128 @@ backoff_multiplier = 1.8
     Ok(())
 }
 
-fn configure_ena_interrupts() -> CmdResult {
-    info!("Configuring ENA interrupt affinity");
+fn create_ena_irq_affinity_service() -> CmdResult {
+    let script_path = format!("{BIN_PATH}configure-ena-irq-affinity.sh");
+    let systemd_unit_content = format!(
+        r##"[Unit]
+Description=ENA IRQ Affinity Configuration
+After=network-online.target
+Before=api_server.service
 
-    run_cmd! {
-        info "Disabled irqbalance";
-        systemctl disable --now irqbalance
-    }?;
+[Service]
+Type=oneshot
+ExecStart={script_path}
 
-    let iface =
-        run_fun!(grep -o r"ens[0-9]*-Tx-Rx" /proc/interrupts | head -1 | sed r"s/-Tx-Rx//")?;
-    info!("Detected ENA interface: {}", iface);
-
-    let num_queues = run_fun!(grep "$iface-Tx-Rx-" /proc/interrupts | wc -l)?
-        .parse()
-        .unwrap_or_else(|_| panic!("failed to get queues number of ENA {iface}"));
-    info!("Found {} queues", num_queues);
-
-    let num_cpus = num_cpus()?;
-    info!("System has {} CPUs", num_cpus);
-
-    let rss_result = run_cmd! {
-        info "Attempting to configure RSS";
-        ethtool -X $iface equal $num_cpus 2>&1
-    };
-    match rss_result {
-        Ok(_) => info!("RSS configured successfully"),
-        Err(_) => info!("RSS configuration failed or not supported (using hardware default)"),
-    }
-
-    let cpus_per_queue = num_cpus / num_queues;
-    info!(
-        "Spreading {} queues across {} CPUs ({} CPUs per queue)",
-        num_queues, num_cpus, cpus_per_queue
+[Install]
+WantedBy=multi-user.target
+"##
     );
 
-    for queue in 0..num_queues {
-        let pattern = format!("{}-Tx-Rx-{}", iface, queue);
-        let irq = run_fun!(grep $pattern /proc/interrupts | awk -F: r"{print $1}" | tr -d " ")?;
+    let script_content = r##"#!/bin/bash
+set -e
 
-        if !irq.is_empty() {
-            let start_cpu = queue * cpus_per_queue;
-            let end_cpu = ((queue + 1) * cpus_per_queue).min(num_cpus);
+echo "Configuring ENA interrupt affinity" >&2
 
-            let mut mask_low: u32 = 0;
-            let mut mask_high: u32 = 0;
-            for cpu in start_cpu..end_cpu {
-                if cpu < 32 {
-                    mask_low |= 1u32 << cpu;
-                } else {
-                    mask_high |= 1u32 << (cpu - 32);
-                }
-            }
+echo "Disabling irqbalance" >&2
+systemctl disable --now irqbalance 2>/dev/null || true
 
-            let mask_str = if mask_high > 0 {
-                format!("{:08x},{:08x}", mask_high, mask_low)
-            } else {
-                format!("{:x}", mask_low)
-            };
+iface=$(grep -o "ens[0-9]*-Tx-Rx" /proc/interrupts | head -1 | sed "s/-Tx-Rx//")
+if [ -z "$iface" ]; then
+    echo "ERROR: Could not detect ENA interface" >&2
+    exit 1
+fi
+echo "Detected ENA interface: $iface" >&2
 
-            run_cmd! {
-                echo $mask_str > /proc/irq/$irq/smp_affinity;
-                info "IRQ ${irq} (${iface}-Tx-Rx-${queue}) -> CPUs ${start_cpu}-${end_cpu} (mask: ${mask_str})";
-            }?;
+num_queues=$(grep "$iface-Tx-Rx-" /proc/interrupts | wc -l)
+if [ "$num_queues" -eq 0 ]; then
+    echo "ERROR: Could not detect ENA queues" >&2
+    exit 1
+fi
+echo "Found $num_queues queues" >&2
 
-            let xps_path = format!("/sys/class/net/{}/queues/tx-{}/xps_cpus", iface, queue);
-            let _ = run_cmd! {
-                echo $mask_str > $xps_path 2>/dev/null
-            };
-        }
-    }
+num_cpus=$(nproc)
+echo "System has $num_cpus CPUs" >&2
 
-    let _ = run_cmd! {
-        echo 32768 > /proc/sys/net/core/rps_sock_flow_entries
-    };
-    for queue in 0..num_queues {
-        let rps_path = format!("/sys/class/net/{}/queues/rx-{}/rps_flow_cnt", iface, queue);
-        let _ = run_cmd! {
-            echo 4096 > $rps_path 2>/dev/null
-        };
-    }
+echo "Attempting to configure RSS" >&2
+if ethtool -X $iface equal $num_cpus 2>&1; then
+    echo "RSS configured successfully" >&2
+else
+    echo "RSS configuration failed or not supported (using hardware default)" >&2
+fi
 
-    let mgmt_irq = run_fun! {
-        grep -E "ena-mgmnt|${iface}-mgmnt" /proc/interrupts
-            | awk -F: r"{print $1}"
-            | tr -d " "
-            | head -1
+cpus_per_queue=$((num_cpus / num_queues))
+echo "Spreading $num_queues queues across $num_cpus CPUs ($cpus_per_queue CPUs per queue)" >&2
+
+for queue in $(seq 0 $((num_queues - 1))); do
+    irq=$(grep "$iface-Tx-Rx-$queue" /proc/interrupts | awk -F: '{print $1}' | tr -d ' ')
+
+    if [ -n "$irq" ]; then
+        start_cpu=$((queue * cpus_per_queue))
+        end_cpu=$(((queue + 1) * cpus_per_queue))
+        if [ $end_cpu -gt $num_cpus ]; then
+            end_cpu=$num_cpus
+        fi
+
+        mask_low=0
+        mask_high=0
+        for cpu in $(seq $start_cpu $((end_cpu - 1))); do
+            if [ $cpu -lt 32 ]; then
+                mask_low=$((mask_low | (1 << cpu)))
+            else
+                mask_high=$((mask_high | (1 << (cpu - 32))))
+            fi
+        done
+
+        if [ $mask_high -gt 0 ]; then
+            mask_str=$(printf "%08x,%08x" $mask_high $mask_low)
+        else
+            mask_str=$(printf "%x" $mask_low)
+        fi
+
+        echo $mask_str > /proc/irq/$irq/smp_affinity
+        echo "IRQ $irq ($iface-Tx-Rx-$queue) -> CPUs $start_cpu-$end_cpu (mask: $mask_str)" >&2
+
+        xps_path="/sys/class/net/$iface/queues/tx-$queue/xps_cpus"
+        echo $mask_str > $xps_path 2>/dev/null || true
+    fi
+done
+
+echo 32768 > /proc/sys/net/core/rps_sock_flow_entries || true
+for queue in $(seq 0 $((num_queues - 1))); do
+    rps_path="/sys/class/net/$iface/queues/rx-$queue/rps_flow_cnt"
+    echo 4096 > $rps_path 2>/dev/null || true
+done
+
+mgmt_irq=$(grep -E "ena-mgmnt|$iface-mgmnt" /proc/interrupts | awk -F: '{print $1}' | tr -d ' ' | head -1)
+if [ -n "$mgmt_irq" ]; then
+    echo 1 > /proc/irq/$mgmt_irq/smp_affinity
+    echo "Management IRQ $mgmt_irq -> CPU 0" >&2
+fi
+
+echo "Done! Current ENA IRQ affinity:" >&2
+for queue in $(seq 0 $((num_queues - 1))); do
+    irq=$(grep "$iface-Tx-Rx-$queue" /proc/interrupts | awk -F: '{print $1}' | tr -d ' ')
+    if [ -n "$irq" ]; then
+        affinity=$(cat /proc/irq/$irq/smp_affinity)
+        start_cpu=$((queue * cpus_per_queue))
+        end_cpu=$(((queue + 1) * cpus_per_queue))
+        if [ $end_cpu -gt $num_cpus ]; then
+            end_cpu=$num_cpus
+        fi
+        echo "Queue $queue (IRQ $irq): CPUs $start_cpu-$end_cpu, mask = 0x$affinity" >&2
+    fi
+done
+
+echo "RFS configured: 32768 global flow entries, 4096 per queue" >&2
+echo "XPS configured for TX steering" >&2
+"##;
+
+    run_cmd! {
+        echo $script_content > $script_path;
+        chmod +x $script_path;
+
+        echo $systemd_unit_content > ${ETC_PATH}ena-irq-affinity.service;
+        systemctl enable --now ${ETC_PATH}ena-irq-affinity.service;
     }?;
-    if !mgmt_irq.is_empty() {
-        run_cmd! {
-            echo 1 > /proc/irq/${mgmt_irq}/smp_affinity;
-            info "Management IRQ ${mgmt_irq} -> CPU 0";
-        }?;
-    }
-
-    info!("Done! Current ENA IRQ affinity:");
-    for queue in 0..num_queues {
-        let irq = run_fun! {
-            grep "${iface}-Tx-Rx-${queue}" /proc/interrupts
-                | awk -F: r"{print $1}"
-                | tr -d " "
-        }?;
-        if !irq.is_empty() {
-            let affinity_path = format!("/proc/irq/{}/smp_affinity", irq);
-            let affinity = run_fun!(cat $affinity_path)?;
-            let start_cpu = queue * cpus_per_queue;
-            let end_cpu = ((queue + 1) * cpus_per_queue).min(num_cpus);
-            info!("Queue {queue} (IRQ {irq}): CPUs {start_cpu}-{end_cpu}, mask = 0x{affinity}");
-        }
-    }
-
-    info!("RFS configured: 32768 global flow entries, 4096 per queue");
-    info!("XPS configured for TX steering");
-
     Ok(())
 }
