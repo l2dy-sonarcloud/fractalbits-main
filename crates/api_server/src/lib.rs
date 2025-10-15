@@ -121,17 +121,27 @@ impl AppState {
                 debug!("Creating per-worker BlobClient on-demand");
                 let (_tx, rx) = mpsc::channel::<BlobDeletionRequest>(1024 * 1024);
 
-                let data_vg_info = self
-                    .config
-                    .data_vg_info
-                    .clone()
-                    .ok_or_else(|| "DataVgInfo not available".to_string())?;
+                debug!("Fetching DataVgInfo from RSS at {}", self.config.rss_addr);
+                let rss_client = self
+                    .checkout_rpc_client_rss()
+                    .await
+                    .map_err(|e| format!("Failed to create RSS client: {}", e))?;
+
+                let data_vg_info = rss_client
+                    .get_data_vg_info(Some(self.config.rpc_timeout()))
+                    .await
+                    .map_err(|e| format!("Failed to fetch DataVgInfo from RSS: {}", e))?;
+
+                debug!(
+                    "Successfully fetched DataVgInfo with {} volumes",
+                    data_vg_info.volumes.len()
+                );
 
                 let (blob_client, az_status_cache) = BlobClient::new_with_data_vg_info(
                     &self.config.blob_storage,
                     rx,
                     self.config.rpc_timeout(),
-                    None, // data_blob_tracker created separately if needed
+                    None,
                     data_vg_info,
                 )
                 .await

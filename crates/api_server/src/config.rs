@@ -110,9 +110,6 @@ pub struct Config {
 
     pub blob_storage: BlobStorageConfig,
     pub allow_missing_or_bad_signature: bool,
-
-    #[serde(skip)]
-    pub data_vg_info: Option<data_types::DataVgInfo>,
 }
 
 impl Config {
@@ -165,7 +162,6 @@ impl Config {
                 s3_express_multi_az: Some(S3ExpressMultiAzConfig::default()),
             },
             allow_missing_or_bad_signature: false,
-            data_vg_info: None,
         }
     }
 
@@ -197,7 +193,6 @@ impl Config {
                 s3_express_multi_az: None,
             },
             allow_missing_or_bad_signature: false,
-            data_vg_info: None,
         }
     }
 }

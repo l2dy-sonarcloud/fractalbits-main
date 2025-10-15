@@ -62,8 +62,7 @@ fn make_reuseport_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
     Ok(listener)
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
     // AWS SDK suppression filter
     let third_party_filter = "tower_http=warn,hyper_util=warn,aws_smithy=warn,aws_sdk=warn,actix_web=warn,actix_server=warn,h2=warn";
     tracing_subscriber::registry()
@@ -154,24 +153,6 @@ async fn main() -> std::io::Result<()> {
     if gui_web_root.is_some() {
         config.allow_missing_or_bad_signature = true;
     }
-
-    // Fetch DataVgInfo from RSS in main thread before starting workers
-    info!("Fetching DataVgInfo from RSS at {}", config.rss_addr);
-    let rss_client = rpc_client_rss::RpcClientRss::new_from_address(config.rss_addr.clone())
-        .await
-        .expect("Failed to create RSS client in main thread");
-
-    let data_vg_info = rss_client
-        .get_data_vg_info(Some(config.rpc_timeout()))
-        .await
-        .expect("Failed to fetch DataVgInfo from RSS");
-
-    info!(
-        "Successfully fetched DataVgInfo with {} volumes",
-        data_vg_info.volumes.len()
-    );
-    config.data_vg_info = Some(data_vg_info);
-    drop(rss_client);
 
     let config = Arc::new(config);
     let port = config.port;
