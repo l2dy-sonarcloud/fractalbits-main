@@ -19,9 +19,9 @@ pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdRes
 
     create_bench_start_script(&region, &api_server_endpoint)?;
 
-    create_put_workload_config(&warp_client_ips, &region, &api_server_endpoint, "1m", "")?;
-    create_get_workload_config(&warp_client_ips, &region, &api_server_endpoint, "1m", "")?;
-    create_mixed_workload_config(&warp_client_ips, &region, &api_server_endpoint, "1m")?;
+    create_put_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m", "")?;
+    create_get_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m", "")?;
+    create_mixed_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m")?;
 
     Ok(())
 }

@@ -11,7 +11,7 @@ impl Default for UringConfig {
     fn default() -> Self {
         Self {
             queue_depth: 2048,
-            enable_sqpoll: true,
+            enable_sqpoll: false,
             sq_thread_idle: 2000,
         }
     }
