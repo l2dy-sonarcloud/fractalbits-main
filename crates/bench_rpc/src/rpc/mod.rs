@@ -11,7 +11,6 @@ use rpc_client_bss::RpcClientBss;
 use rpc_client_nss::RpcClientNss;
 use std::future::Future;
 use std::pin::Pin;
-use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout_at};
 use uuid::Uuid;
@@ -459,13 +458,17 @@ impl RewrkConnector {
     }
 
     async fn connect_nss(&self) -> anyhow::Result<Arc<RpcClientNss>> {
-        let stream = TcpStream::connect(&self.host).await?;
-        Ok(RpcClientNss::new(stream).await.unwrap().into())
+        Ok(RpcClientNss::new_from_address(self.host.clone())
+            .await
+            .unwrap()
+            .into())
     }
 
     async fn connect_bss(&self) -> anyhow::Result<Arc<RpcClientBss>> {
-        let stream = TcpStream::connect(&self.host).await?;
-        Ok(RpcClientBss::new(stream).await.unwrap().into())
+        Ok(RpcClientBss::new_from_address(self.host.clone())
+            .await
+            .unwrap()
+            .into())
     }
 
     #[allow(dead_code)]

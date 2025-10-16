@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::sync::oneshot;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug)]
 pub enum RpcTask {
@@ -576,7 +576,7 @@ impl ReactorIo {
             if let Some(send) = pending_send.remove(&user_data) {
                 if result < 0 {
                     let err = io::Error::from_raw_os_error(-result);
-                    debug!(
+                    error!(
                         worker_index,
                         fd = send.fd,
                         user_data,
@@ -740,14 +740,6 @@ impl ReactorTransport {
         };
 
         Ok(MessageFrame { header, body })
-    }
-
-    async fn recv_exact(&self, fd: RawFd, len: usize) -> io::Result<Bytes> {
-        self.recv_exact_bytes(fd, len).await
-    }
-
-    fn name(&self) -> &'static str {
-        "reactor_io_uring"
     }
 
     async fn recv_exact_bytes(&self, fd: RawFd, len: usize) -> io::Result<Bytes> {

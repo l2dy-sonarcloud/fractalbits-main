@@ -219,8 +219,32 @@ fn main() -> std::io::Result<()> {
                         az_status_coordinator,
                     ));
 
+                    #[cfg(feature = "rpc_io_uring")]
+                    let reactor_init = Arc::new(std::sync::OnceLock::new());
+
                     let mut server = HttpServer::new(move || {
                         core_affinity::set_for_current(core_id);
+
+                        #[cfg(feature = "rpc_io_uring")]
+                        {
+                            reactor_init.get_or_init(|| {
+                                use rpc_client_common::io_uring::{
+                                    PerCoreRing, ReactorTransport, UringConfig,
+                                    set_current_reactor, spawn_rpc_reactor,
+                                };
+
+                                let uring_config = UringConfig::default();
+                                let ring = Arc::new(
+                                    PerCoreRing::new(worker_idx, &uring_config)
+                                        .expect("Failed to create io_uring ring"),
+                                );
+                                let reactor_handle = spawn_rpc_reactor(worker_idx, ring);
+                                let transport = ReactorTransport::new(reactor_handle);
+                                set_current_reactor(transport);
+                                info!(worker_idx, "io_uring reactor initialized in worker thread");
+                            });
+                        }
+
                         let app_state = app_state.clone();
 
                         let mut app = App::new()

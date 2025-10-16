@@ -2,7 +2,6 @@ use rpc_client_common::{Closeable, RpcClient as GenericRpcClient, RpcError};
 use rpc_codec_common::MessageFrame;
 use slotmap_conn_pool::Poolable;
 use std::time::Duration;
-use tokio::net::TcpStream;
 
 // Create a wrapper struct to avoid orphan rule issues
 pub struct RpcClient {
@@ -10,11 +9,6 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
-    pub async fn new(stream: TcpStream) -> Result<Self, RpcError> {
-        let inner = GenericRpcClient::new(stream).await?;
-        Ok(RpcClient { inner })
-    }
-
     pub fn gen_request_id(&self) -> u32 {
         self.inner.gen_request_id()
     }

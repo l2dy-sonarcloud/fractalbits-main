@@ -90,6 +90,6 @@ reqwest.workspace = true
 
 [features]
 default = []
-io_uring = ["rpc_client_common/io_uring"]
+rpc_io_uring = ["rpc_client_common/io_uring"]
 metrics_statsd = ["dep:metrics-exporter-statsd", "rpc_client_common/metrics"]
 metrics_prometheus = ["dep:metrics-exporter-prometheus", "rpc_client_common/metrics"]

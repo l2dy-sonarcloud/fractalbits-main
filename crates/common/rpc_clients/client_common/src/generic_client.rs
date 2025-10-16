@@ -18,7 +18,9 @@ use std::time::Duration;
 use strum::AsRefStr;
 #[cfg(not(feature = "io_uring"))]
 use tokio::io::AsyncWriteExt;
+#[cfg(not(feature = "io_uring"))]
 use tokio::net::TcpStream;
+#[cfg(not(feature = "io_uring"))]
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
@@ -61,6 +63,9 @@ pub struct RpcClient<Codec: RpcCodec<Header>, Header: MessageHeaderTrait> {
     socket_fd: RawFd,
     is_closed: Arc<AtomicBool>,
     client_session_id: u64,
+    #[cfg(feature = "io_uring")]
+    #[allow(dead_code)]
+    socket_owner: Arc<Socket>,
     _phantom: PhantomData<Codec>,
 }
 
@@ -105,6 +110,7 @@ where
         })
     }
 
+    #[cfg(not(feature = "io_uring"))]
     pub async fn new(stream: TcpStream) -> Result<Self, RpcError>
     where
         Header: Default,
@@ -130,6 +136,7 @@ where
         Ok(client)
     }
 
+    #[cfg(not(feature = "io_uring"))]
     pub async fn new_with_session_id(stream: TcpStream, session_id: u64) -> Result<Self, RpcError>
     where
         Header: Default,
@@ -147,6 +154,7 @@ where
     }
 
     /// Create client with existing session state (performing handshake for reconnection)
+    #[cfg(not(feature = "io_uring"))]
     pub async fn new_with_session_and_request_id(
         stream: TcpStream,
         session_id: u64,
@@ -172,6 +180,38 @@ where
         Ok(client)
     }
 
+    #[cfg(feature = "io_uring")]
+    async fn create_raw_socket_io_uring(addr: SocketAddr) -> Result<(RawFd, Socket), io::Error> {
+        use socket2::{Domain, Protocol, Type};
+
+        let domain = Domain::for_address(addr);
+        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+        socket.set_recv_buffer_size(16 * 1024 * 1024)?;
+        socket.set_send_buffer_size(16 * 1024 * 1024)?;
+
+        let keepalive = TcpKeepalive::new()
+            .with_time(Duration::from_secs(5))
+            .with_interval(Duration::from_secs(2))
+            .with_retries(2);
+        socket.set_tcp_keepalive(&keepalive)?;
+
+        socket.set_nodelay(true)?;
+        socket.set_nonblocking(true)?;
+
+        match socket.connect(&addr.into()) {
+            Ok(_) => {}
+            Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {
+                // EINPROGRESS is expected for non-blocking connect
+            }
+            Err(e) => return Err(e),
+        }
+
+        let fd = socket.as_raw_fd();
+        Ok((fd, socket))
+    }
+
+    #[cfg(not(feature = "io_uring"))]
     async fn new_internal(stream: TcpStream, session_id: u64) -> Result<Self, RpcError> {
         let rpc_type = Codec::RPC_TYPE;
         let socket_fd = stream.as_raw_fd();
@@ -225,22 +265,71 @@ where
         })
     }
 
+    #[cfg(feature = "io_uring")]
+    async fn new_internal_io_uring(addr: SocketAddr, session_id: u64) -> Result<Self, RpcError> {
+        let rpc_type = Codec::RPC_TYPE;
+        let (socket_fd, socket) = Self::create_raw_socket_io_uring(addr)
+            .await
+            .map_err(RpcError::IoError)?;
+
+        let requests: Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame<Header>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let (sender, receiver) = mpsc::channel::<MessageFrame<Header>>(1024);
+        let is_closed = Arc::new(AtomicBool::new(false));
+
+        let mut tasks = JoinSet::new();
+
+        // Send task
+        {
+            let sender_requests = requests.clone();
+            let is_closed = is_closed.clone();
+            tasks.spawn(async move {
+                if let Err(e) = Self::send_task_io_uring(receiver, socket_fd, rpc_type).await {
+                    warn!(%rpc_type, %socket_fd, %e, "send task failed");
+                }
+                is_closed.store(true, Ordering::SeqCst);
+                Self::drain_pending_requests(socket_fd, &sender_requests, DrainFrom::SendTask);
+            });
+        }
+
+        // Receive task
+        {
+            let receiver_requests = requests.clone();
+            let is_closed = is_closed.clone();
+            tasks.spawn(async move {
+                if let Err(e) =
+                    Self::receive_task_io_uring(socket_fd, &receiver_requests, rpc_type).await
+                {
+                    warn!(%rpc_type, %socket_fd, %e, "receive task failed");
+                }
+                is_closed.store(true, Ordering::SeqCst);
+                Self::drain_pending_requests(socket_fd, &receiver_requests, DrainFrom::ReceiveTask);
+            });
+        }
+
+        debug!(%rpc_type, %socket_fd, %session_id, "Creating RPC client with session ID (io_uring)");
+
+        Ok(RpcClient {
+            requests,
+            sender,
+            next_id: Arc::new(AtomicU32::new(1)),
+            tasks: Arc::new(parking_lot::Mutex::new(tasks)),
+            socket_fd,
+            is_closed,
+            client_session_id: session_id,
+            socket_owner: Arc::new(socket),
+            _phantom: PhantomData,
+        })
+    }
+
+    #[cfg(not(feature = "io_uring"))]
     async fn send_task(
         writer: OwnedWriteHalf,
         receiver: Receiver<MessageFrame<Header>>,
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
-        #[cfg(feature = "io_uring")]
-        {
-            drop(writer);
-            Self::send_task_io_uring(receiver, socket_fd, rpc_type).await
-        }
-
-        #[cfg(not(feature = "io_uring"))]
-        {
-            Self::send_task_tokio(writer, receiver, socket_fd, rpc_type).await
-        }
+        Self::send_task_tokio(writer, receiver, socket_fd, rpc_type).await
     }
 
     #[cfg(not(feature = "io_uring"))]
@@ -325,21 +414,14 @@ where
         Ok(())
     }
 
+    #[cfg(not(feature = "io_uring"))]
     async fn receive_task(
         receiver: OwnedReadHalf,
         requests: RequestMap<Header>,
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
-        #[cfg(feature = "io_uring")]
-        {
-            drop(receiver);
-            Self::receive_task_io_uring(socket_fd, &requests, rpc_type).await
-        }
-        #[cfg(not(feature = "io_uring"))]
-        {
-            Self::receive_task_tokio(receiver, &requests, socket_fd, rpc_type).await
-        }
+        Self::receive_task_tokio(receiver, &requests, socket_fd, rpc_type).await
     }
 
     #[cfg(feature = "io_uring")]
@@ -560,6 +642,7 @@ where
     Codec: RpcCodec<Header>,
     Header: MessageHeaderTrait + Clone + Send + Sync + 'static,
 {
+    #[cfg(not(feature = "io_uring"))]
     async fn connect_with_retry(
         addr_key: &str,
     ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
@@ -601,6 +684,7 @@ where
         Ok(stream)
     }
 
+    #[cfg(not(feature = "io_uring"))]
     pub async fn establish_connection(
         addr_key: String,
         session_id: Option<u64>,
@@ -621,6 +705,71 @@ where
         }
     }
 
+    #[cfg(feature = "io_uring")]
+    pub async fn establish_connection(
+        addr_key: String,
+        session_id: Option<u64>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    where
+        Header: Default,
+    {
+        debug!("Trying to connect to {addr_key} via io_uring");
+        const MAX_CONNECTION_RETRIES: usize = 100 * 3600;
+
+        let start = std::time::Instant::now();
+        let retry_strategy = FixedInterval::from_millis(10)
+            .map(jitter)
+            .take(MAX_CONNECTION_RETRIES);
+
+        let socket_addr = Retry::spawn(retry_strategy, || async {
+            Self::resolve_address(&addr_key).await
+        })
+        .await
+        .map_err(|e| {
+            warn!(rpc_type = %Codec::RPC_TYPE, addr = %addr_key, error = %e, "failed to resolve RPC server address");
+            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+
+        let session_id_val = session_id.unwrap_or(0);
+        let mut client = Self::new_internal_io_uring(socket_addr, session_id_val)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        let connect_duration = start.elapsed();
+        if connect_duration > Duration::from_secs(1) {
+            warn!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr_key,
+                duration_ms = %connect_duration.as_millis(),
+                "Slow connection establishment to RPC server"
+            );
+        } else if connect_duration > Duration::from_millis(100) {
+            debug!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr_key,
+                duration_ms = %connect_duration.as_millis(),
+                "Connection established to RPC server"
+            );
+        }
+
+        let rpc_type = Codec::RPC_TYPE;
+        if session_id.is_none() {
+            if rpc_type == "rss" {
+                client.update_session_id(1);
+            } else {
+                let new_session_id = client.perform_handshake().await?;
+                client.update_session_id(new_session_id);
+            }
+        } else if rpc_type != "rss" {
+            client
+                .perform_handshake_with_session_id(session_id_val)
+                .await?;
+        }
+
+        Ok(client)
+    }
+
+    #[cfg(not(feature = "io_uring"))]
     fn configure_tcp_socket(
         stream: TcpStream,
     ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
@@ -661,7 +810,7 @@ where
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
 
-    /// Establish connection with existing session state (for reconnection)
+    #[cfg(not(feature = "io_uring"))]
     pub async fn establish_connection_with_session_state(
         addr_key: String,
         session_id: u64,
@@ -676,6 +825,63 @@ where
         Self::new_with_session_and_request_id(configured_stream, session_id, next_request_id)
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    }
+
+    #[cfg(feature = "io_uring")]
+    pub async fn establish_connection_with_session_state(
+        addr_key: String,
+        session_id: u64,
+        next_request_id: u32,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    where
+        Header: Default,
+    {
+        debug!("Trying to connect to {addr_key} with session state via io_uring");
+        const MAX_CONNECTION_RETRIES: usize = 100 * 3600;
+
+        let start = std::time::Instant::now();
+        let retry_strategy = FixedInterval::from_millis(10)
+            .map(jitter)
+            .take(MAX_CONNECTION_RETRIES);
+
+        let socket_addr = Retry::spawn(retry_strategy, || async {
+            Self::resolve_address(&addr_key).await
+        })
+        .await
+        .map_err(|e| {
+            warn!(rpc_type = %Codec::RPC_TYPE, addr = %addr_key, error = %e, "failed to resolve RPC server address");
+            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+
+        let client = Self::new_internal_io_uring(socket_addr, session_id)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        client.next_id.store(next_request_id, Ordering::SeqCst);
+
+        let connect_duration = start.elapsed();
+        if connect_duration > Duration::from_secs(1) {
+            warn!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr_key,
+                duration_ms = %connect_duration.as_millis(),
+                "Slow connection establishment to RPC server"
+            );
+        } else if connect_duration > Duration::from_millis(100) {
+            debug!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr_key,
+                duration_ms = %connect_duration.as_millis(),
+                "Connection established to RPC server"
+            );
+        }
+
+        let rpc_type = Codec::RPC_TYPE;
+        if rpc_type != "rss" {
+            client.perform_handshake_with_session_id(session_id).await?;
+        }
+
+        Ok(client)
     }
 }
 
