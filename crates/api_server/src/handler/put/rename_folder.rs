@@ -27,8 +27,9 @@ pub async fn rename_folder_handler(ctx: ObjectRequestContext) -> Result<HttpResp
         ctx.bucket_name
     );
 
+    let nss_client = ctx.app.get_nss_rpc_client();
     nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         rename_folder(
             &bucket.root_blob_name,
             &src_path,

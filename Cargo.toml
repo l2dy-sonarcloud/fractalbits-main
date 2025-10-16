@@ -19,7 +19,6 @@ exclude = [
     "crates/common/rpc_clients/client_common/src",
     "crates/common/rpc_clients/nss/src",
     "crates/common/rpc_clients/rss/src",
-    "crates/common/rpc_clients/single_conn/src",
     "crates/common/rpc_codecs/bss_codec/src",
     "crates/common/rpc_codecs/codec_common/src",
     "crates/common/rpc_codecs/nss_codec/src",
@@ -46,7 +45,6 @@ rpc_client_common = { path = "crates/common/rpc_clients/client_common" }
 rpc_client_bss = { path = "crates/common/rpc_clients/bss" }
 rpc_client_nss = { path = "crates/common/rpc_clients/nss" }
 rpc_client_rss = { path = "crates/common/rpc_clients/rss" }
-single_conn = { path = "crates/common/rpc_clients/single_conn" }
 rpc_codec_common = { path = "crates/common/rpc_codecs/codec_common" }
 bss_codec = { path = "crates/common/rpc_codecs/bss_codec" }
 nss_codec = { path = "crates/common/rpc_codecs/nss_codec" }

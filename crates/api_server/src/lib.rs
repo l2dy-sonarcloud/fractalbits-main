@@ -12,7 +12,7 @@ pub use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use data_types::{ApiKey, Bucket, Versioned};
 use metrics::counter;
 use moka::future::Cache;
-use rpc_client_common::{RpcError, checkout_rpc_client, rss_rpc_retry};
+use rpc_client_common::{RpcError, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
 
@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{
-    OnceCell, RwLock,
+    OnceCell,
     mpsc::{self, Sender},
 };
 use tracing::debug;
@@ -35,8 +35,8 @@ pub struct AppState {
     pub az_status_coordinator: Arc<CacheCoordinator<String>>,
     pub az_status_enabled: AtomicBool,
 
-    rpc_client_nss: RwLock<Option<Arc<RpcClientNss>>>,
-    rpc_client_rss: RwLock<Option<Arc<RpcClientRss>>>,
+    rpc_client_nss: RpcClientNss,
+    rpc_client_rss: RpcClientRss,
 
     blob_client: OnceCell<Arc<BlobClient>>,
     blob_deletion_tx: Sender<BlobDeletionRequest>,
@@ -65,10 +65,13 @@ impl AppState {
 
         debug!("Per-core AppState initialized with lazy BlobClient initialization");
 
+        let rpc_client_nss = RpcClientNss::new_from_address(config.nss_addr.clone());
+        let rpc_client_rss = RpcClientRss::new_from_address(config.rss_addr.clone());
+
         Self {
             config,
-            rpc_client_nss: RwLock::new(None),
-            rpc_client_rss: RwLock::new(None),
+            rpc_client_nss,
+            rpc_client_rss,
             blob_client: OnceCell::new(),
             blob_deletion_tx: tx,
             cache,
@@ -79,40 +82,12 @@ impl AppState {
         }
     }
 
-    pub async fn checkout_rpc_client_nss(
-        &self,
-    ) -> Result<Arc<RpcClientNss>, Box<dyn std::error::Error + Send + Sync>> {
-        checkout_rpc_client(
-            &self.rpc_client_nss,
-            &self.config.nss_addr,
-            |addr| async move { RpcClientNss::new_from_address(addr).await },
-        )
-        .await
+    pub fn get_nss_rpc_client(&self) -> &RpcClientNss {
+        &self.rpc_client_nss
     }
 
-    pub async fn checkout_with_session_nss(
-        &self,
-        _session_id: u64,
-    ) -> Result<Arc<RpcClientNss>, Box<dyn std::error::Error + Send + Sync>> {
-        self.checkout_rpc_client_nss().await
-    }
-
-    pub async fn checkout_rpc_client_rss(
-        &self,
-    ) -> Result<Arc<RpcClientRss>, Box<dyn std::error::Error + Send + Sync>> {
-        checkout_rpc_client(
-            &self.rpc_client_rss,
-            &self.config.rss_addr,
-            |addr| async move { RpcClientRss::new_from_address(addr).await },
-        )
-        .await
-    }
-
-    pub async fn checkout_with_session_rss(
-        &self,
-        _session_id: u64,
-    ) -> Result<Arc<RpcClientRss>, Box<dyn std::error::Error + Send + Sync>> {
-        self.checkout_rpc_client_rss().await
+    pub fn get_rss_rpc_client(&self) -> &RpcClientRss {
+        &self.rpc_client_rss
     }
 
     pub async fn get_blob_client(&self) -> Result<Arc<BlobClient>, String> {
@@ -122,10 +97,7 @@ impl AppState {
                 let (_tx, rx) = mpsc::channel::<BlobDeletionRequest>(1024 * 1024);
 
                 debug!("Fetching DataVgInfo from RSS at {}", self.config.rss_addr);
-                let rss_client = self
-                    .checkout_rpc_client_rss()
-                    .await
-                    .map_err(|e| format!("Failed to create RSS client: {}", e))?;
+                let rss_client = self.get_rss_rpc_client();
 
                 let data_vg_info = rss_client
                     .get_data_vg_info(Some(self.config.rpc_timeout()))
@@ -179,8 +151,9 @@ impl AppState {
             counter!("api_key_cache_miss").increment(1);
         }
 
+        let rss_client = self.get_rss_rpc_client();
         let (version, data) =
-            rss_rpc_retry!(self, get(&full_key, Some(self.config.rpc_timeout()))).await?;
+            rss_rpc_retry!(rss_client, get(&full_key, Some(self.config.rpc_timeout()))).await?;
         let json = Versioned::new(version, data);
         self.cache.insert(full_key, json.clone()).await;
         Ok((
@@ -199,8 +172,9 @@ impl AppState {
         let data: String = serde_json::to_string(&api_key.data).unwrap();
         let versioned_data: Versioned<String> = (api_key.version, data).into();
 
+        let rss_client = self.get_rss_rpc_client();
         rss_rpc_retry!(
-            self,
+            rss_client,
             put(
                 versioned_data.version,
                 &full_key,
@@ -217,14 +191,21 @@ impl AppState {
 
     pub async fn delete_api_key(&self, api_key: &ApiKey) -> Result<(), RpcError> {
         let full_key = format!("api_key:{}", api_key.key_id);
-        rss_rpc_retry!(self, delete(&full_key, Some(self.config.rpc_timeout()))).await?;
+        let rss_client = self.get_rss_rpc_client();
+        rss_rpc_retry!(
+            rss_client,
+            delete(&full_key, Some(self.config.rpc_timeout()))
+        )
+        .await?;
         self.cache.invalidate(&full_key).await;
         Ok(())
     }
 
     pub async fn list_api_keys(&self) -> Result<Vec<ApiKey>, RpcError> {
         let prefix = "api_key:".to_string();
-        let kvs = rss_rpc_retry!(self, list(&prefix, Some(self.config.rpc_timeout()))).await?;
+        let rss_client = self.get_rss_rpc_client();
+        let kvs =
+            rss_rpc_retry!(rss_client, list(&prefix, Some(self.config.rpc_timeout()))).await?;
         Ok(kvs
             .iter()
             .map(|x| serde_json::from_slice(x.as_bytes()).unwrap())
@@ -248,8 +229,9 @@ impl AppState {
             counter!("bucket_cache_miss").increment(1);
         }
 
+        let rss_client = self.get_rss_rpc_client();
         let (version, data) =
-            rss_rpc_retry!(self, get(&full_key, Some(self.config.rpc_timeout()))).await?;
+            rss_rpc_retry!(rss_client, get(&full_key, Some(self.config.rpc_timeout()))).await?;
         let json = Versioned::new(version, data);
         self.cache.insert(full_key, json.clone()).await;
         Ok((
@@ -265,8 +247,9 @@ impl AppState {
         api_key_id: &str,
         is_multi_az: bool,
     ) -> Result<(), RpcError> {
+        let rss_client = self.get_rss_rpc_client();
         rss_rpc_retry!(
-            self,
+            rss_client,
             create_bucket(
                 bucket_name,
                 api_key_id,
@@ -284,12 +267,12 @@ impl AppState {
     }
 
     pub async fn delete_bucket(&self, bucket_name: &str, api_key_id: &str) -> Result<(), RpcError> {
-        let client = self.checkout_rpc_client_rss().await.map_err(|e| {
-            RpcError::InternalRequestError(format!("Failed to checkout RSS client: {}", e))
-        })?;
-        client
-            .delete_bucket(bucket_name, api_key_id, Some(self.config.rpc_timeout()))
-            .await?;
+        let rss_client = self.get_rss_rpc_client();
+        rss_rpc_retry!(
+            rss_client,
+            delete_bucket(bucket_name, api_key_id, Some(self.config.rpc_timeout()))
+        )
+        .await?;
 
         // Invalidate both bucket and API key cache
         self.cache
@@ -303,12 +286,9 @@ impl AppState {
 
     pub async fn list_buckets(&self) -> Result<Vec<Bucket>, RpcError> {
         let prefix = "bucket:".to_string();
-        let client = self.checkout_rpc_client_rss().await.map_err(|e| {
-            RpcError::InternalRequestError(format!("Failed to checkout RSS client: {}", e))
-        })?;
-        let kvs = client
-            .list(&prefix, Some(self.config.rpc_timeout()), 0)
-            .await?;
+        let rss_client = self.get_rss_rpc_client();
+        let kvs =
+            rss_rpc_retry!(rss_client, list(&prefix, Some(self.config.rpc_timeout()))).await?;
         Ok(kvs
             .iter()
             .map(|x| serde_json::from_slice(x.as_bytes()).unwrap())

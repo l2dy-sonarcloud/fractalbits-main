@@ -4,7 +4,6 @@ use bytes::BytesMut;
 use metrics::{counter, gauge};
 use parking_lot::Mutex;
 use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
-use single_conn::Poolable;
 use socket2::{Socket, TcpKeepalive};
 use std::collections::HashMap;
 use std::io;
@@ -648,20 +647,5 @@ where
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         TcpStream::from_std(std_stream)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-    }
-}
-
-impl<Codec: RpcCodec<Header> + Unpin, Header: MessageHeaderTrait + Default> Poolable
-    for RpcClient<Codec, Header>
-{
-    type AddrKey = String;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    async fn new(addr_key: Self::AddrKey) -> Result<Self, Self::Error> {
-        Self::establish_connection(addr_key).await
-    }
-
-    fn is_closed(&self) -> bool {
-        self.is_closed()
     }
 }

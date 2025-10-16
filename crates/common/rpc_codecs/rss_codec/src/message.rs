@@ -22,14 +22,11 @@ pub struct MessageHeader {
     /// The version of the protocol implementation that originated this message.
     protocol: u16,
 
-    /// Client session ID for routing consistency across reconnections
-    pub client_session_id: u64,
-
     /// Number of retry attempts for this request (0 = first attempt)
     pub retry_count: u32,
 
     /// Reserved for future use
-    reserved: [u8; 4],
+    reserved: [u8; 12],
 }
 
 // Safety: Command is defined as protobuf enum type (i32), and 0 as Invalid. There is also no padding

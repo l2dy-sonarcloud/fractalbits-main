@@ -4,8 +4,6 @@ use rpc_client_common::{RpcError, nss_rpc_retry, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;
 use rpc_client_rss::RpcClientRss;
 use rss_codec::AzStatusMap;
-use single_conn::ConnPool;
-use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -21,78 +19,33 @@ pub enum DataBlobTrackingError {
 
 /// Helper struct for managing data blob tracking operations
 pub struct DataBlobTracker {
-    /// RSS connection pool for reuse across operations
-    rss_conn_pool: ConnPool<Arc<RpcClientRss>, String>,
-    /// RSS endpoint address
-    rss_endpoint: String,
-    /// NSS connection pool for reuse across operations
-    nss_conn_pool: ConnPool<Arc<RpcClientNss>, String>,
-    /// NSS endpoint address
-    nss_endpoint: String,
+    rss_client: RpcClientRss,
+    nss_client: RpcClientNss,
+}
+
+impl Default for DataBlobTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DataBlobTracker {
     pub fn new() -> Self {
+        let rss_client = RpcClientRss::new_from_address("localhost:9000".to_string());
+        let nss_client = RpcClientNss::new_from_address("localhost:8000".to_string());
         Self {
-            rss_conn_pool: ConnPool::new(),
-            rss_endpoint: "localhost:9000".to_string(),
-            nss_conn_pool: ConnPool::new(),
-            nss_endpoint: "localhost:8000".to_string(),
+            rss_client,
+            nss_client,
         }
     }
 
-    pub fn with_pools(
-        rss_endpoint: String,
-        rss_conn_pool: ConnPool<Arc<RpcClientRss>, String>,
-        nss_endpoint: String,
-        nss_conn_pool: ConnPool<Arc<RpcClientNss>, String>,
-    ) -> Self {
+    pub fn with_endpoints(rss_endpoint: String, nss_endpoint: String) -> Self {
+        let rss_client = RpcClientRss::new_from_address(rss_endpoint);
+        let nss_client = RpcClientNss::new_from_address(nss_endpoint);
         Self {
-            rss_conn_pool,
-            rss_endpoint,
-            nss_conn_pool,
-            nss_endpoint,
+            rss_client,
+            nss_client,
         }
-    }
-
-    pub async fn with_clients(
-        rss_endpoint: String,
-        rss_client: Arc<RpcClientRss>,
-        nss_endpoint: String,
-        nss_client: Arc<RpcClientNss>,
-    ) -> Self {
-        let rss_conn_pool = ConnPool::new();
-        rss_conn_pool.pooled(rss_endpoint.clone(), rss_client).await;
-
-        let nss_conn_pool = ConnPool::new();
-        nss_conn_pool.pooled(nss_endpoint.clone(), nss_client).await;
-
-        Self {
-            rss_conn_pool,
-            rss_endpoint,
-            nss_conn_pool,
-            nss_endpoint,
-        }
-    }
-
-    /// Checkout an RSS client from the connection pool for use with rpc_retry macro
-    async fn checkout_rpc_client_rss(
-        &self,
-    ) -> Result<Arc<RpcClientRss>, Box<dyn std::error::Error + Send + Sync>> {
-        self.rss_conn_pool
-            .checkout(self.rss_endpoint.clone())
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-    }
-
-    /// Checkout an NSS client from the connection pool for use with rpc_retry macro
-    async fn checkout_rpc_client_nss(
-        &self,
-    ) -> Result<Arc<RpcClientNss>, Box<dyn std::error::Error + Send + Sync>> {
-        self.nss_conn_pool
-            .checkout(self.nss_endpoint.clone())
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
 
     /// Record a blob that exists only in local AZ
@@ -104,7 +57,7 @@ impl DataBlobTracker {
     ) -> Result<(), DataBlobTrackingError> {
         let key = format!("single/{blob_key}");
         nss_rpc_retry!(
-            self,
+            &self.nss_client,
             put_inode(
                 tracking_root_blob_name,
                 &key,
@@ -123,7 +76,12 @@ impl DataBlobTracker {
         blob_key: &str,
     ) -> Result<Option<Vec<u8>>, DataBlobTrackingError> {
         let key = format!("single/{blob_key}");
-        match nss_rpc_retry!(self, get_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            get_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(response) => {
                 // Extract bytes from response
                 match response.result {
@@ -145,7 +103,12 @@ impl DataBlobTracker {
         blob_key: &str,
     ) -> Result<(), DataBlobTrackingError> {
         let key = format!("single/{blob_key}");
-        match nss_rpc_retry!(self, delete_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            delete_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(_) => Ok(()),
             Err(RpcError::NotFound) => Ok(()), // Already deleted, that's fine
             Err(e) => Err(e.into()),
@@ -161,7 +124,12 @@ impl DataBlobTracker {
         // Use the blob key with single prefix, trimming null terminators
         let trimmed_key = blob_key.trim_end_matches('\0');
         let key = format!("single/{trimmed_key}");
-        match nss_rpc_retry!(self, delete_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            delete_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(_) => Ok(()),
             Err(RpcError::NotFound) => Ok(()), // Already deleted, that's fine
             Err(e) => Err(e.into()),
@@ -177,7 +145,7 @@ impl DataBlobTracker {
     ) -> Result<(), DataBlobTrackingError> {
         let key = format!("deleted/{blob_key}");
         nss_rpc_retry!(
-            self,
+            &self.nss_client,
             put_inode(
                 tracking_root_blob_name,
                 &key,
@@ -196,7 +164,12 @@ impl DataBlobTracker {
         blob_key: &str,
     ) -> Result<Option<Vec<u8>>, DataBlobTrackingError> {
         let key = format!("deleted/{blob_key}");
-        match nss_rpc_retry!(self, get_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            get_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(response) => {
                 // Extract bytes from response
                 match response.result {
@@ -220,7 +193,12 @@ impl DataBlobTracker {
         // Use the blob key with deleted prefix, trimming null terminators
         let trimmed_key = blob_key.trim_end_matches('\0');
         let key = format!("deleted/{trimmed_key}");
-        match nss_rpc_retry!(self, get_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            get_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(response) => match response.result {
                 Some(get_inode_response::Result::Ok(bytes)) => Ok(Some(bytes.to_vec())),
                 Some(get_inode_response::Result::ErrNotFound(_)) => Ok(None),
@@ -239,7 +217,12 @@ impl DataBlobTracker {
         blob_key: &str,
     ) -> Result<(), DataBlobTrackingError> {
         let key = format!("deleted/{blob_key}");
-        match nss_rpc_retry!(self, delete_inode(tracking_root_blob_name, &key, None)).await {
+        match nss_rpc_retry!(
+            &self.nss_client,
+            delete_inode(tracking_root_blob_name, &key, None)
+        )
+        .await
+        {
             Ok(_) => Ok(()),
             Err(RpcError::NotFound) => Ok(()), // Already deleted, that's fine
             Err(e) => Err(e.into()),
@@ -267,7 +250,7 @@ impl DataBlobTracker {
         };
 
         let response = nss_rpc_retry!(
-            self,
+            &self.nss_client,
             list_inodes(
                 tracking_root_blob_name,
                 max_keys,
@@ -325,7 +308,7 @@ impl DataBlobTracker {
         };
 
         let response = nss_rpc_retry!(
-            self,
+            &self.nss_client,
             list_inodes(
                 tracking_root_blob_name,
                 max_keys,
@@ -367,7 +350,7 @@ impl DataBlobTracker {
         &self,
     ) -> Result<Vec<(String, Option<String>)>, DataBlobTrackingError> {
         let prefix = "bucket:";
-        let bucket_values = rss_rpc_retry!(self, list(prefix, None)).await?;
+        let bucket_values = rss_rpc_retry!(&self.rss_client, list(prefix, None)).await?;
 
         let mut buckets = Vec::new();
         for bucket_value in &bucket_values {
@@ -404,7 +387,7 @@ impl DataBlobTracker {
         &self,
         timeout: Option<Duration>,
     ) -> Result<AzStatusMap, DataBlobTrackingError> {
-        rss_rpc_retry!(self, get_az_status(timeout))
+        rss_rpc_retry!(&self.rss_client, get_az_status(timeout))
             .await
             .map_err(|e| e.into())
     }
@@ -416,14 +399,8 @@ impl DataBlobTracker {
         status: &str,
         timeout: Option<Duration>,
     ) -> Result<(), DataBlobTrackingError> {
-        rss_rpc_retry!(self, set_az_status(az_id, status, timeout))
+        rss_rpc_retry!(&self.rss_client, set_az_status(az_id, status, timeout))
             .await
             .map_err(|e| e.into())
-    }
-}
-
-impl Default for DataBlobTracker {
-    fn default() -> Self {
-        Self::new()
     }
 }

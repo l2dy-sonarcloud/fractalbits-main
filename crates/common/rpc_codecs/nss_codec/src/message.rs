@@ -6,9 +6,6 @@ use rpc_codec_common::MessageHeaderTrait;
 #[repr(C)]
 #[derive(Pod, Debug, Default, Clone, Copy, Zeroable)]
 pub struct MessageHeader {
-    /// Client session ID for routing consistency across reconnections
-    pub client_session_id: u64,
-
     /// The size of the Header structure (always), plus any associated body.
     pub size: u32,
 
@@ -29,7 +26,7 @@ pub struct MessageHeader {
     protocol: u16,
 
     /// Reserved for future use
-    reserved: [u8; 4],
+    reserved: [u8; 12],
 }
 
 // Safety: Command is defined as protobuf enum type (i32), and 0 as Invalid. There is also no padding

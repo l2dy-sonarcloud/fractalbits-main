@@ -5,12 +5,11 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use metrics::histogram;
 use rand::seq::SliceRandom;
 use rpc_client_bss::RpcClientBss;
-use rpc_client_common::{RpcError, checkout_rpc_client};
+use rpc_client_common::RpcError;
 use std::{
     sync::{Arc, atomic::AtomicU64},
     time::{Duration, Instant},
 };
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -32,38 +31,35 @@ impl<'a> Drop for InFlightGuard<'a> {
     }
 }
 
-struct BssConnection {
+struct BssNode {
     address: String,
-    client: RwLock<Option<Arc<RpcClientBss>>>,
+    client: RpcClientBss,
     in_flight_requests: AtomicU64,
 }
 
-impl BssConnection {
+impl BssNode {
     fn new(address: String) -> Self {
+        debug!("Creating BSS RPC client for {}", address);
+        let client = RpcClientBss::new_from_address(address.clone());
         Self {
             address,
-            client: RwLock::new(None),
+            client,
             in_flight_requests: AtomicU64::new(0),
         }
     }
 
-    async fn get_client(
-        &self,
-    ) -> Result<Arc<RpcClientBss>, Box<dyn std::error::Error + Send + Sync>> {
-        checkout_rpc_client(&self.client, &self.address, |addr| async move {
-            RpcClientBss::new_from_address(addr).await
-        })
-        .await
+    fn get_client(&self) -> &RpcClientBss {
+        &self.client
     }
 }
 
-struct VolumeWithConnections {
+struct VolumeWithNodes {
     volume_id: u16,
-    bss_nodes: Vec<Arc<BssConnection>>,
+    bss_nodes: Vec<Arc<BssNode>>,
 }
 
 pub struct DataVgProxy {
-    volumes: Vec<VolumeWithConnections>,
+    volumes: Vec<VolumeWithNodes>,
     round_robin_counter: AtomicU64,
     quorum_config: QuorumConfig,
     rpc_timeout: Duration,
@@ -82,34 +78,34 @@ impl DataVgProxy {
             )
         })?;
 
-        let mut volumes_with_connections = Vec::new();
+        let mut volumes_with_nodes = Vec::new();
 
         for volume in data_vg_info.volumes {
-            let mut bss_connections = Vec::new();
+            let mut bss_nodes = Vec::new();
 
             for bss_node in volume.bss_nodes {
                 let address = format!("{}:{}", bss_node.ip, bss_node.port);
                 debug!(
-                    "Creating BSS connection tracker for node {}: {}",
+                    "Creating BSS node for node {}: {}",
                     bss_node.node_id, address
                 );
 
-                bss_connections.push(Arc::new(BssConnection::new(address)));
+                bss_nodes.push(Arc::new(BssNode::new(address)));
             }
 
-            volumes_with_connections.push(VolumeWithConnections {
+            volumes_with_nodes.push(VolumeWithNodes {
                 volume_id: volume.volume_id,
-                bss_nodes: bss_connections,
+                bss_nodes,
             });
         }
 
         debug!(
             "DataVgProxy initialized successfully with {} volumes",
-            volumes_with_connections.len()
+            volumes_with_nodes.len()
         );
 
         Ok(Self {
-            volumes: volumes_with_connections,
+            volumes: volumes_with_nodes,
             round_robin_counter: AtomicU64::new(0),
             quorum_config,
             rpc_timeout,
@@ -127,17 +123,15 @@ impl DataVgProxy {
 
     async fn get_blob_from_node_instance(
         &self,
-        bss_connection: &BssConnection,
+        bss_node: &BssNode,
         blob_guid: DataBlobGuid,
         block_number: u32,
     ) -> Result<Bytes, RpcError> {
         use rpc_client_common::ErrorRetryable;
 
-        tracing::debug!(%blob_guid, bss_address=%bss_connection.address, block_number, "get_blob_from_node_instance calling BSS");
+        tracing::debug!(%blob_guid, bss_address=%bss_node.address, block_number, "get_blob_from_node_instance calling BSS");
 
-        let bss_client = bss_connection.get_client().await.map_err(|e| {
-            RpcError::InternalRequestError(format!("Failed to get BSS client: {}", e))
-        })?;
+        let bss_client = bss_node.get_client();
 
         let mut body = Bytes::new();
         let mut retries = 3;
@@ -166,13 +160,13 @@ impl DataVgProxy {
             }
         }
 
-        tracing::debug!(%blob_guid, bss_address=%bss_connection.address, block_number, data_size=body.len(), "get_blob_from_node_instance result");
+        tracing::debug!(%blob_guid, bss_address=%bss_node.address, block_number, data_size=body.len(), "get_blob_from_node_instance result");
 
         Ok(body)
     }
 
     async fn delete_blob_from_node(
-        bss_connection: Arc<BssConnection>,
+        bss_node: Arc<BssNode>,
         blob_guid: DataBlobGuid,
         block_number: u32,
         rpc_timeout: Duration,
@@ -180,12 +174,10 @@ impl DataVgProxy {
         use rpc_client_common::ErrorRetryable;
 
         let start_node = Instant::now();
-        let address = bss_connection.address.clone();
+        let address = bss_node.address.clone();
 
         let result = async {
-            let bss_client = bss_connection.get_client().await.map_err(|e| {
-                RpcError::InternalRequestError(format!("Failed to get BSS client: {}", e))
-            })?;
+            let bss_client = bss_node.get_client();
 
             let mut retries = 3;
             let mut backoff = Duration::from_millis(5);
@@ -325,7 +317,7 @@ impl DataVgProxy {
     }
 
     async fn put_blob_to_node(
-        bss_connection: Arc<BssConnection>,
+        bss_node: Arc<BssNode>,
         blob_guid: DataBlobGuid,
         block_number: u32,
         body: Bytes,
@@ -334,12 +326,10 @@ impl DataVgProxy {
         use rpc_client_common::ErrorRetryable;
 
         let start_node = Instant::now();
-        let address = bss_connection.address.clone();
+        let address = bss_node.address.clone();
 
         let result = async {
-            let bss_client = bss_connection.get_client().await.map_err(|e| {
-                RpcError::InternalRequestError(format!("Failed to get BSS client: {}", e))
-            })?;
+            let bss_client = bss_node.get_client();
 
             let mut retries = 3;
             let mut backoff = Duration::from_millis(5);
@@ -447,10 +437,9 @@ impl DataVgProxy {
 
         // Create read futures for all nodes
         let mut read_futures = FuturesUnordered::new();
-        for bss_connection in &volume.bss_nodes {
-            let fut =
-                Self::get_blob_from_node_instance(self, bss_connection, blob_guid, block_number);
-            let address = bss_connection.address.clone();
+        for bss_node in &volume.bss_nodes {
+            let fut = Self::get_blob_from_node_instance(self, bss_node, blob_guid, block_number);
+            let address = bss_node.address.clone();
             read_futures.push(async move {
                 let result = fut.await;
                 (address, result)

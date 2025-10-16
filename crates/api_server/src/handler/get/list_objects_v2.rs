@@ -289,8 +289,9 @@ pub async fn list_objects(
         start_after
     );
 
+    let nss_client = app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        app,
+        nss_client,
         list_inodes(
             &bucket.root_blob_name,
             max_keys,

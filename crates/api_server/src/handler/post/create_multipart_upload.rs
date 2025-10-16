@@ -56,8 +56,9 @@ pub async fn create_multipart_upload_handler(
         state: ObjectState::Mpu(MpuState::Uploading),
     };
     let object_layout_bytes: Bytes = to_bytes_in::<_, Error>(&object_layout, Vec::new())?.into();
+    let nss_client = ctx.app.get_nss_rpc_client();
     let _resp = nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         put_inode(
             &bucket.root_blob_name,
             &ctx.key,

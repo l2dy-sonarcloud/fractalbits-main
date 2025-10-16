@@ -490,6 +490,7 @@ impl RpcClient {
         bucket_name: &str,
         api_key_id: &str,
         timeout: Option<Duration>,
+        retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "delete_bucket");
         let start = Instant::now();
@@ -503,6 +504,7 @@ impl RpcClient {
         header.id = request_id;
         header.command = Command::DeleteBucket;
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
+        header.retry_count = retry_count;
 
         let mut body_bytes = BytesMut::new();
         body.encode(&mut body_bytes)

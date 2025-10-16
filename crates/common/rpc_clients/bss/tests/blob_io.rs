@@ -5,16 +5,22 @@ use rpc_client_bss::*;
 use tracing_test::traced_test;
 use uuid::Uuid;
 
+async fn is_server_reachable(url: &str) -> bool {
+    tokio::net::TcpStream::connect(url).await.is_ok()
+}
+
 #[tokio::test]
 #[traced_test]
 async fn test_basic_blob_io_with_fixed_bytes() {
     let url = "127.0.0.1:9225";
     tracing::debug!(%url);
-    // Skip testing if blob storage server is not up
-    let rpc_client = match RpcClientBss::new_from_address(url.to_string()).await {
-        Ok(client) => client,
-        Err(_) => return,
-    };
+
+    if !is_server_reachable(url).await {
+        tracing::info!("Blob storage server not reachable at {url}, skipping test");
+        return;
+    }
+
+    let rpc_client = RpcClientBss::new_from_address(url.to_string());
 
     for _ in 0..1 {
         let blob_guid = DataBlobGuid {
@@ -41,11 +47,13 @@ async fn test_basic_blob_io_with_fixed_bytes() {
 async fn test_basic_blob_io_with_random_bytes() {
     let url = "127.0.0.1:9225";
     tracing::debug!(%url);
-    // Skip testing if blob storage server is not up
-    let rpc_client = match RpcClientBss::new_from_address(url.to_string()).await {
-        Ok(client) => client,
-        Err(_) => return,
-    };
+
+    if !is_server_reachable(url).await {
+        tracing::info!("Blob storage server not reachable at {url}, skipping test");
+        return;
+    }
+
+    let rpc_client = RpcClientBss::new_from_address(url.to_string());
 
     for _ in 0..1 {
         let blob_guid = DataBlobGuid {

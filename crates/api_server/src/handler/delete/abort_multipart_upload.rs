@@ -23,8 +23,9 @@ pub async fn abort_multipart_upload_handler(
 
     let bucket = ctx.resolve_bucket().await?;
     let rpc_timeout = ctx.app.config.rpc_timeout();
+    let nss_client = ctx.app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         get_inode(&bucket.root_blob_name, &ctx.key, Some(rpc_timeout))
     )
     .await?;
@@ -50,7 +51,7 @@ pub async fn abort_multipart_upload_handler(
     let new_object_bytes: Bytes = to_bytes_in::<_, Error>(&object, Vec::new())?.into();
 
     let resp = nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         put_inode(
             &bucket.root_blob_name,
             &ctx.key,

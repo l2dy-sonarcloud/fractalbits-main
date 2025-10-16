@@ -19,8 +19,9 @@ pub async fn delete_object_handler(ctx: ObjectRequestContext) -> Result<HttpResp
     let bucket = ctx.resolve_bucket().await?;
     let blob_deletion = ctx.app.get_blob_deletion();
     let rpc_timeout = ctx.app.config.rpc_timeout();
+    let nss_client = ctx.app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         delete_inode(&bucket.root_blob_name, &ctx.key, Some(rpc_timeout))
     )
     .await?;
@@ -98,7 +99,7 @@ pub async fn delete_object_handler(ctx: ObjectRequestContext) -> Result<HttpResp
                     .await?;
                     for (mpu_key, mpu_obj) in mpus.iter() {
                         nss_rpc_retry!(
-                            ctx.app,
+                            nss_client,
                             delete_inode(&bucket.root_blob_name, &mpu_key, Some(rpc_timeout))
                         )
                         .await?;

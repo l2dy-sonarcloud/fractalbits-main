@@ -20,9 +20,6 @@ pub struct MessageHeader {
     /// cluster (for example, staging vs production).
     cluster: u128,
 
-    /// Client session ID for routing consistency across reconnections
-    pub client_session_id: u64,
-
     /// Version number for quorum protocol
     pub version: u64,
 
@@ -72,7 +69,8 @@ pub struct MessageHeader {
     reserved1: [u8; 32],
     reserved2: [u8; 32],
     reserved3: [u8; 32],
-    reserved4: [u8; 30],
+    reserved4: [u8; 32],
+    reserved5: [u8; 6],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

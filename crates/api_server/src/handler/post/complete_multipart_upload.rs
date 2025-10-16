@@ -276,8 +276,9 @@ pub async fn complete_multipart_upload_handler(
         checksum: expected_checksum,
     }));
     let new_object_bytes: Bytes = to_bytes_in::<_, Error>(&object, Vec::new())?.into();
+    let nss_client = ctx.app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         put_inode(
             &bucket.root_blob_name,
             &ctx.key,

@@ -55,8 +55,9 @@ pub async fn get_raw_object(
     root_blob_name: &str,
     key: &str,
 ) -> Result<ObjectLayout, S3Error> {
+    let nss_client = app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        app,
+        nss_client,
         get_inode(root_blob_name, key, Some(app.config.rpc_timeout()))
     )
     .await?;
@@ -85,8 +86,9 @@ pub async fn list_raw_objects(
     start_after: &str,
     skip_mpu_parts: bool,
 ) -> Result<Vec<(String, ObjectLayout)>, S3Error> {
+    let nss_client = app.get_nss_rpc_client();
     let resp = nss_rpc_retry!(
-        app,
+        nss_client,
         list_inodes(
             &root_blob_name,
             max_parts,

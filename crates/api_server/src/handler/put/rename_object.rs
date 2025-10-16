@@ -21,8 +21,9 @@ pub async fn rename_object_handler(ctx: ObjectRequestContext) -> Result<HttpResp
 
     info!(bucket=%bucket.bucket_name, %src_path, %dst_path, "renaming object in bucket");
 
+    let nss_client = ctx.app.get_nss_rpc_client();
     nss_rpc_retry!(
-        ctx.app,
+        nss_client,
         rename_object(
             &bucket.root_blob_name,
             &src_path,
