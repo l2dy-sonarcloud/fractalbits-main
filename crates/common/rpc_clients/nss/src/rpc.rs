@@ -4,7 +4,7 @@ use crate::client::RpcClient;
 use bytes::{Bytes, BytesMut};
 use nss_codec::*;
 use prost::Message as PbMessage;
-use rpc_client_common::{ErrorRetryable, InflightRpcGuard, RpcError};
+use rpc_client_common::{InflightRpcGuard, RpcError};
 use rpc_codec_common::MessageFrame;
 use tracing::error;
 

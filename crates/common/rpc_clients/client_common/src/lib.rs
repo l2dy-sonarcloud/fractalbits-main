@@ -1,19 +1,17 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, error};
 
 pub mod generic_client;
 #[cfg(feature = "io_uring")]
 pub mod io_uring;
-pub use generic_client::{RpcClient, RpcCodec};
+pub use generic_client::RpcCodec;
 pub use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
 
 use generic_client::RpcClient as GenericRpcClient;
-
-pub trait ErrorRetryable {
-    fn retryable(&self) -> bool;
-}
 
 #[derive(Error, Debug)]
 pub enum RpcError {
@@ -47,8 +45,8 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for RpcError {
     }
 }
 
-impl ErrorRetryable for RpcError {
-    fn retryable(&self) -> bool {
+impl RpcError {
+    pub fn retryable(&self) -> bool {
         matches!(
             self,
             RpcError::OneshotRecvError(_)
@@ -64,8 +62,9 @@ where
     Codec: RpcCodec<Header>,
     Header: MessageHeaderTrait + Clone + Send + Sync + 'static,
 {
-    inner: RwLock<Option<GenericRpcClient<Codec, Header>>>,
+    inner: RwLock<Option<Arc<GenericRpcClient<Codec, Header>>>>,
     address: String,
+    next_id: Arc<AtomicU32>,
 }
 
 impl<Codec, Header> AutoReconnectRpcClient<Codec, Header>
@@ -77,10 +76,12 @@ where
         Self {
             inner: RwLock::new(None),
             address,
+            next_id: Arc::new(AtomicU32::new(1)),
         }
     }
 
     async fn ensure_connected(&self) -> Result<(), RpcError> {
+        let rpc_type = Codec::RPC_TYPE;
         {
             let read = self.inner.read().await;
             if let Some(client) = read.as_ref()
@@ -97,12 +98,12 @@ where
             return Ok(());
         }
 
-        debug!("Reconnecting to RPC server at {}", self.address);
+        debug!(%rpc_type, address=%self.address, "Reconnecting to RPC server");
         let new_client =
             GenericRpcClient::<Codec, Header>::establish_connection(self.address.clone())
                 .await
                 .map_err(|e| {
-                    tracing::error!(
+                    error!(
                         rpc_type = Codec::RPC_TYPE,
                         address = %self.address,
                         error = %e,
@@ -111,12 +112,12 @@ where
                     RpcError::ConnectionClosed
                 })?;
 
-        *write = Some(new_client);
+        *write = Some(Arc::new(new_client));
         Ok(())
     }
 
     pub fn gen_request_id(&self) -> u32 {
-        rand::random()
+        self.next_id.fetch_add(1, Ordering::SeqCst)
     }
 
     pub async fn send_request(
@@ -126,11 +127,11 @@ where
         timeout: Option<Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
         self.ensure_connected().await?;
-        let read = self.inner.read().await;
-        read.as_ref()
-            .unwrap()
-            .send_request(request_id, frame, timeout)
-            .await
+        let client = {
+            let read = self.inner.read().await;
+            Arc::clone(read.as_ref().unwrap())
+        };
+        client.send_request(request_id, frame, timeout).await
     }
 }
 
@@ -182,7 +183,6 @@ impl Drop for InflightRpcGuard {
 macro_rules! rpc_retry {
     ($rpc_type:expr, $client:expr, $method:ident($($args:expr),*)) => {
         async {
-            use $crate::ErrorRetryable;
             let mut retries = 3;
             let mut backoff = std::time::Duration::from_millis(5);
             let mut retry_count = 0u32;
@@ -199,7 +199,7 @@ macro_rules! rpc_retry {
                             backoff = backoff.saturating_mul(2);
                         } else {
                             if e.retryable() {
-                                tracing::error!(
+                                ::tracing::error!(
                                     rpc_type=%$rpc_type,
                                     method=stringify!($method),
                                     error=%e,

@@ -4,7 +4,7 @@ use crate::client::RpcClient;
 use bss_codec::{Command, MessageHeader};
 use bytes::Bytes;
 use data_types::{DataBlobGuid, MetaBlobGuid};
-use rpc_client_common::{ErrorRetryable, InflightRpcGuard, RpcError};
+use rpc_client_common::{InflightRpcGuard, RpcError};
 use rpc_codec_common::MessageFrame;
 use tracing::error;
 

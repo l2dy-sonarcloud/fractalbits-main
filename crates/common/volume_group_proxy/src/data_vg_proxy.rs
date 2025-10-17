@@ -127,8 +127,6 @@ impl DataVgProxy {
         blob_guid: DataBlobGuid,
         block_number: u32,
     ) -> Result<Bytes, RpcError> {
-        use rpc_client_common::ErrorRetryable;
-
         tracing::debug!(%blob_guid, bss_address=%bss_node.address, block_number, "get_blob_from_node_instance calling BSS");
 
         let bss_client = bss_node.get_client();
@@ -171,8 +169,6 @@ impl DataVgProxy {
         block_number: u32,
         rpc_timeout: Duration,
     ) -> (String, Result<(), RpcError>) {
-        use rpc_client_common::ErrorRetryable;
-
         let start_node = Instant::now();
         let address = bss_node.address.clone();
 
@@ -323,8 +319,6 @@ impl DataVgProxy {
         body: Bytes,
         rpc_timeout: Duration,
     ) -> (String, Result<(), RpcError>) {
-        use rpc_client_common::ErrorRetryable;
-
         let start_node = Instant::now();
         let address = bss_node.address.clone();
 

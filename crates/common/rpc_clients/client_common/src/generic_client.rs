@@ -1,3 +1,4 @@
+use crate::RpcError;
 #[cfg(feature = "io_uring")]
 use crate::io_uring;
 use bytes::BytesMut;
@@ -12,32 +13,19 @@ use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use strum::AsRefStr;
-#[cfg(not(feature = "io_uring"))]
-use tokio::io::AsyncWriteExt;
-#[cfg(not(feature = "io_uring"))]
-use tokio::net::TcpStream;
-#[cfg(not(feature = "io_uring"))]
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     oneshot,
 };
-use tokio::task::JoinSet;
+use tokio::task::AbortHandle;
 use tokio_retry::{
     Retry,
     strategy::{FixedInterval, jitter},
 };
 use tracing::{debug, warn};
-
-#[cfg(not(feature = "io_uring"))]
-use tokio_stream::StreamExt;
-#[cfg(not(feature = "io_uring"))]
-use tokio_util::codec::FramedRead;
-
-use crate::RpcError;
 
 type RequestMap<Header> = Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame<Header>>>>>;
 
@@ -52,18 +40,18 @@ pub trait RpcCodec<Header: MessageHeaderTrait>:
     const RPC_TYPE: &'static str;
 }
 
-#[derive(Clone)]
 pub struct RpcClient<Codec: RpcCodec<Header>, Header: MessageHeaderTrait> {
     requests: RequestMap<Header>,
     sender: Sender<MessageFrame<Header>>,
-    next_id: Arc<AtomicU32>,
-    #[allow(unused)]
-    tasks: Arc<parking_lot::Mutex<JoinSet<()>>>,
+    send_task_handle: AbortHandle,
+    recv_task_handle: AbortHandle,
     socket_fd: RawFd,
     is_closed: Arc<AtomicBool>,
+    // For io_uring: we use the raw FD directly, but must keep the Socket alive
+    // to prevent it from being dropped and closing the FD. This field ensures
+    // proper RAII ownership - the socket is closed when RpcClient is dropped.
     #[cfg(feature = "io_uring")]
-    #[allow(dead_code)]
-    socket_owner: Arc<Socket>,
+    _socket_owner: Socket,
     _phantom: PhantomData<Codec>,
 }
 
@@ -77,13 +65,10 @@ enum DrainFrom {
 
 impl<Codec: RpcCodec<Header>, Header: MessageHeaderTrait> Drop for RpcClient<Codec, Header> {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.tasks) == 1 {
-            debug!(rpc_type = Codec::RPC_TYPE, socket_fd = %self.socket_fd, "Last RpcClient clone dropped, aborting tasks");
-            if let Some(mut tasks) = self.tasks.try_lock() {
-                tasks.abort_all();
-            }
-            Self::drain_pending_requests(self.socket_fd, &self.requests, DrainFrom::RpcClient);
-        }
+        debug!(rpc_type = Codec::RPC_TYPE, socket_fd = %self.socket_fd, "RpcClient dropped, aborting tasks");
+        self.send_task_handle.abort();
+        self.recv_task_handle.abort();
+        Self::drain_pending_requests(self.socket_fd, &self.requests, DrainFrom::RpcClient);
     }
 }
 
@@ -130,7 +115,7 @@ where
     }
 
     #[cfg(not(feature = "io_uring"))]
-    async fn new_internal(stream: TcpStream) -> Result<Self, RpcError> {
+    async fn new_internal_tokio(stream: tokio::net::TcpStream) -> Result<Self, RpcError> {
         let rpc_type = Codec::RPC_TYPE;
         let socket_fd = stream.as_raw_fd();
         let (reader, writer) = stream.into_split();
@@ -139,43 +124,43 @@ where
         let (sender, receiver) = mpsc::channel::<MessageFrame<Header>>(1024);
         let is_closed = Arc::new(AtomicBool::new(false));
 
-        let mut tasks = JoinSet::new();
-
         // Send task
-        {
+        let send_handle = {
             let sender_requests = requests.clone();
             let is_closed = is_closed.clone();
-            tasks.spawn(async move {
-                if let Err(e) = Self::send_task(writer, receiver, socket_fd, rpc_type).await {
+            tokio::spawn(async move {
+                if let Err(e) = Self::send_task_tokio(writer, receiver, socket_fd, rpc_type).await {
                     warn!(%rpc_type, %socket_fd, %e, "send task failed");
                 }
                 is_closed.store(true, Ordering::SeqCst);
                 Self::drain_pending_requests(socket_fd, &sender_requests, DrainFrom::SendTask);
-            });
-        }
+            })
+            .abort_handle()
+        };
 
         // Receive task
-        {
+        let recv_handle = {
             let receiver_requests = requests.clone();
             let is_closed = is_closed.clone();
-            tasks.spawn(async move {
+            tokio::spawn(async move {
                 if let Err(e) =
-                    Self::receive_task(reader, receiver_requests.clone(), socket_fd, rpc_type).await
+                    Self::receive_task_tokio(reader, &receiver_requests, socket_fd, rpc_type).await
                 {
                     warn!(%rpc_type, %socket_fd, %e, "receive task failed");
                 }
                 is_closed.store(true, Ordering::SeqCst);
                 Self::drain_pending_requests(socket_fd, &receiver_requests, DrainFrom::ReceiveTask);
-            });
-        }
+            })
+            .abort_handle()
+        };
 
         debug!(%rpc_type, %socket_fd, "Creating RPC client");
 
         Ok(RpcClient {
             requests,
             sender,
-            next_id: Arc::new(AtomicU32::new(1)),
-            tasks: Arc::new(parking_lot::Mutex::new(tasks)),
+            send_task_handle: send_handle,
+            recv_task_handle: recv_handle,
             socket_fd,
             is_closed,
             _phantom: PhantomData,
@@ -194,26 +179,25 @@ where
         let (sender, receiver) = mpsc::channel::<MessageFrame<Header>>(1024);
         let is_closed = Arc::new(AtomicBool::new(false));
 
-        let mut tasks = JoinSet::new();
-
         // Send task
-        {
+        let send_handle = {
             let sender_requests = requests.clone();
             let is_closed = is_closed.clone();
-            tasks.spawn(async move {
+            tokio::spawn(async move {
                 if let Err(e) = Self::send_task_io_uring(receiver, socket_fd, rpc_type).await {
                     warn!(%rpc_type, %socket_fd, %e, "send task failed");
                 }
                 is_closed.store(true, Ordering::SeqCst);
                 Self::drain_pending_requests(socket_fd, &sender_requests, DrainFrom::SendTask);
-            });
-        }
+            })
+            .abort_handle()
+        };
 
         // Receive task
-        {
+        let recv_handle = {
             let receiver_requests = requests.clone();
             let is_closed = is_closed.clone();
-            tasks.spawn(async move {
+            tokio::spawn(async move {
                 if let Err(e) =
                     Self::receive_task_io_uring(socket_fd, &receiver_requests, rpc_type).await
                 {
@@ -221,41 +205,34 @@ where
                 }
                 is_closed.store(true, Ordering::SeqCst);
                 Self::drain_pending_requests(socket_fd, &receiver_requests, DrainFrom::ReceiveTask);
-            });
-        }
+            })
+            .abort_handle()
+        };
 
         debug!(%rpc_type, %socket_fd, "Creating RPC client (io_uring)");
 
         Ok(RpcClient {
             requests,
             sender,
-            next_id: Arc::new(AtomicU32::new(1)),
-            tasks: Arc::new(parking_lot::Mutex::new(tasks)),
+            send_task_handle: send_handle,
+            recv_task_handle: recv_handle,
             socket_fd,
             is_closed,
-            socket_owner: Arc::new(socket),
+            _socket_owner: socket,
             _phantom: PhantomData,
         })
     }
 
     #[cfg(not(feature = "io_uring"))]
-    async fn send_task(
-        writer: OwnedWriteHalf,
-        receiver: Receiver<MessageFrame<Header>>,
-        socket_fd: RawFd,
-        rpc_type: &'static str,
-    ) -> Result<(), RpcError> {
-        Self::send_task_tokio(writer, receiver, socket_fd, rpc_type).await
-    }
-
-    #[cfg(not(feature = "io_uring"))]
     async fn send_task_tokio(
-        mut writer: OwnedWriteHalf,
+        mut writer: tokio::net::tcp::OwnedWriteHalf,
         mut receiver: Receiver<MessageFrame<Header>>,
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
+        use tokio::io::AsyncWriteExt;
         let mut header_buf = BytesMut::with_capacity(Header::SIZE);
+
         while let Some(frame) = receiver.recv().await {
             gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(1.0);
             let MessageFrame { header, body } = frame;
@@ -330,16 +307,6 @@ where
         Ok(())
     }
 
-    #[cfg(not(feature = "io_uring"))]
-    async fn receive_task(
-        receiver: OwnedReadHalf,
-        requests: RequestMap<Header>,
-        socket_fd: RawFd,
-        rpc_type: &'static str,
-    ) -> Result<(), RpcError> {
-        Self::receive_task_tokio(receiver, &requests, socket_fd, rpc_type).await
-    }
-
     #[cfg(feature = "io_uring")]
     async fn receive_task_io_uring(
         socket_fd: RawFd,
@@ -357,13 +324,14 @@ where
 
     #[cfg(not(feature = "io_uring"))]
     async fn receive_task_tokio(
-        receiver: OwnedReadHalf,
+        receiver: tokio::net::tcp::OwnedReadHalf,
         requests: &RequestMap<Header>,
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
+        use tokio_stream::StreamExt;
         let decoder = Codec::default();
-        let mut reader = FramedRead::new(receiver, decoder);
+        let mut reader = tokio_util::codec::FramedRead::new(receiver, decoder);
         while let Some(frame) = reader.next().await {
             let frame = frame?;
             Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
@@ -433,9 +401,7 @@ where
         frame.header.set_retry_count(retry_count);
 
         let (tx, rx) = oneshot::channel();
-        {
-            self.requests.lock().insert(request_id, tx);
-        }
+        self.requests.lock().insert(request_id, tx);
         gauge!("rpc_request_pending_in_resp_map", "type" => rpc_type).increment(1.0);
 
         self.sender
@@ -457,10 +423,6 @@ where
         result.map_err(|e| RpcError::InternalResponseError(e.to_string()))
     }
 
-    pub fn gen_request_id(&self) -> u32 {
-        self.next_id.fetch_add(1, Ordering::SeqCst)
-    }
-
     pub async fn send_request(
         &self,
         request_id: u32,
@@ -478,7 +440,7 @@ where
 
 macro_rules! establish_connection_with_retry {
     ($addr_key:expr, $connect_fn:expr) => {{
-        const MAX_CONNECTION_RETRIES: usize = 100 * 3600;
+        const MAX_CONNECTION_RETRIES: usize = 100 * 3600 * 24;
         let start = std::time::Instant::now();
         let retry_strategy = FixedInterval::from_millis(10)
             .map(jitter)
@@ -526,7 +488,6 @@ where
             .with_interval(Duration::from_secs(2))
             .with_retries(2);
         socket.set_tcp_keepalive(&keepalive)?;
-
         socket.set_nodelay(true)?;
         socket.set_nonblocking(true)?;
 
@@ -534,33 +495,34 @@ where
     }
 
     #[cfg(not(feature = "io_uring"))]
-    pub async fn establish_connection(addr_key: String) -> Result<Self, RpcError>
+    pub async fn establish_connection(addr: String) -> Result<Self, RpcError>
     where
         Header: Default,
     {
-        debug!("Trying to connect to {addr_key}");
-        establish_connection_with_retry!(&addr_key, || async {
-            let socket_addr = Self::resolve_address(&addr_key).await?;
-            let stream = TcpStream::connect(socket_addr).await?;
+        debug!(rpc_type=%Codec::RPC_TYPE, %addr, "Trying to connect to rpc server");
+        establish_connection_with_retry!(&addr, || async {
+            let socket_addr = Self::resolve_address(&addr).await?;
+            let stream = tokio::net::TcpStream::connect(socket_addr).await?;
 
             let std_stream = stream.into_std().map_err(RpcError::IoError)?;
             let socket = Socket::from(std_stream);
             Self::configure_tcp_socket(&socket).map_err(RpcError::IoError)?;
             let std_stream: std::net::TcpStream = socket.into();
-            let configured_stream = TcpStream::from_std(std_stream).map_err(RpcError::IoError)?;
+            let configured_stream =
+                tokio::net::TcpStream::from_std(std_stream).map_err(RpcError::IoError)?;
 
-            Self::new_internal(configured_stream).await
+            Self::new_internal_tokio(configured_stream).await
         })
     }
 
     #[cfg(feature = "io_uring")]
-    pub async fn establish_connection(addr_key: String) -> Result<Self, RpcError>
+    pub async fn establish_connection(addr: String) -> Result<Self, RpcError>
     where
         Header: Default,
     {
-        debug!("Trying to connect to {addr_key} via io_uring");
-        establish_connection_with_retry!(&addr_key, || async {
-            let socket_addr = Self::resolve_address(&addr_key).await?;
+        debug!(rpc_type=%Codec::RPC_TYPE, %addr, "Trying to connect to rpc server via io_uring");
+        establish_connection_with_retry!(&addr, || async {
+            let socket_addr = Self::resolve_address(&addr).await?;
             Self::new_internal_io_uring(socket_addr).await
         })
     }

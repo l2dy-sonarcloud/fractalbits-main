@@ -5,7 +5,7 @@ use bytes::{Bytes, BytesMut};
 use data_types::DataVgInfo;
 use metrics::histogram;
 use prost::Message as PbMessage;
-use rpc_client_common::{ErrorRetryable, InflightRpcGuard, RpcError};
+use rpc_client_common::{InflightRpcGuard, RpcError};
 use rpc_codec_common::MessageFrame;
 use rss_codec::*;
 use tracing::{error, warn};
