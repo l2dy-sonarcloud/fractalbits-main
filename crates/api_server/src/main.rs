@@ -1,15 +1,8 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::thread;
-use std::{fs::File, io::Read};
-
-mod api_key_routes;
-mod cache_mgmt;
-
 use actix_files::Files;
 use actix_web::{App, HttpServer, middleware::Logger, rt::System, web};
-use api_server::{AppState, CacheCoordinator, Config, handler::any_handler};
+use api_server::{
+    AppState, CacheCoordinator, Config, api_key_routes, cache_mgmt, handler::any_handler,
+};
 use clap::Parser;
 use data_types::Versioned;
 use openssl::{
@@ -17,49 +10,19 @@ use openssl::{
     ssl::{SslAcceptor, SslMethod},
 };
 use socket2::{Domain, Protocol, Socket, Type};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::thread;
+use std::{fs::File, io::Read};
 use tracing::{error, info};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
-
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[derive(Parser)]
 #[clap(name = "api_server", about = "API server")]
 struct Opt {
     #[clap(short = 'c', long = "config", long_help = "Config file path")]
     config_file: Option<PathBuf>,
-}
-
-fn load_private_key(key_path: &PathBuf) -> Result<PKey<Private>, Box<dyn std::error::Error>> {
-    let mut file = File::open(key_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    if let Ok(key) = PKey::private_key_from_pem_passphrase(&buffer, b"password") {
-        return Ok(key);
-    }
-
-    let key = PKey::private_key_from_pem(&buffer)?;
-    Ok(key)
-}
-
-fn make_reuseport_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
-    let domain = Domain::for_address(addr);
-    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
-
-    socket.set_reuse_address(true)?;
-    socket.set_reuse_port(true)?;
-
-    socket.set_nodelay(true)?;
-    socket.set_recv_buffer_size(16 * 1024 * 1024)?;
-    socket.set_send_buffer_size(16 * 1024 * 1024)?;
-
-    socket.bind(&addr.into())?;
-    socket.listen(65536)?;
-
-    let listener: TcpListener = socket.into();
-    listener.set_nonblocking(true)?;
-    Ok(listener)
 }
 
 fn main() -> std::io::Result<()> {
@@ -341,4 +304,36 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn make_reuseport_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
+    let domain = Domain::for_address(addr);
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+    socket.set_reuse_address(true)?;
+    socket.set_reuse_port(true)?;
+
+    socket.set_nodelay(true)?;
+    socket.set_recv_buffer_size(16 * 1024 * 1024)?;
+    socket.set_send_buffer_size(16 * 1024 * 1024)?;
+
+    socket.bind(&addr.into())?;
+    socket.listen(65536)?;
+
+    let listener: TcpListener = socket.into();
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
+fn load_private_key(key_path: &PathBuf) -> Result<PKey<Private>, Box<dyn std::error::Error>> {
+    let mut file = File::open(key_path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+
+    if let Ok(key) = PKey::private_key_from_pem_passphrase(&buffer, b"password") {
+        return Ok(key);
+    }
+
+    let key = PKey::private_key_from_pem(&buffer)?;
+    Ok(key)
 }

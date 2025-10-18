@@ -271,7 +271,7 @@ impl DataVgProxy {
             // Check if we've achieved write quorum
             if successful_writes >= write_quorum {
                 // Spawn remaining writes as background task for eventual consistency
-                tokio::task::spawn_local(async move {
+                tokio::task::spawn(async move {
                     while let Some((addr, res)) = write_futures.next().await {
                         match res {
                             Ok(()) => {
@@ -539,7 +539,7 @@ impl DataVgProxy {
 
             if successful_deletes >= write_quorum {
                 // Spawn remaining deletes as background task for eventual consistency
-                tokio::task::spawn_local(async move {
+                tokio::task::spawn(async move {
                     while let Some((addr, res)) = delete_futures.next().await {
                         match res {
                             Ok(()) => {

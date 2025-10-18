@@ -1,5 +1,7 @@
+pub mod api_key_routes;
 pub mod blob_client;
 mod blob_storage;
+pub mod cache_mgmt;
 mod cache_registry;
 mod config;
 pub mod handler;
@@ -27,6 +29,9 @@ use tokio::sync::{
 };
 use tracing::debug;
 pub type BlobId = uuid::Uuid;
+
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub struct AppState {
     pub config: Arc<Config>,

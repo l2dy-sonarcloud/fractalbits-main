@@ -76,9 +76,9 @@ fn list_repos() -> CmdResult {
 }
 
 fn all_repos() -> impl Iterator<Item = &'static Repo> {
-    GIT_REPOS
-        .iter()
-        .filter(|repo| repo.path != "prebuilt" && Path::new(&format!("{}/.git/", repo.path)).exists())
+    GIT_REPOS.iter().filter(|repo| {
+        repo.path != "prebuilt" && Path::new(&format!("{}/.git/", repo.path)).exists()
+    })
 }
 
 fn repo_has_changes(path: &str) -> bool {
