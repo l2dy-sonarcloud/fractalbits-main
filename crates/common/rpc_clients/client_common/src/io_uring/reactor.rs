@@ -28,14 +28,27 @@ pub struct SendTask {
     pub fd: RawFd,
     pub header: Bytes,
     pub body: Bytes,
+    pub completion: oneshot::Sender<io::Result<()>>,
+}
+
+pub struct RecvTask {
+    pub fd: RawFd,
+    pub buffer_ptr: *mut u8,
+    pub len: usize,
     pub completion: oneshot::Sender<io::Result<usize>>,
 }
 
-#[derive(Debug)]
-pub struct RecvTask {
-    pub fd: RawFd,
-    pub len: usize,
-    pub completion: oneshot::Sender<io::Result<Bytes>>,
+unsafe impl Send for RecvTask {}
+
+impl std::fmt::Debug for RecvTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecvTask")
+            .field("fd", &self.fd)
+            .field("buffer_ptr", &self.buffer_ptr)
+            .field("len", &self.len)
+            .field("completion", &"<oneshot::Sender>")
+            .finish()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -102,7 +115,7 @@ impl RpcReactorHandle {
         fd: RawFd,
         header: Bytes,
         body: Bytes,
-    ) -> oneshot::Receiver<io::Result<usize>> {
+    ) -> oneshot::Receiver<io::Result<()>> {
         let (tx, mut rx) = oneshot::channel();
         let header_len = header.len();
         let body_len = body.len();
@@ -127,14 +140,20 @@ impl RpcReactorHandle {
         rx
     }
 
-    pub fn submit_recv(&self, fd: RawFd, len: usize) -> oneshot::Receiver<io::Result<Bytes>> {
+    pub fn submit_recv(
+        &self,
+        fd: RawFd,
+        buffer_ptr: *mut u8,
+        len: usize,
+    ) -> oneshot::Receiver<io::Result<usize>> {
         let (tx, mut rx) = oneshot::channel();
         if len == 0 {
-            let _ = tx.send(Ok(Bytes::new()));
+            let _ = tx.send(Ok(0));
             return rx;
         }
         let task = RpcTask::Recv(RecvTask {
             fd,
+            buffer_ptr,
             len,
             completion: tx,
         });
@@ -343,12 +362,13 @@ fn handle_send(handle: &Arc<RpcReactorHandle>, task: SendTask) {
 fn handle_recv(handle: &Arc<RpcReactorHandle>, task: RecvTask) {
     let RecvTask {
         fd,
+        buffer_ptr,
         len,
         completion,
     } = task;
     if let Err(err) = handle
         .io
-        .submit_recv(handle.worker_index, fd, len, completion)
+        .submit_recv(handle.worker_index, fd, buffer_ptr, len, completion)
     {
         warn!(
             worker_index = handle.worker_index,
@@ -382,7 +402,7 @@ impl ReactorIo {
         fd: RawFd,
         header: Bytes,
         body: Bytes,
-        completion: oneshot::Sender<io::Result<usize>>,
+        completion: oneshot::Sender<io::Result<()>>,
     ) -> io::Result<()> {
         let user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
 
@@ -465,24 +485,20 @@ impl ReactorIo {
         &self,
         worker_index: usize,
         fd: RawFd,
+        buffer_ptr: *mut u8,
         len: usize,
-        completion: oneshot::Sender<io::Result<Bytes>>,
+        completion: oneshot::Sender<io::Result<usize>>,
     ) -> io::Result<()> {
-        if len == 0 {
-            let _ = completion.send(Ok(Bytes::new()));
-            return Ok(());
-        }
-        let mut buffer = vec![0u8; len];
+        debug_assert_ne!(len, 0, "submit_recv called with zero length");
         let user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
         debug!(
             worker_index,
             fd, len, user_data, "submitting recv to io_uring"
         );
-        let entry =
-            io_uring::opcode::Recv::new(io_uring::types::Fd(fd), buffer.as_mut_ptr(), len as u32)
-                .flags(libc::MSG_NOSIGNAL)
-                .build()
-                .user_data(user_data);
+        let entry = io_uring::opcode::Recv::new(io_uring::types::Fd(fd), buffer_ptr, len as u32)
+            .flags(libc::MSG_NOSIGNAL)
+            .build()
+            .user_data(user_data);
 
         let submit_result: io::Result<()> = self.ring.with_lock(|ring| {
             unsafe {
@@ -499,14 +515,7 @@ impl ReactorIo {
         match submit_result {
             Ok(_) => {
                 let mut pending = self.pending_recv.lock().expect("pending recv map poisoned");
-                pending.insert(
-                    user_data,
-                    PendingRecv {
-                        fd,
-                        buffer,
-                        completion,
-                    },
-                );
+                pending.insert(user_data, PendingRecv { fd, completion });
                 Ok(())
             }
             Err(err) => {
@@ -545,7 +554,7 @@ impl ReactorIo {
             }
 
             // Check if this is a recv completion
-            if let Some(mut recv) = pending_recv.remove(&user_data) {
+            if let Some(recv) = pending_recv.remove(&user_data) {
                 if result < 0 {
                     let err = io::Error::from_raw_os_error(-result);
                     debug!(
@@ -558,17 +567,15 @@ impl ReactorIo {
                     let _ = recv.completion.send(Err(err));
                     continue;
                 }
-                let read = result as usize;
-                recv.buffer.truncate(read);
+                let bytes_read = result as usize;
                 debug!(
                     worker_index,
                     fd = recv.fd,
                     user_data,
-                    read,
+                    bytes_read,
                     "recv completion"
                 );
-                let bytes = Bytes::from(recv.buffer);
-                let _ = recv.completion.send(Ok(bytes));
+                let _ = recv.completion.send(Ok(bytes_read));
                 continue;
             }
 
@@ -589,7 +596,7 @@ impl ReactorIo {
 
                 let written = result as usize;
                 if written != send.expected_total {
-                    warn!(
+                    error!(
                         worker_index,
                         fd = send.fd,
                         user_data,
@@ -614,7 +621,7 @@ impl ReactorIo {
                     written,
                     "send completion"
                 );
-                let _ = send.completion.send(Ok(written));
+                let _ = send.completion.send(Ok(()));
                 continue;
             }
 
@@ -648,8 +655,7 @@ impl ReactorIo {
 
 struct PendingRecv {
     fd: RawFd,
-    buffer: Vec<u8>,
-    completion: oneshot::Sender<io::Result<Bytes>>,
+    completion: oneshot::Sender<io::Result<usize>>,
 }
 
 #[allow(dead_code)]
@@ -667,7 +673,7 @@ struct PendingSend {
     _body: Bytes,
     _iovecs: SendableIoVec,
     _msg: SendableMsgHdr,
-    completion: oneshot::Sender<io::Result<usize>>,
+    completion: oneshot::Sender<io::Result<()>>,
 }
 
 #[derive(Clone)]
@@ -680,7 +686,7 @@ impl ReactorTransport {
         Self { handle }
     }
 
-    pub async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<usize> {
+    pub async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<()> {
         let rx = self.handle.submit_send(fd, header, body);
         match rx.await {
             Ok(result) => result,
@@ -696,64 +702,51 @@ impl ReactorTransport {
         fd: RawFd,
     ) -> io::Result<MessageFrame<H>> {
         let header_size = H::SIZE;
-
-        let header_bytes = self.recv_exact_bytes(fd, header_size).await?;
-
-        if header_bytes.is_empty() {
+        let header_vec = self.recv_exact(fd, header_size).await?;
+        if header_vec.len() != header_size {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "connection closed during header read",
             ));
         }
 
-        if header_bytes.len() != header_size {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "incomplete header: expected {}, got {}",
-                    header_size,
-                    header_bytes.len()
-                ),
-            ));
-        }
-
+        let header_bytes = Bytes::from(header_vec);
         let header = H::decode(&header_bytes);
         let body_size = header.get_body_size();
+        let body = if body_size > 0 {
+            let body_vec = self.recv_exact(fd, body_size).await?;
 
-        let body = if body_size == 0 {
-            Bytes::new()
-        } else {
-            let body_bytes = self.recv_exact_bytes(fd, body_size).await?;
-
-            if body_bytes.len() != body_size {
+            if body_vec.len() != body_size {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
                         "incomplete body: expected {}, got {}",
                         body_size,
-                        body_bytes.len()
+                        body_vec.len()
                     ),
                 ));
             }
 
-            body_bytes
+            Bytes::from(body_vec)
+        } else {
+            Bytes::new()
         };
 
         Ok(MessageFrame { header, body })
     }
 
-    async fn recv_exact_bytes(&self, fd: RawFd, len: usize) -> io::Result<Bytes> {
-        if len == 0 {
-            return Ok(Bytes::new());
-        }
+    async fn recv_exact(&self, fd: RawFd, len: usize) -> io::Result<Vec<u8>> {
+        debug_assert_ne!(len, 0, "recv_exact called with zero length");
+        let mut buffer: Vec<u8> = Vec::with_capacity(len);
 
         let mut total = 0usize;
-        let mut buffer: Option<Vec<u8>> = None;
 
         while total < len {
             let remaining = len - total;
-            let rx = self.handle.submit_recv(fd, remaining);
-            let chunk = match rx.await {
+            let buffer_ptr = unsafe { buffer.as_mut_ptr().add(total) };
+
+            let rx = self.handle.submit_recv(fd, buffer_ptr, remaining);
+            let bytes_read = match rx.await {
                 Ok(result) => result?,
                 Err(_) => {
                     return Err(io::Error::new(
@@ -763,37 +756,25 @@ impl ReactorTransport {
                 }
             };
 
-            if chunk.is_empty() {
-                if total == 0 {
-                    return Ok(Bytes::new());
-                }
+            if bytes_read == 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "connection closed before completing recv",
                 ));
             }
 
-            if total == 0 && chunk.len() == len {
-                return Ok(chunk);
-            }
-
-            if buffer.is_none() {
-                buffer = Some(vec![0u8; len]);
-            }
-
-            let buf = buffer.as_mut().expect("recv buffer initialized");
-            let end = total + chunk.len();
-            if end > len {
+            total += bytes_read;
+            if total > len {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "recv received more data than requested",
                 ));
             }
-            buf[total..end].copy_from_slice(&chunk);
-            total = end;
         }
 
-        let buf = buffer.expect("recv buffer must be initialized");
-        Ok(Bytes::from(buf))
+        unsafe {
+            buffer.set_len(len);
+        }
+        Ok(buffer)
     }
 }

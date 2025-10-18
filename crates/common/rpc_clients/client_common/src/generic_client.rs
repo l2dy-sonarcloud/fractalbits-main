@@ -279,27 +279,12 @@ where
             header_buf.clear();
             header_buf.reserve(Header::SIZE);
             header.encode(&mut header_buf);
-            let header_len = header_buf.len();
-            let header_bytes = header_buf.split_to(header_len).freeze();
-            let body_len = body.len();
-            let expected_total = header_len + body_len;
+            let header_bytes = header_buf.split_to(Header::SIZE).freeze();
 
-            let written = transport
+            transport
                 .send(socket_fd, header_bytes, body)
                 .await
                 .map_err(RpcError::IoError)?;
-
-            if written != expected_total {
-                warn!(
-                    %rpc_type,
-                    %socket_fd,
-                    %request_id,
-                    written,
-                    expected_total,
-                    "io_uring send wrote unexpected byte count"
-                );
-            }
-
             counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
         }
 
