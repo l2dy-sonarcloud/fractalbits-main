@@ -5,16 +5,17 @@ use api_server::{
 };
 use clap::Parser;
 use data_types::Versioned;
-use openssl::{
-    pkey::{PKey, Private},
-    ssl::{SslAcceptor, SslMethod},
+use rustls::{
+    ServerConfig,
+    pki_types::{CertificateDer, PrivateKeyDer},
 };
+use rustls_pemfile::{certs, private_key};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
-use std::{fs::File, io::Read};
+use std::{fs::File, io::BufReader};
 use tracing::{error, info};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -272,22 +273,35 @@ fn main() -> std::io::Result<()> {
                         };
 
                         let cert_path = PathBuf::from(&https_config.cert_file);
-                        let mut builder =
-                            SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-                        builder.set_private_key(&private_key).unwrap();
-                        if let Err(e) = builder.set_certificate_chain_file(&cert_path) {
-                            error!(
-                                "Failed to load certificate chain from {}: {e}",
-                                cert_path.display()
-                            );
-                            std::process::exit(1);
-                        }
+                        let cert_chain = match load_certificates(&cert_path) {
+                            Ok(cert_chain) => cert_chain,
+                            Err(e) => {
+                                error!(
+                                    "Failed to load certificate chain from {}: {e}",
+                                    cert_path.display()
+                                );
+                                std::process::exit(1);
+                            }
+                        };
+
+                        let mut tls_config = ServerConfig::builder_with_provider(Arc::new(
+                            rustls::crypto::aws_lc_rs::default_provider(),
+                        ))
+                        .with_safe_default_protocol_versions()
+                        .unwrap()
+                        .with_no_client_auth()
+                        .with_single_cert(cert_chain, private_key)
+                        .unwrap();
 
                         if https_config.force_http1_only {
-                            builder.set_alpn_protos(b"\x08http/1.1").unwrap();
+                            tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+                        } else {
+                            tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
                         }
 
-                        server = server.listen_openssl(https_listener, builder).unwrap();
+                        server = server
+                            .listen_rustls_0_23(https_listener, tls_config)
+                            .unwrap();
                     }
 
                     server.run().await
@@ -325,15 +339,24 @@ fn make_reuseport_listener(addr: SocketAddr) -> std::io::Result<TcpListener> {
     Ok(listener)
 }
 
-fn load_private_key(key_path: &PathBuf) -> Result<PKey<Private>, Box<dyn std::error::Error>> {
-    let mut file = File::open(key_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    if let Ok(key) = PKey::private_key_from_pem_passphrase(&buffer, b"password") {
-        return Ok(key);
-    }
-
-    let key = PKey::private_key_from_pem(&buffer)?;
+fn load_private_key(
+    key_path: &PathBuf,
+) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
+    let file = File::open(key_path)?;
+    let mut reader = BufReader::new(file);
+    let key = private_key(&mut reader)?
+        .ok_or_else(|| format!("No private key found in {}", key_path.display()))?;
     Ok(key)
+}
+
+fn load_certificates(
+    cert_path: &PathBuf,
+) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>> {
+    let file = File::open(cert_path)?;
+    let mut reader = BufReader::new(file);
+    let cert_chain = certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
+    if cert_chain.is_empty() {
+        return Err(format!("No certificates found in {}", cert_path.display()).into());
+    }
+    Ok(cert_chain)
 }
