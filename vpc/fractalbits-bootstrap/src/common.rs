@@ -697,7 +697,7 @@ pub fn create_ena_irq_affinity_service() -> CmdResult {
         r##"[Unit]
 Description=ENA IRQ Affinity Configuration
 After=network-online.target
-Before=api_server.service bss.service nss.service mirrord.service
+Before=api_server.service bss.service nss.service mirrord.service bench_client.service
 
 [Service]
 Type=oneshot
@@ -811,6 +811,7 @@ echo "XPS configured for TX steering" >&2
         echo $script_content > $script_path;
         chmod +x $script_path;
 
+        mkdir -p $ETC_PATH;
         echo $systemd_unit_content > ${ETC_PATH}ena-irq-affinity.service;
         systemctl enable --now ${ETC_PATH}ena-irq-affinity.service;
     }?;
