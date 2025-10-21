@@ -8,7 +8,6 @@ use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
 use socket2::{Socket, TcpKeepalive};
 use std::collections::HashMap;
 use std::io;
-#[cfg(not(feature = "io_uring"))]
 use std::io::IoSlice;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
@@ -234,32 +233,57 @@ where
     ) -> Result<(), RpcError> {
         use tokio::io::AsyncWriteExt;
 
-        while let Some(frame) = receiver.recv().await {
-            gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(1.0);
+        const MAX_BATCH_SIZE: usize = 32;
+        let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
+        let mut encoded_frames = Vec::with_capacity(MAX_BATCH_SIZE);
 
-            let request_id = frame.header.get_id();
-            debug!(%rpc_type, %socket_fd, %request_id, "sending request");
+        loop {
+            batch.clear();
+            let count = receiver.recv_many(&mut batch, MAX_BATCH_SIZE).await;
+            if count == 0 {
+                break;
+            }
 
-            let mut header_buf = BytesMut::with_capacity(Header::SIZE);
-            frame.header.encode(&mut header_buf);
-            let header_bytes = header_buf.freeze();
+            gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(count as f64);
+            counter!("rpc_send_batch_size", "type" => rpc_type).increment(count as u64);
 
+            encoded_frames.clear();
+            for frame in batch.drain(..) {
+                let request_id = frame.header.get_id();
+                debug!(%rpc_type, %socket_fd, %request_id, "sending request");
+
+                let mut header_buf = BytesMut::with_capacity(Header::SIZE);
+                frame.header.encode(&mut header_buf);
+                encoded_frames.push((header_buf.freeze(), frame.body));
+            }
+
+            let total_len: usize = encoded_frames.iter().map(|(h, b)| h.len() + b.len()).sum();
             let mut total_written = 0;
-            let header_len = header_bytes.len();
-            let body_len = frame.body.len();
-            let total_len = header_len + body_len;
 
             while total_written < total_len {
-                let mut iov = Vec::new();
+                let mut iov = Vec::with_capacity(encoded_frames.len() * 2);
+                let mut current = 0;
 
-                if total_written < header_len {
-                    iov.push(IoSlice::new(&header_bytes[total_written..]));
-                    if body_len > 0 {
-                        iov.push(IoSlice::new(&frame.body[..]));
+                for (header, body) in &encoded_frames {
+                    let header_end = current + header.len();
+                    let body_end = header_end + body.len();
+
+                    if total_written < header_end {
+                        let offset = if total_written > current {
+                            total_written - current
+                        } else {
+                            0
+                        };
+                        iov.push(IoSlice::new(&header[offset..]));
+                        if !body.is_empty() {
+                            iov.push(IoSlice::new(body));
+                        }
+                    } else if total_written < body_end && !body.is_empty() {
+                        let offset = total_written - header_end;
+                        iov.push(IoSlice::new(&body[offset..]));
                     }
-                } else if body_len > 0 {
-                    let body_written = total_written - header_len;
-                    iov.push(IoSlice::new(&frame.body[body_written..]));
+
+                    current = body_end;
                 }
 
                 let written = writer
@@ -277,8 +301,10 @@ where
                 total_written += written;
             }
 
-            counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
+            counter!("rpc_request_sent", "type" => rpc_type, "name" => "all")
+                .increment(encoded_frames.len() as u64);
         }
+
         warn!(%rpc_type, %socket_fd, "sender closed, send message task quit");
         Ok(())
     }
@@ -289,26 +315,41 @@ where
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
-        let transport = io_uring::get_current_reactor().expect("io_uring reactor missing");
+        const MAX_BATCH_SIZE: usize = 32;
+        let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
 
-        let mut header_buf = BytesMut::with_capacity(Header::SIZE);
+        loop {
+            batch.clear();
+            let count = receiver.recv_many(&mut batch, MAX_BATCH_SIZE).await;
+            if count == 0 {
+                break;
+            }
 
-        while let Some(frame) = receiver.recv().await {
-            gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(1.0);
-            let MessageFrame { header, body } = frame;
-            let request_id = header.get_id();
-            debug!(%rpc_type, %socket_fd, %request_id, "sending request via io_uring");
+            gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(count as f64);
+            counter!("rpc_send_batch_size", "type" => rpc_type).increment(count as u64);
 
-            header_buf.clear();
-            header_buf.reserve(Header::SIZE);
-            header.encode(&mut header_buf);
-            let header_bytes = header_buf.split_to(Header::SIZE).freeze();
+            for frame in batch.drain(..) {
+                let request_id = frame.header.get_id();
+                debug!(%rpc_type, %socket_fd, %request_id, "sending request via io_uring");
 
-            transport
-                .send(socket_fd, header_bytes, body)
-                .await
-                .map_err(RpcError::IoError)?;
-            counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
+                let mut header_buf = BytesMut::with_capacity(Header::SIZE);
+                frame.header.encode(&mut header_buf);
+                let header = header_buf.freeze();
+
+                let iov = if frame.body.is_empty() {
+                    vec![IoSlice::new(&header)]
+                } else {
+                    vec![IoSlice::new(&header), IoSlice::new(&frame.body)]
+                };
+
+                let transport = io_uring::get_current_reactor().expect("io_uring reactor missing");
+                transport
+                    .send_vectored(socket_fd, &iov, false)
+                    .await
+                    .map_err(RpcError::IoError)?;
+
+                counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
+            }
         }
 
         warn!(%rpc_type, %socket_fd, "sender closed, send message task quit");

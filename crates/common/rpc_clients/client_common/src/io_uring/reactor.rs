@@ -19,25 +19,16 @@ use tracing::{debug, error, info, warn};
 #[derive(Debug)]
 pub enum RpcTask {
     Noop,
-    Send(SendTask),
-    SendZc(SendZcTask),
+    SendVectored(SendVectoredTask),
     Recv(RecvTask),
 }
 
 #[derive(Debug)]
-pub struct SendTask {
+pub struct SendVectoredTask {
     pub fd: RawFd,
-    pub header: Bytes,
-    pub body: Bytes,
-    pub completion: oneshot::Sender<io::Result<()>>,
-}
-
-#[derive(Debug)]
-pub struct SendZcTask {
-    pub fd: RawFd,
-    pub header: Bytes,
-    pub body: Bytes,
-    pub completion: oneshot::Sender<io::Result<()>>,
+    pub buffers: Vec<Bytes>,
+    pub zero_copy: bool,
+    pub completion: oneshot::Sender<io::Result<usize>>,
 }
 
 pub struct RecvTask {
@@ -119,61 +110,30 @@ impl RpcReactorHandle {
             .expect("reactor join handle poisoned") = Some(join);
     }
 
-    pub fn submit_send(
+    pub fn submit_send_vectored(
         &self,
         fd: RawFd,
-        header: Bytes,
-        body: Bytes,
-    ) -> oneshot::Receiver<io::Result<()>> {
+        buffers: Vec<Bytes>,
+        zero_copy: bool,
+    ) -> oneshot::Receiver<io::Result<usize>> {
         let (tx, mut rx) = oneshot::channel();
-        let header_len = header.len();
-        let body_len = body.len();
-        let task = RpcTask::Send(SendTask {
+        let total_len: usize = buffers.iter().map(|b| b.len()).sum();
+        let task = RpcTask::SendVectored(SendVectoredTask {
             fd,
-            header,
-            body,
+            buffers,
+            zero_copy,
             completion: tx,
         });
         debug!(
             worker_index = self.worker_index,
-            fd, header_len, body_len, "enqueue send task"
+            fd, total_len, zero_copy, "enqueue vectored send task"
         );
         if let Err(err) = self.sender.send(RpcCommand::Task(task)) {
             rx.close();
             warn!(
                 worker_index = self.worker_index,
                 error = %err,
-                "failed to enqueue send task"
-            );
-        }
-        rx
-    }
-
-    pub fn submit_send_zc(
-        &self,
-        fd: RawFd,
-        header: Bytes,
-        body: Bytes,
-    ) -> oneshot::Receiver<io::Result<()>> {
-        let (tx, mut rx) = oneshot::channel();
-        let header_len = header.len();
-        let body_len = body.len();
-        let task = RpcTask::SendZc(SendZcTask {
-            fd,
-            header,
-            body,
-            completion: tx,
-        });
-        debug!(
-            worker_index = self.worker_index,
-            fd, header_len, body_len, "enqueue zero-copy send task"
-        );
-        if let Err(err) = self.sender.send(RpcCommand::Task(task)) {
-            rx.close();
-            warn!(
-                worker_index = self.worker_index,
-                error = %err,
-                "failed to enqueue zero-copy send task"
+                "failed to enqueue vectored send task"
             );
         }
         rx
@@ -369,8 +329,7 @@ fn process_command(handle: &Arc<RpcReactorHandle>, cmd: RpcCommand) -> bool {
                         "rpc reactor handled noop task"
                     );
                 }
-                RpcTask::Send(task) => handle_send(handle, task),
-                RpcTask::SendZc(task) => handle_send_zc(handle, task),
+                RpcTask::SendVectored(task) => handle_send_vectored(handle, task),
                 RpcTask::Recv(task) => handle_recv(handle, task),
             }
             true
@@ -378,44 +337,24 @@ fn process_command(handle: &Arc<RpcReactorHandle>, cmd: RpcCommand) -> bool {
     }
 }
 
-fn handle_send(handle: &Arc<RpcReactorHandle>, task: SendTask) {
-    let SendTask {
+fn handle_send_vectored(handle: &Arc<RpcReactorHandle>, task: SendVectoredTask) {
+    let SendVectoredTask {
         fd,
-        header,
-        body,
+        buffers,
+        zero_copy,
         completion,
     } = task;
 
-    if let Err(err) = handle
-        .io
-        .submit_send(handle.worker_index, fd, header, body, completion)
+    if let Err(err) =
+        handle
+            .io
+            .submit_send_vectored(handle.worker_index, fd, buffers, zero_copy, completion)
     {
         warn!(
             worker_index = handle.worker_index,
             fd,
             error = %err,
-            "failed to submit send task"
-        );
-    }
-}
-
-fn handle_send_zc(handle: &Arc<RpcReactorHandle>, task: SendZcTask) {
-    let SendZcTask {
-        fd,
-        header,
-        body,
-        completion,
-    } = task;
-
-    if let Err(err) = handle
-        .io
-        .submit_send_zc(handle.worker_index, fd, header, body, completion)
-    {
-        warn!(
-            worker_index = handle.worker_index,
-            fd,
-            error = %err,
-            "failed to submit zero-copy send task"
+            "failed to submit vectored send task"
         );
     }
 }
@@ -444,8 +383,8 @@ struct ReactorIo {
     ring: Arc<PerCoreRing>,
     next_uring_id: AtomicU64,
     pending_recv: Mutex<HashMap<u64, PendingRecv>>,
-    pending_send: Mutex<HashMap<u64, PendingSend>>,
-    pending_send_zc: Mutex<HashMap<u64, PendingSendZc>>,
+    pending_send_vectored: Mutex<HashMap<u64, PendingSendVectored>>,
+    pending_send_vectored_zc: Mutex<HashMap<u64, PendingSendVectoredZc>>,
 }
 
 impl ReactorIo {
@@ -454,94 +393,9 @@ impl ReactorIo {
             ring,
             next_uring_id: AtomicU64::new(1),
             pending_recv: Mutex::new(HashMap::new()),
-            pending_send: Mutex::new(HashMap::new()),
-            pending_send_zc: Mutex::new(HashMap::new()),
+            pending_send_vectored: Mutex::new(HashMap::new()),
+            pending_send_vectored_zc: Mutex::new(HashMap::new()),
         }
-    }
-
-    fn submit_send(
-        &self,
-        worker_index: usize,
-        fd: RawFd,
-        header: Bytes,
-        body: Bytes,
-        completion: oneshot::Sender<io::Result<()>>,
-    ) -> io::Result<()> {
-        let user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
-
-        debug!(
-            worker_index,
-            fd,
-            header_len = header.len(),
-            body_len = body.len(),
-            user_data,
-            "submitting vectored send to io_uring"
-        );
-
-        let mut iovecs = Box::new([
-            libc::iovec {
-                iov_base: header.as_ptr() as *mut libc::c_void,
-                iov_len: header.len(),
-            },
-            libc::iovec {
-                iov_base: body.as_ptr() as *mut libc::c_void,
-                iov_len: body.len(),
-            },
-        ]);
-
-        let msg = Box::new(libc::msghdr {
-            msg_name: std::ptr::null_mut(),
-            msg_namelen: 0,
-            msg_iov: iovecs.as_mut_ptr(),
-            msg_iovlen: 2,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        });
-
-        let expected_total = header.len() + body.len();
-
-        let mut pending = self.pending_send.lock().expect("pending send map poisoned");
-
-        pending.insert(
-            user_data,
-            PendingSend {
-                fd,
-                expected_total,
-                _header: header,
-                _body: body,
-                _iovecs: SendableIoVec(iovecs),
-                _msg: SendableMsgHdr(msg),
-                completion,
-            },
-        );
-
-        let pending_entry = pending.get(&user_data).unwrap();
-        let iovecs_ptr = pending_entry._iovecs.0.as_ptr();
-        let entry = io_uring::opcode::Writev::new(io_uring::types::Fd(fd), iovecs_ptr, 2)
-            .build()
-            .user_data(user_data);
-
-        let submit_result: io::Result<()> = self.ring.with_lock(|ring| {
-            unsafe {
-                if ring.submission().push(&entry).is_err() {
-                    ring.submit()?;
-                    ring.submission()
-                        .push(&entry)
-                        .map_err(|_| io::Error::other("submission queue full after submit"))?;
-                }
-            }
-            Ok(())
-        });
-
-        if let Err(err) = submit_result {
-            if let Some(send) = pending.remove(&user_data) {
-                let _ = send.completion.send(Err(err));
-            }
-            return Err(io::Error::other("failed to push send to submission queue"));
-        }
-
-        Ok(())
     }
 
     fn submit_recv(
@@ -588,93 +442,153 @@ impl ReactorIo {
         }
     }
 
-    fn submit_send_zc(
+    fn submit_send_vectored(
         &self,
         worker_index: usize,
         fd: RawFd,
-        header: Bytes,
-        body: Bytes,
-        completion: oneshot::Sender<io::Result<()>>,
+        buffers: Vec<Bytes>,
+        zero_copy: bool,
+        completion: oneshot::Sender<io::Result<usize>>,
     ) -> io::Result<()> {
         let user_data = self.next_uring_id.fetch_add(1, Ordering::Relaxed);
+
+        let total_len: usize = buffers.iter().map(|b| b.len()).sum();
 
         debug!(
             worker_index,
             fd,
-            header_len = header.len(),
-            body_len = body.len(),
+            buffer_count = buffers.len(),
+            total_len,
+            zero_copy,
             user_data,
-            "submitting zero-copy send to io_uring"
+            "submitting vectored send to io_uring"
         );
 
-        let mut iovecs = Box::new([
-            libc::iovec {
-                iov_base: header.as_ptr() as *mut libc::c_void,
-                iov_len: header.len(),
-            },
-            libc::iovec {
-                iov_base: body.as_ptr() as *mut libc::c_void,
-                iov_len: body.len(),
-            },
-        ]);
+        let iovecs: Vec<libc::iovec> = buffers
+            .iter()
+            .map(|buf| libc::iovec {
+                iov_base: buf.as_ptr() as *mut libc::c_void,
+                iov_len: buf.len(),
+            })
+            .collect();
 
-        let msg = Box::new(libc::msghdr {
-            msg_name: std::ptr::null_mut(),
-            msg_namelen: 0,
-            msg_iov: iovecs.as_mut_ptr(),
-            msg_iovlen: 2,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        });
+        let iovecs = SendableIoVecSlice(iovecs.into_boxed_slice());
 
-        let expected_total = header.len() + body.len();
+        if !zero_copy {
+            let mut pending = self
+                .pending_send_vectored
+                .lock()
+                .expect("pending send vectored map poisoned");
 
-        let mut pending = self
-            .pending_send_zc
-            .lock()
-            .expect("pending send zc map poisoned");
+            pending.insert(
+                user_data,
+                PendingSendVectored {
+                    fd,
+                    _buffers: buffers,
+                    _iovecs: iovecs,
+                    completion,
+                },
+            );
 
-        pending.insert(
-            user_data,
-            PendingSendZc {
-                fd,
-                expected_total,
-                _header: header,
-                _body: body,
-                _iovecs: SendableIoVec(iovecs),
-                _msg: SendableMsgHdr(msg),
-                completion,
-                data_completed: false,
-                send_result: None,
-            },
-        );
+            let pending_entry = pending.get(&user_data).unwrap();
+            let iovecs_ptr = pending_entry._iovecs.0.as_ptr();
+            let iovecs_len = pending_entry._iovecs.0.len();
 
-        let pending_entry = pending.get(&user_data).unwrap();
-        let msg_ptr = pending_entry._msg.0.as_ref() as *const libc::msghdr;
-        let entry = io_uring::opcode::SendMsgZc::new(io_uring::types::Fd(fd), msg_ptr)
+            let entry = io_uring::opcode::Writev::new(
+                io_uring::types::Fd(fd),
+                iovecs_ptr,
+                iovecs_len as u32,
+            )
             .build()
             .user_data(user_data);
 
-        let submit_result: io::Result<()> = self.ring.with_lock(|ring| {
-            unsafe {
-                if ring.submission().push(&entry).is_err() {
-                    ring.submit()?;
-                    ring.submission()
-                        .push(&entry)
-                        .map_err(|_| io::Error::other("submission queue full after submit"))?;
+            let submit_result: io::Result<()> = self.ring.with_lock(|ring| {
+                unsafe {
+                    if ring.submission().push(&entry).is_err() {
+                        ring.submit()?;
+                        ring.submission()
+                            .push(&entry)
+                            .map_err(|_| io::Error::other("submission queue full after submit"))?;
+                    }
                 }
-            }
-            Ok(())
-        });
+                Ok(())
+            });
 
-        if let Err(err) = submit_result {
-            if let Some(send) = pending.remove(&user_data) {
-                let _ = send.completion.send(Err(err));
+            if let Err(err) = submit_result {
+                if let Some(send) = pending.remove(&user_data) {
+                    let _ = send.completion.send(Err(err));
+                }
+                return Err(io::Error::other(
+                    "failed to push vectored send to submission queue",
+                ));
             }
-            return Err(io::Error::other(
-                "failed to push zero-copy send to submission queue",
-            ));
+        } else {
+            let mut pending = self
+                .pending_send_vectored_zc
+                .lock()
+                .expect("pending send vectored zc map poisoned");
+
+            let mut iovecs_mut = Box::new(
+                iovecs
+                    .0
+                    .iter()
+                    .map(|iov| libc::iovec {
+                        iov_base: iov.iov_base,
+                        iov_len: iov.iov_len,
+                    })
+                    .collect::<Vec<_>>(),
+            );
+
+            let msg = Box::new(libc::msghdr {
+                msg_name: std::ptr::null_mut(),
+                msg_namelen: 0,
+                msg_iov: iovecs_mut.as_mut_ptr(),
+                msg_iovlen: iovecs_mut.len(),
+                msg_control: std::ptr::null_mut(),
+                msg_controllen: 0,
+                msg_flags: 0,
+            });
+
+            pending.insert(
+                user_data,
+                PendingSendVectoredZc {
+                    fd,
+                    expected_total: total_len,
+                    _buffers: buffers,
+                    _iovecs: SendableIoVecSlice(iovecs_mut.into_boxed_slice()),
+                    _msg: SendableMsgHdr(msg),
+                    completion,
+                    data_completed: false,
+                    send_result: None,
+                },
+            );
+
+            let pending_entry = pending.get(&user_data).unwrap();
+            let msg_ptr = pending_entry._msg.0.as_ref() as *const libc::msghdr;
+            let entry = io_uring::opcode::SendMsgZc::new(io_uring::types::Fd(fd), msg_ptr)
+                .build()
+                .user_data(user_data);
+
+            let submit_result: io::Result<()> = self.ring.with_lock(|ring| {
+                unsafe {
+                    if ring.submission().push(&entry).is_err() {
+                        ring.submit()?;
+                        ring.submission()
+                            .push(&entry)
+                            .map_err(|_| io::Error::other("submission queue full after submit"))?;
+                    }
+                }
+                Ok(())
+            });
+
+            if let Err(err) = submit_result {
+                if let Some(send) = pending.remove(&user_data) {
+                    let _ = send.completion.send(Err(err));
+                }
+                return Err(io::Error::other(
+                    "failed to push zero-copy vectored send to submission queue",
+                ));
+            }
         }
 
         Ok(())
@@ -699,11 +613,14 @@ impl ReactorIo {
         }
 
         let mut pending_recv = self.pending_recv.lock().expect("pending recv map poisoned");
-        let mut pending_send = self.pending_send.lock().expect("pending send map poisoned");
-        let mut pending_send_zc = self
-            .pending_send_zc
+        let mut pending_send_vectored = self
+            .pending_send_vectored
             .lock()
-            .expect("pending send zc map poisoned");
+            .expect("pending send vectored map poisoned");
+        let mut pending_send_vectored_zc = self
+            .pending_send_vectored_zc
+            .lock()
+            .expect("pending send vectored zc map poisoned");
 
         for (user_data, result) in completions {
             if user_data == 0 {
@@ -740,8 +657,8 @@ impl ReactorIo {
                 continue;
             }
 
-            // Check if this is a send completion
-            if let Some(send) = pending_send.remove(&user_data) {
+            // Check if this is a vectored send completion
+            if let Some(send) = pending_send_vectored.remove(&user_data) {
                 if result < 0 {
                     let err = io::Error::from_raw_os_error(-result);
                     error!(
@@ -749,45 +666,25 @@ impl ReactorIo {
                         fd = send.fd,
                         user_data,
                         error = %err,
-                        "send completion with error"
+                        "vectored send completion with error"
                     );
                     let _ = send.completion.send(Err(err));
                     continue;
                 }
-
-                let written = result as usize;
-                if written != send.expected_total {
-                    error!(
-                        worker_index,
-                        fd = send.fd,
-                        user_data,
-                        written,
-                        expected = send.expected_total,
-                        "partial send detected"
-                    );
-                    let _ = send.completion.send(Err(io::Error::new(
-                        io::ErrorKind::WriteZero,
-                        format!(
-                            "partial send: wrote {} bytes, expected {}",
-                            written, send.expected_total
-                        ),
-                    )));
-                    continue;
-                }
-
+                let bytes_written = result as usize;
                 debug!(
                     worker_index,
                     fd = send.fd,
                     user_data,
-                    written,
-                    "send completion"
+                    bytes_written,
+                    "vectored send completion"
                 );
-                let _ = send.completion.send(Ok(()));
+                let _ = send.completion.send(Ok(bytes_written));
                 continue;
             }
 
-            // Check if this is a zero-copy send data completion (notification will come later)
-            if let Some(send) = pending_send_zc.get_mut(&user_data) {
+            // Check if this is a zero-copy vectored send data completion (notification will come later)
+            if let Some(send) = pending_send_vectored_zc.get_mut(&user_data) {
                 if result < 0 {
                     let err = io::Error::from_raw_os_error(-result);
                     error!(
@@ -795,7 +692,7 @@ impl ReactorIo {
                         fd = send.fd,
                         user_data,
                         error = %err,
-                        "zero-copy send data completion with error"
+                        "zero-copy vectored send data completion with error"
                     );
                     send.send_result = Some(Err(err));
                     send.data_completed = true;
@@ -810,12 +707,12 @@ impl ReactorIo {
                         user_data,
                         written,
                         expected = send.expected_total,
-                        "partial zero-copy send detected"
+                        "partial zero-copy vectored send detected"
                     );
                     send.send_result = Some(Err(io::Error::new(
                         io::ErrorKind::WriteZero,
                         format!(
-                            "partial zero-copy send: wrote {} bytes, expected {}",
+                            "partial zero-copy vectored send: wrote {} bytes, expected {}",
                             written, send.expected_total
                         ),
                     )));
@@ -828,16 +725,16 @@ impl ReactorIo {
                     fd = send.fd,
                     user_data,
                     written,
-                    "zero-copy send data completion (waiting for notification)"
+                    "zero-copy vectored send data completion (waiting for notification)"
                 );
-                send.send_result = Some(Ok(()));
+                send.send_result = Some(Ok(written));
                 send.data_completed = true;
                 continue;
             }
 
             if !pending_recv.contains_key(&user_data)
-                && !pending_send.contains_key(&user_data)
-                && !pending_send_zc.contains_key(&user_data)
+                && !pending_send_vectored.contains_key(&user_data)
+                && !pending_send_vectored_zc.contains_key(&user_data)
             {
                 warn!(
                     worker_index,
@@ -855,13 +752,13 @@ impl ReactorIo {
                 continue;
             }
 
-            if let Some(send) = pending_send_zc.remove(&user_data) {
+            if let Some(send) = pending_send_vectored_zc.remove(&user_data) {
                 debug!(
                     worker_index,
                     fd = send.fd,
                     user_data,
                     data_completed = send.data_completed,
-                    "zero-copy send notification received, kernel done with buffers"
+                    "zero-copy vectored send notification received, kernel done with buffers"
                 );
 
                 if !send.data_completed {
@@ -876,17 +773,17 @@ impl ReactorIo {
                 if let Some(result) = send.send_result {
                     let _ = send.completion.send(result);
                 } else {
-                    let _ = send.completion.send(Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    let _ = send.completion.send(Err(io::Error::other(
                         "notification received but no send result stored",
                     )));
                 }
-            } else {
-                warn!(
-                    worker_index,
-                    user_data, "received notification for unknown zero-copy send operation"
-                );
+                continue;
             }
+
+            warn!(
+                worker_index,
+                user_data, "received notification for unknown zero-copy operation"
+            );
         }
     }
 
@@ -896,17 +793,17 @@ impl ReactorIo {
             .lock()
             .expect("pending recv map poisoned")
             .is_empty();
-        let has_send = !self
-            .pending_send
+        let has_send_vectored = !self
+            .pending_send_vectored
             .lock()
-            .expect("pending send map poisoned")
+            .expect("pending send vectored map poisoned")
             .is_empty();
-        let has_send_zc = !self
-            .pending_send_zc
+        let has_send_vectored_zc = !self
+            .pending_send_vectored_zc
             .lock()
-            .expect("pending send zc map poisoned")
+            .expect("pending send vectored zc map poisoned")
             .is_empty();
-        has_recv || has_send || has_send_zc
+        has_recv || has_send_vectored || has_send_vectored_zc
     }
 
     fn flush_submissions(&self) -> io::Result<usize> {
@@ -927,26 +824,26 @@ unsafe impl Send for SendableIoVec {}
 struct SendableMsgHdr(Box<libc::msghdr>);
 unsafe impl Send for SendableMsgHdr {}
 
-struct PendingSend {
+#[allow(dead_code)]
+struct SendableIoVecSlice(Box<[libc::iovec]>);
+unsafe impl Send for SendableIoVecSlice {}
+
+struct PendingSendVectored {
     fd: RawFd,
-    expected_total: usize,
-    _header: Bytes,
-    _body: Bytes,
-    _iovecs: SendableIoVec,
-    _msg: SendableMsgHdr,
-    completion: oneshot::Sender<io::Result<()>>,
+    _buffers: Vec<Bytes>,
+    _iovecs: SendableIoVecSlice,
+    completion: oneshot::Sender<io::Result<usize>>,
 }
 
-struct PendingSendZc {
+struct PendingSendVectoredZc {
     fd: RawFd,
     expected_total: usize,
-    _header: Bytes,
-    _body: Bytes,
-    _iovecs: SendableIoVec,
+    _buffers: Vec<Bytes>,
+    _iovecs: SendableIoVecSlice,
     _msg: SendableMsgHdr,
-    completion: oneshot::Sender<io::Result<()>>,
+    completion: oneshot::Sender<io::Result<usize>>,
     data_completed: bool,
-    send_result: Option<io::Result<()>>,
+    send_result: Option<io::Result<usize>>,
 }
 
 #[derive(Clone)]
@@ -959,26 +856,52 @@ impl ReactorTransport {
         Self { handle }
     }
 
-    pub async fn send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<()> {
-        let rx = self.handle.submit_send(fd, header, body);
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::ConnectionAborted,
-                "rpc reactor send cancelled",
-            )),
-        }
-    }
+    pub async fn send_vectored(
+        &self,
+        fd: RawFd,
+        iov: &[io::IoSlice<'_>],
+        zero_copy: bool,
+    ) -> io::Result<usize> {
+        let total_len: usize = iov.iter().map(|s| s.len()).sum();
+        let mut total_written = 0;
 
-    pub async fn zero_copy_send(&self, fd: RawFd, header: Bytes, body: Bytes) -> io::Result<()> {
-        let rx = self.handle.submit_send_zc(fd, header, body);
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::ConnectionAborted,
-                "rpc reactor zero-copy send cancelled",
-            )),
+        while total_written < total_len {
+            let mut remaining_buffers = Vec::new();
+            let mut current = 0;
+
+            for slice in iov {
+                let slice_end = current + slice.len();
+                if total_written < slice_end {
+                    let offset = total_written.saturating_sub(current);
+                    remaining_buffers.push(Bytes::copy_from_slice(&slice[offset..]));
+                }
+                current = slice_end;
+            }
+
+            let rx = self
+                .handle
+                .submit_send_vectored(fd, remaining_buffers, zero_copy);
+            let written = match rx.await {
+                Ok(result) => result?,
+                Err(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        "rpc reactor send_vectored cancelled",
+                    ));
+                }
+            };
+
+            if written == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "failed to write whole buffer",
+                ));
+            }
+
+            total_written += written;
         }
+
+        Ok(total_written)
     }
 
     pub async fn recv<H: MessageHeaderTrait>(&self, fd: RawFd) -> io::Result<MessageFrame<H>> {
