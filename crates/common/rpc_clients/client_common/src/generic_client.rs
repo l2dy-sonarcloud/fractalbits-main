@@ -8,6 +8,8 @@ use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
 use socket2::{Socket, TcpKeepalive};
 use std::collections::HashMap;
 use std::io;
+#[cfg(not(feature = "io_uring"))]
+use std::io::IoSlice;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
@@ -231,29 +233,50 @@ where
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
         use tokio::io::AsyncWriteExt;
-        let mut header_buf = BytesMut::with_capacity(Header::SIZE);
 
         while let Some(frame) = receiver.recv().await {
             gauge!("rpc_request_pending_in_send_queue", "type" => rpc_type).decrement(1.0);
-            let MessageFrame { header, body } = frame;
+
             let request_id = frame.header.get_id();
-            debug!(%rpc_type, %socket_fd, %request_id, "sending request:");
+            debug!(%rpc_type, %socket_fd, %request_id, "sending request");
 
-            header_buf.clear();
-            header.encode(&mut header_buf);
+            let mut header_buf = BytesMut::with_capacity(Header::SIZE);
+            frame.header.encode(&mut header_buf);
+            let header_bytes = header_buf.freeze();
 
-            writer
-                .write_all(header_buf.as_ref())
-                .await
-                .map_err(RpcError::IoError)?;
+            let mut total_written = 0;
+            let header_len = header_bytes.len();
+            let body_len = frame.body.len();
+            let total_len = header_len + body_len;
 
-            if !body.is_empty() {
-                writer
-                    .write_all(body.as_ref())
+            while total_written < total_len {
+                let mut iov = Vec::new();
+
+                if total_written < header_len {
+                    iov.push(IoSlice::new(&header_bytes[total_written..]));
+                    if body_len > 0 {
+                        iov.push(IoSlice::new(&frame.body[..]));
+                    }
+                } else if body_len > 0 {
+                    let body_written = total_written - header_len;
+                    iov.push(IoSlice::new(&frame.body[body_written..]));
+                }
+
+                let written = writer
+                    .write_vectored(&iov)
                     .await
                     .map_err(RpcError::IoError)?;
+
+                if written == 0 {
+                    return Err(RpcError::IoError(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "failed to write whole buffer",
+                    )));
+                }
+
+                total_written += written;
             }
-            writer.flush().await?;
+
             counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
         }
         warn!(%rpc_type, %socket_fd, "sender closed, send message task quit");
