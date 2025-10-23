@@ -26,6 +26,7 @@ use head::HeadEndpoint;
 use metrics::{Gauge, counter, gauge, histogram};
 use post::PostEndpoint;
 use put::PutEndpoint;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, warn};
@@ -108,12 +109,16 @@ impl ObjectRequestContext {
 
 struct RequestBumpGuard {
     trace_id: u64,
+    _bump: Rc<Bump>,
 }
 
 impl RequestBumpGuard {
-    fn new(trace_id: u64, bump: &bumpalo::Bump) -> Self {
-        rpc_client_common::register_request_bump(trace_id, bump);
-        Self { trace_id }
+    fn new(trace_id: u64, bump: Rc<Bump>) -> Self {
+        rpc_client_common::register_request_bump(trace_id, bump.clone());
+        Self {
+            trace_id,
+            _bump: bump,
+        }
     }
 }
 
@@ -236,11 +241,11 @@ async fn any_handler_inner(
     endpoint: Endpoint,
 ) -> Result<HttpResponse, S3Error> {
     let endpoint_name = endpoint.as_str();
-    let bump = Bump::with_capacity(128 * 1024);
+    let bump = Rc::new(Bump::with_capacity(128 * 1024));
 
     // Generate trace ID and register bump for RPC calls
     let trace_id = app.generate_trace_id();
-    let _bump_guard = RequestBumpGuard::new(trace_id, &bump);
+    let _bump_guard = RequestBumpGuard::new(trace_id, bump.clone());
 
     let start = Instant::now();
 

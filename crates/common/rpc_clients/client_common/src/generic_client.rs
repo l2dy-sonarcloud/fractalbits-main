@@ -26,17 +26,16 @@ use tracing::{debug, warn};
 
 use bumpalo::Bump;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 thread_local! {
-    static REQUEST_BUMPS: RefCell<HashMap<u64, &'static Bump>> =
+    static REQUEST_BUMPS: RefCell<HashMap<u64, Rc<Bump>>> =
         RefCell::new(HashMap::new());
 }
 
-pub fn register_request_bump(trace_id: u64, bump: &Bump) {
+pub fn register_request_bump(trace_id: u64, bump: Rc<Bump>) {
     REQUEST_BUMPS.with(|map| {
-        map.borrow_mut().insert(trace_id, unsafe {
-            std::mem::transmute::<&Bump, &'static Bump>(bump)
-        });
+        map.borrow_mut().insert(trace_id, bump);
     });
 }
 
@@ -44,8 +43,8 @@ pub fn unregister_request_bump(trace_id: u64) {
     REQUEST_BUMPS.with(|map| map.borrow_mut().remove(&trace_id));
 }
 
-pub fn get_request_bump(trace_id: u64) -> Option<&'static Bump> {
-    REQUEST_BUMPS.with(|map| map.borrow().get(&trace_id).copied())
+pub fn get_request_bump(trace_id: u64) -> Option<Rc<Bump>> {
+    REQUEST_BUMPS.with(|map| map.borrow().get(&trace_id).cloned())
 }
 
 type RequestMap<Header> =

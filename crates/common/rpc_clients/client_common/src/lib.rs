@@ -244,61 +244,79 @@ macro_rules! rss_rpc_retry {
     };
 }
 
-pub enum EncodeBuffer<'bump> {
-    Bump(BumpBuf<'bump>),
+pub enum EncodeBuffer {
+    Bump {
+        buf: BumpBuf<'static>,
+        /// Holds the Rc<Bump> to keep the bump allocator alive.
+        /// The BumpBuf borrows from the bump with a 'static lifetime (via unsafe transmute),
+        /// so we must store the Rc here to prevent the allocator from being freed while
+        /// the buffer still references it.
+        _bump: std::rc::Rc<bumpalo::Bump>,
+    },
     Heap(BytesMut),
 }
 
-impl<'bump> EncodeBuffer<'bump> {
+impl EncodeBuffer {
     pub fn new(trace_id: Option<u64>) -> Self {
         if let Some(tid) = trace_id
-            && let Some(bump) = get_request_bump(tid)
+            && let Some(bump_rc) = get_request_bump(tid)
         {
-            return Self::Bump(BumpBuf::with_capacity_in(512, bump));
+            // SAFETY: We transmute the bump reference to 'static lifetime to satisfy
+            // BumpBuf's lifetime requirement. This is safe because we store bump_rc
+            // in the _bump field, ensuring the allocator lives as long as the BumpBuf.
+            let buf = unsafe {
+                let bump_ref: &bumpalo::Bump = &*bump_rc;
+                let bump_ref_static: &'static bumpalo::Bump = std::mem::transmute(bump_ref);
+                BumpBuf::with_capacity_in(512, bump_ref_static)
+            };
+            return Self::Bump {
+                buf,
+                _bump: bump_rc,
+            };
         }
         Self::Heap(BytesMut::new())
     }
 
     pub fn freeze(self) -> Bytes {
         match self {
-            Self::Bump(buf) => buf.freeze(),
+            Self::Bump { buf, .. } => buf.freeze(),
             Self::Heap(buf) => buf.freeze(),
         }
     }
 }
 
-unsafe impl<'bump> BufMut for EncodeBuffer<'bump> {
+unsafe impl BufMut for EncodeBuffer {
     fn remaining_mut(&self) -> usize {
         match self {
-            Self::Bump(buf) => buf.remaining_mut(),
+            Self::Bump { buf, .. } => buf.remaining_mut(),
             Self::Heap(buf) => buf.remaining_mut(),
         }
     }
 
     fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
         match self {
-            Self::Bump(buf) => buf.chunk_mut(),
+            Self::Bump { buf, .. } => buf.chunk_mut(),
             Self::Heap(buf) => buf.chunk_mut(),
         }
     }
 
     unsafe fn advance_mut(&mut self, cnt: usize) {
         match self {
-            Self::Bump(buf) => unsafe { buf.advance_mut(cnt) },
+            Self::Bump { buf, .. } => unsafe { buf.advance_mut(cnt) },
             Self::Heap(buf) => unsafe { buf.advance_mut(cnt) },
         }
     }
 
     fn put_slice(&mut self, src: &[u8]) {
         match self {
-            Self::Bump(buf) => buf.put_slice(src),
+            Self::Bump { buf, .. } => buf.put_slice(src),
             Self::Heap(buf) => buf.put_slice(src),
         }
     }
 
     fn put_u8(&mut self, n: u8) {
         match self {
-            Self::Bump(buf) => buf.put_u8(n),
+            Self::Bump { buf, .. } => buf.put_u8(n),
             Self::Heap(buf) => buf.put_u8(n),
         }
     }
