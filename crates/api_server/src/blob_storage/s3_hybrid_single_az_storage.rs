@@ -1,4 +1,6 @@
-use super::{BlobLocation, BlobStorageError, DataVgProxy, blob_key, create_s3_client};
+use super::{
+    BlobLocation, BlobStorageError, DataVgProxy, blob_key, chunks_to_bytestream, create_s3_client,
+};
 use crate::{config::S3HybridSingleAzConfig, object_layout::ObjectLayout};
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
@@ -77,6 +79,42 @@ impl S3HybridSingleAzStorage {
                 .bucket(&self.data_blob_in_s3_bucket)
                 .key(&s3_key)
                 .body(body.into())
+                .send()
+                .await
+                .map_err(|e| BlobStorageError::S3(e.to_string()))?;
+
+            histogram!("rpc_duration_nanos", "type" => "s3", "name" => "put_blob_s3")
+                .record(start.elapsed().as_nanos() as f64);
+        }
+
+        Ok(())
+    }
+
+    pub async fn put_blob_vectored(
+        &self,
+        blob_id: Uuid,
+        volume_id: u16,
+        block_number: u32,
+        chunks: Vec<actix_web::web::Bytes>,
+    ) -> Result<(), BlobStorageError> {
+        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        histogram!("blob_size", "operation" => "put").record(total_size as f64);
+        let start = Instant::now();
+
+        let is_small = block_number == 0 && total_size < ObjectLayout::DEFAULT_BLOCK_SIZE as usize;
+
+        if is_small {
+            let blob_guid = DataBlobGuid { blob_id, volume_id };
+            self.data_vg_proxy
+                .put_blob_vectored(blob_guid, block_number, chunks)
+                .await?;
+        } else {
+            let s3_key = blob_key(blob_id, block_number);
+            self.client_s3
+                .put_object()
+                .bucket(&self.data_blob_in_s3_bucket)
+                .key(&s3_key)
+                .body(chunks_to_bytestream(chunks))
                 .send()
                 .await
                 .map_err(|e| BlobStorageError::S3(e.to_string()))?;

@@ -174,7 +174,8 @@ pub async fn complete_multipart_upload_handler(
     let _expected_checksum = ctx.checksum_value;
 
     // Extract body from payload
-    let body = buffer_payload(ctx.payload).await?;
+    let chunks = buffer_payload(ctx.payload).await?;
+    let body = crate::handler::common::merge_chunks(chunks);
 
     // Parse the request body to get the parts list
     let req_body: CompleteMultipartUpload = quick_xml::de::from_reader(body.reader())?;

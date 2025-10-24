@@ -42,6 +42,40 @@ impl RpcClient {
         Ok(())
     }
 
+    pub async fn put_data_blob_vectored(
+        &self,
+        blob_guid: DataBlobGuid,
+        block_number: u32,
+        chunks: Vec<Bytes>,
+        timeout: Option<Duration>,
+        trace_id: Option<u64>,
+        retry_count: u32,
+    ) -> Result<(), RpcError> {
+        let _guard = InflightRpcGuard::new("bss", "put_data_blob_vectored");
+        let mut header = MessageHeader::default();
+        let request_id = self.gen_request_id();
+        header.id = request_id;
+        header.blob_id = blob_guid.blob_id.into_bytes();
+        header.volume_id = blob_guid.volume_id;
+        header.block_number = block_number;
+        header.command = Command::PutDataBlob;
+        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        header.size = (MessageHeader::SIZE + total_size) as u32;
+        header.retry_count = retry_count;
+
+        let msg_frame = MessageFrame::new(header, chunks);
+        self
+            .send_request_vectored(request_id, msg_frame, timeout, trace_id)
+            .await
+            .map_err(|e| {
+                if !e.retryable() {
+                    error!(rpc=%"put_data_blob_vectored", %request_id, %blob_guid, %block_number, error=?e, "bss rpc failed");
+                }
+                e
+            })?;
+        Ok(())
+    }
+
     pub async fn get_data_blob(
         &self,
         blob_guid: DataBlobGuid,

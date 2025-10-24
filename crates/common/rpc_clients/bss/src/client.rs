@@ -31,4 +31,17 @@ impl RpcClient {
             .send_request(request_id, frame, timeout, trace_id)
             .await
     }
+
+    pub async fn send_request_vectored(
+        &self,
+        request_id: u32,
+        frame: rpc_codec_common::MessageFrame<bss_codec::MessageHeader, Vec<bytes::Bytes>>,
+        timeout: Option<std::time::Duration>,
+        trace_id: Option<u64>,
+    ) -> Result<rpc_codec_common::MessageFrame<bss_codec::MessageHeader>, rpc_client_common::RpcError>
+    {
+        self.inner
+            .send_request_vectored(request_id, frame, timeout, trace_id)
+            .await
+    }
 }

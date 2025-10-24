@@ -1,5 +1,5 @@
 use crate::RpcError;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use metrics::{counter, gauge};
 use rpc_codec_common::{BumpBuf, MessageFrame, MessageHeaderTrait};
 use socket2::{Socket, TcpKeepalive};
@@ -296,6 +296,64 @@ where
         result.map_err(|e| RpcError::InternalResponseError(e.to_string()))
     }
 
+    async fn send_request_vectored_internal(
+        &self,
+        request_id: u32,
+        retry_count: u32,
+        mut frame: MessageFrame<Header, Vec<Bytes>>,
+        timeout: Option<Duration>,
+    ) -> Result<MessageFrame<Header>, RpcError> {
+        use tokio::io::AsyncWriteExt;
+
+        if self.is_closed.load(Ordering::SeqCst) {
+            return Err(RpcError::InternalRequestError(
+                "Connection is closed".into(),
+            ));
+        }
+
+        let rpc_type = Codec::RPC_TYPE;
+        let trace_id = frame.header.get_trace_id();
+        frame.header.set_id(request_id);
+        frame.header.set_retry_count(retry_count);
+
+        let (tx, rx) = oneshot::channel();
+        self.requests.lock().insert(request_id, tx);
+        gauge!("rpc_request_pending_in_resp_map", "type" => rpc_type).increment(1.0);
+
+        debug!(%rpc_type, socket_fd=%self.socket_fd, %request_id, %trace_id, "sending vectored request");
+
+        let mut header_bytes = BytesMut::with_capacity(Header::SIZE);
+        frame.header.encode(&mut header_bytes);
+
+        let mut iov = Vec::with_capacity(1 + frame.body.len());
+        iov.push(IoSlice::new(&header_bytes[..]));
+        for chunk in &frame.body {
+            iov.push(IoSlice::new(chunk.as_ref()));
+        }
+
+        let mut writer = self.writer.lock().await;
+        writer
+            .write_vectored(&iov)
+            .await
+            .map_err(RpcError::IoError)?;
+
+        counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
+
+        drop(writer);
+
+        let result = match timeout {
+            None => rx.await,
+            Some(rpc_timeout) => match tokio::time::timeout(rpc_timeout, rx).await {
+                Ok(result) => result,
+                Err(_) => {
+                    warn!(%rpc_type, socket_fd=%self.socket_fd, %request_id, "rpc request timeout");
+                    return Err(RpcError::InternalResponseError("timeout".into()));
+                }
+            },
+        };
+        result.map_err(|e| RpcError::InternalResponseError(e.to_string()))
+    }
+
     pub async fn send_request<B: AsRef<[u8]>>(
         &self,
         request_id: u32,
@@ -307,6 +365,20 @@ where
             frame.header.set_trace_id(trace_id);
         }
         self.send_request_internal(request_id, 0, frame, timeout)
+            .await
+    }
+
+    pub async fn send_request_vectored(
+        &self,
+        request_id: u32,
+        mut frame: MessageFrame<Header, Vec<Bytes>>,
+        timeout: Option<std::time::Duration>,
+        trace_id: Option<u64>,
+    ) -> Result<MessageFrame<Header>, RpcError> {
+        if let Some(trace_id) = trace_id {
+            frame.header.set_trace_id(trace_id);
+        }
+        self.send_request_vectored_internal(request_id, 0, frame, timeout)
             .await
     }
 

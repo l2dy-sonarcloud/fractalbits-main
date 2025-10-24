@@ -19,35 +19,45 @@ use rpc_client_common::nss_rpc_retry;
 use s3_error::S3Error;
 use std::collections::BTreeMap;
 
-/// Helper function to buffer a streaming payload into Bytes
+/// Helper function to collect streaming payload into a vector of Bytes chunks
 pub async fn buffer_payload(
     payload: actix_web::dev::Payload,
-) -> Result<actix_web::web::Bytes, S3Error> {
+) -> Result<Vec<actix_web::web::Bytes>, S3Error> {
     buffer_payload_with_capacity(payload, None).await
 }
 
-/// Helper function to buffer a streaming payload into Bytes with optional pre-allocation
+/// Helper function to collect streaming payload into a vector of Bytes chunks with optional pre-allocation
 pub async fn buffer_payload_with_capacity(
     mut payload: actix_web::dev::Payload,
-    expected_size: Option<usize>,
-) -> Result<actix_web::web::Bytes, S3Error> {
-    // Pre-allocate based on content-length to avoid reallocations
-    let mut body = if let Some(size) = expected_size {
-        tracing::debug!("Pre-allocating buffer for {} bytes", size);
-        actix_web::web::BytesMut::with_capacity(size)
-    } else {
-        actix_web::web::BytesMut::new()
-    };
-
+    _expected_size: Option<usize>,
+) -> Result<Vec<actix_web::web::Bytes>, S3Error> {
+    let mut chunks = Vec::new();
     while let Some(chunk) = payload.next().await {
         let chunk = chunk.map_err(|e| {
             tracing::error!("Error reading payload: {}", e);
             S3Error::InternalError
         })?;
-        body.extend_from_slice(&chunk);
+        chunks.push(chunk);
     }
 
-    Ok(body.freeze())
+    Ok(chunks)
+}
+
+/// Helper function to merge a vector of Bytes chunks into a single Bytes
+pub fn merge_chunks(chunks: Vec<actix_web::web::Bytes>) -> actix_web::web::Bytes {
+    if chunks.is_empty() {
+        return actix_web::web::Bytes::new();
+    }
+    if chunks.len() == 1 {
+        return chunks.into_iter().next().unwrap();
+    }
+
+    let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut merged = actix_web::web::BytesMut::with_capacity(total_size);
+    for chunk in chunks {
+        merged.extend_from_slice(&chunk);
+    }
+    merged.freeze()
 }
 
 pub async fn get_raw_object(

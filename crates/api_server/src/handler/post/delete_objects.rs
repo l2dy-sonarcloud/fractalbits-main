@@ -69,7 +69,8 @@ pub async fn delete_objects_handler(
     let _bucket = ctx.resolve_bucket().await?;
 
     // Extract body from payload using the helper function
-    let body = buffer_payload(ctx.payload).await?;
+    let chunks = buffer_payload(ctx.payload).await?;
+    let body = crate::handler::common::merge_chunks(chunks);
 
     // Parse the XML body to get the list of objects to delete
     let to_be_deleted: Delete = quick_xml::de::from_reader(body.reader())?;

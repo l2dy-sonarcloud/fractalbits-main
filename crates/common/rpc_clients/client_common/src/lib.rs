@@ -139,6 +139,23 @@ where
             .send_request(request_id, frame, timeout, trace_id)
             .await
     }
+
+    pub async fn send_request_vectored(
+        &self,
+        request_id: u32,
+        frame: MessageFrame<Header, Vec<bytes::Bytes>>,
+        timeout: Option<Duration>,
+        trace_id: Option<u64>,
+    ) -> Result<MessageFrame<Header>, RpcError> {
+        self.ensure_connected().await?;
+        let client = {
+            let read = self.inner.read().await;
+            Arc::clone(read.as_ref().unwrap())
+        };
+        client
+            .send_request_vectored(request_id, frame, timeout, trace_id)
+            .await
+    }
 }
 
 #[cfg(feature = "metrics")]

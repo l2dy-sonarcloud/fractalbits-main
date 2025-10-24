@@ -60,7 +60,8 @@ pub async fn create_bucket_handler(ctx: BucketRequestContext) -> Result<HttpResp
     }
 
     // Parse and validate the request body
-    let body = buffer_payload(ctx.payload).await?;
+    let chunks = buffer_payload(ctx.payload).await?;
+    let body = crate::handler::common::merge_chunks(chunks);
     if !body.is_empty() {
         let create_bucket_conf: CreateBucketConfiguration =
             quick_xml::de::from_reader(body.reader())?;

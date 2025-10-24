@@ -296,6 +296,109 @@ impl DataVgProxy {
         )))
     }
 
+    pub async fn put_blob_vectored(
+        &self,
+        blob_guid: DataBlobGuid,
+        block_number: u32,
+        chunks: Vec<Bytes>,
+    ) -> Result<(), DataVgError> {
+        let start = Instant::now();
+        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        histogram!("blob_size", "operation" => "put").record(total_size as f64);
+
+        let selected_volume = self
+            .volumes
+            .iter()
+            .find(|v| v.volume_id == blob_guid.volume_id)
+            .ok_or_else(|| {
+                DataVgError::InitializationError(format!(
+                    "Volume {} not found in DataVgProxy",
+                    blob_guid.volume_id
+                ))
+            })?;
+        debug!(
+            "Using volume {} for put_blob_vectored",
+            selected_volume.volume_id
+        );
+
+        let rpc_timeout = self.rpc_timeout;
+        let write_quorum = self.quorum_config.w as usize;
+
+        let mut bss_node_indices: Vec<usize> = (0..selected_volume.bss_nodes.len()).collect();
+        bss_node_indices.shuffle(&mut rand::thread_rng());
+
+        let mut write_futures = FuturesUnordered::new();
+        for &index in &bss_node_indices {
+            let bss_node = selected_volume.bss_nodes[index].clone();
+            write_futures.push(Self::put_blob_to_node_vectored(
+                bss_node,
+                blob_guid,
+                block_number,
+                chunks.clone(),
+                rpc_timeout,
+            ));
+        }
+
+        let mut successful_writes = 0;
+        let mut errors = Vec::with_capacity(selected_volume.bss_nodes.len());
+
+        while let Some((address, result)) = write_futures.next().await {
+            match result {
+                Ok(()) => {
+                    successful_writes += 1;
+                    debug!("Successful vectored write to BSS node: {}", address);
+                }
+                Err(rpc_error) => {
+                    warn!("RPC error writing to BSS node {}: {}", address, rpc_error);
+                    errors.push(format!("{}: {}", address, rpc_error));
+                }
+            }
+
+            if successful_writes >= write_quorum {
+                tokio::task::spawn(async move {
+                    while let Some((addr, res)) = write_futures.next().await {
+                        match res {
+                            Ok(()) => {
+                                debug!("Background vectored write to {} completed", addr);
+                            }
+                            Err(e) => {
+                                warn!("Background vectored write to {} failed: {}", addr, e);
+                            }
+                        }
+                    }
+                });
+
+                histogram!("datavg_put_blob_nanos", "result" => "success")
+                    .record(start.elapsed().as_nanos() as f64);
+                debug!(
+                    "Vectored write quorum achieved ({}/{}) for blob {}:{}",
+                    successful_writes,
+                    selected_volume.bss_nodes.len(),
+                    blob_guid.blob_id,
+                    block_number
+                );
+                return Ok(());
+            }
+        }
+
+        histogram!("datavg_put_blob_nanos", "result" => "quorum_failure")
+            .record(start.elapsed().as_nanos() as f64);
+        error!(
+            "Failed to achieve write quorum ({}/{}) for blob {}:{}: {}",
+            successful_writes,
+            self.quorum_config.w,
+            blob_guid.blob_id,
+            block_number,
+            errors.join("; ")
+        );
+        Err(DataVgError::QuorumFailure(format!(
+            "Failed to achieve write quorum ({}/{}): {}",
+            successful_writes,
+            self.quorum_config.w,
+            errors.join("; ")
+        )))
+    }
+
     async fn put_blob_to_node(
         bss_node: Arc<BssNode>,
         blob_guid: DataBlobGuid,
@@ -306,37 +409,32 @@ impl DataVgProxy {
         let start_node = Instant::now();
         let address = bss_node.address.clone();
 
-        let result = async {
-            let bss_client = bss_node.get_client();
+        let bss_client = bss_node.get_client();
+        let result = bss_client
+            .put_data_blob(blob_guid, block_number, body, Some(rpc_timeout), None, 0)
+            .await;
 
-            let mut retries = 3;
-            let mut backoff = Duration::from_millis(5);
-            let mut retry_count = 0u32;
+        let result_label = if result.is_ok() { "success" } else { "failure" };
+        histogram!("datavg_put_blob_node_nanos", "bss_node" => address.clone(), "result" => result_label)
+            .record(start_node.elapsed().as_nanos() as f64);
 
-            loop {
-                match bss_client
-                    .put_data_blob(
-                        blob_guid,
-                        block_number,
-                        body.clone(),
-                        Some(rpc_timeout),
-                        None,
-                        retry_count,
-                    )
-                    .await
-                {
-                    Ok(()) => return Ok(()),
-                    Err(e) if e.retryable() && retries > 0 => {
-                        retries -= 1;
-                        retry_count += 1;
-                        tokio::time::sleep(backoff).await;
-                        backoff = backoff.saturating_mul(2);
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-        }
-        .await;
+        (address, result)
+    }
+
+    async fn put_blob_to_node_vectored(
+        bss_node: Arc<BssNode>,
+        blob_guid: DataBlobGuid,
+        block_number: u32,
+        chunks: Vec<Bytes>,
+        rpc_timeout: Duration,
+    ) -> (String, Result<(), RpcError>) {
+        let start_node = Instant::now();
+        let address = bss_node.address.clone();
+
+        let bss_client = bss_node.get_client();
+        let result = bss_client
+            .put_data_blob_vectored(blob_guid, block_number, chunks, Some(rpc_timeout), None, 0)
+            .await;
 
         let result_label = if result.is_ok() { "success" } else { "failure" };
         histogram!("datavg_put_blob_node_nanos", "bss_node" => address.clone(), "result" => result_label)

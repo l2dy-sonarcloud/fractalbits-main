@@ -31,6 +31,46 @@ use crate::{
     object_layout::*,
 };
 
+fn split_chunks_into_blocks(
+    chunks: Vec<actix_web::web::Bytes>,
+    block_size: usize,
+) -> Vec<Vec<actix_web::web::Bytes>> {
+    let mut blocks = Vec::new();
+    let mut current_block = Vec::new();
+    let mut current_block_size = 0;
+
+    for chunk in chunks {
+        let mut chunk_remaining = chunk;
+
+        while !chunk_remaining.is_empty() {
+            let space_left = block_size - current_block_size;
+
+            if chunk_remaining.len() <= space_left {
+                current_block_size += chunk_remaining.len();
+                current_block.push(chunk_remaining);
+                break;
+            } else {
+                let (fit, rest) = (
+                    chunk_remaining.slice(0..space_left),
+                    chunk_remaining.slice(space_left..),
+                );
+                current_block.push(fit);
+
+                blocks.push(current_block);
+                current_block = Vec::new();
+                current_block_size = 0;
+                chunk_remaining = rest;
+            }
+        }
+    }
+
+    if !current_block.is_empty() {
+        blocks.push(current_block);
+    }
+
+    blocks
+}
+
 pub async fn put_object_handler(ctx: ObjectRequestContext) -> Result<HttpResponse, S3Error> {
     // Debug: log all request headers to understand what's being sent
     tracing::debug!("PUT object request headers:");
@@ -57,14 +97,16 @@ pub async fn put_object_handler(ctx: ObjectRequestContext) -> Result<HttpRespons
 }
 
 // Helper function to calculate checksum for the given body data
-fn calculate_checksum_for_body(
-    body: &actix_web::web::Bytes,
+fn calculate_checksum_for_chunks(
+    chunks: &[actix_web::web::Bytes],
     expected_checksum: &Option<ChecksumValue>,
 ) -> Result<Option<ChecksumValue>, S3Error> {
     match expected_checksum {
         Some(ChecksumValue::Crc32(expected_bytes)) => {
             let mut hasher = Crc32::new();
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = hasher.finalize().to_be_bytes();
 
             // Verify against expected if provided
@@ -80,7 +122,9 @@ fn calculate_checksum_for_body(
         }
         Some(ChecksumValue::Crc32c(expected_bytes)) => {
             let mut hasher = Crc32c::new(0);
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = (hasher.finish() as u32).to_be_bytes();
 
             if calculated != *expected_bytes {
@@ -95,7 +139,9 @@ fn calculate_checksum_for_body(
         }
         Some(ChecksumValue::Crc64Nvme(expected_bytes)) => {
             let mut hasher = crc64fast_nvme::Digest::new();
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = hasher.sum64().to_be_bytes();
 
             if calculated != *expected_bytes {
@@ -110,7 +156,9 @@ fn calculate_checksum_for_body(
         }
         Some(ChecksumValue::Sha1(expected_bytes)) => {
             let mut hasher = Sha1::new();
-            hasher.update(body);
+            for chunk in chunks {
+                hasher.update(chunk);
+            }
             let calculated: [u8; 20] = hasher.finalize().into();
 
             if calculated != *expected_bytes {
@@ -125,7 +173,9 @@ fn calculate_checksum_for_body(
         }
         Some(ChecksumValue::Sha256(expected_bytes)) => {
             let mut hasher = Sha256::new();
-            hasher.update(body);
+            for chunk in chunks {
+                hasher.update(chunk);
+            }
             let calculated: [u8; 32] = hasher.finalize().into();
 
             if calculated != *expected_bytes {
@@ -142,39 +192,49 @@ fn calculate_checksum_for_body(
     }
 }
 
-// Helper function to calculate checksum for the given body data using specific algorithm
-fn calculate_checksum_for_body_with_algorithm(
-    body: &actix_web::web::Bytes,
+// Helper function to calculate checksum for chunks using specific algorithm
+fn calculate_checksum_for_chunks_with_algorithm(
+    chunks: &[actix_web::web::Bytes],
     algorithm: ChecksumAlgorithm,
 ) -> Result<Option<ChecksumValue>, S3Error> {
     match algorithm {
         ChecksumAlgorithm::Crc32 => {
             let mut hasher = Crc32::new();
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = hasher.finalize().to_be_bytes();
             Ok(Some(ChecksumValue::Crc32(calculated)))
         }
         ChecksumAlgorithm::Crc32c => {
             let mut hasher = Crc32c::new(0);
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = (hasher.finish() as u32).to_be_bytes();
             Ok(Some(ChecksumValue::Crc32c(calculated)))
         }
         ChecksumAlgorithm::Crc64Nvme => {
             let mut hasher = crc64fast_nvme::Digest::new();
-            hasher.write(body);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
             let calculated = hasher.sum64().to_be_bytes();
             Ok(Some(ChecksumValue::Crc64Nvme(calculated)))
         }
         ChecksumAlgorithm::Sha1 => {
             let mut hasher = Sha1::new();
-            hasher.update(body);
+            for chunk in chunks {
+                hasher.update(chunk);
+            }
             let calculated: [u8; 20] = hasher.finalize().into();
             Ok(Some(ChecksumValue::Sha1(calculated)))
         }
         ChecksumAlgorithm::Sha256 => {
             let mut hasher = Sha256::new();
-            hasher.update(body);
+            for chunk in chunks {
+                hasher.update(chunk);
+            }
             let calculated: [u8; 32] = hasher.finalize().into();
             Ok(Some(ChecksumValue::Sha256(calculated)))
         }
@@ -295,23 +355,23 @@ async fn put_object_streaming_internal(
             let tracking_root_blob_name = tracking_root_blob_name.clone();
 
             async move {
-                let data = block_result.map_err(|e| {
+                let chunks = block_result.map_err(|e| {
                     tracing::error!("Stream error: {}", e);
                     S3Error::InternalError
                 })?;
 
-                let len = data.len() as u64;
+                let len: usize = chunks.iter().map(|c| c.len()).sum();
                 let put_result = blob_client
-                    .put_blob(
+                    .put_blob_vectored(
                         tracking_root_blob_name.as_deref(),
                         blob_guid,
                         i as u32,
-                        data,
+                        chunks,
                     )
                     .await;
 
                 match put_result {
-                    Ok(_blob_guid) => Ok(len),
+                    Ok(_blob_guid) => Ok(len as u64),
                     Err(e) => {
                         tracing::error!("Failed to store blob block {}: {}", i, e);
                         Err(S3Error::InternalError)
@@ -488,13 +548,14 @@ async fn put_object_with_no_trailer(
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse().ok());
     // Buffer the entire payload for small objects with pre-allocation
-    let body = buffer_payload_with_capacity(ctx.payload, expected_size).await?;
+    let chunks = buffer_payload_with_capacity(ctx.payload, expected_size).await?;
 
+    let total_size: usize = chunks.iter().map(|c| c.len()).sum();
     tracing::debug!(
         "PutObject actix handler with resolved bucket: {}/{}, body size: {}",
         ctx.bucket_name,
         ctx.key,
-        body.len()
+        total_size
     );
 
     // Extract metadata headers
@@ -508,9 +569,9 @@ async fn put_object_with_no_trailer(
 
     // Calculate checksums if expected or if trailer algo is specified
     let calculated_checksum = if expected_checksum.is_some() {
-        calculate_checksum_for_body(&body, &expected_checksum)?
+        calculate_checksum_for_chunks(&chunks, &expected_checksum)?
     } else if let Some(algo) = trailer_algo {
-        calculate_checksum_for_body_with_algorithm(&body, algo)?
+        calculate_checksum_for_chunks_with_algorithm(&chunks, algo)?
     } else {
         None
     };
@@ -521,36 +582,33 @@ async fn put_object_with_no_trailer(
         .get_blob_client()
         .await
         .map_err(|_| S3Error::InternalError)?;
-    let size = body.len() as u64;
+    let size = total_size as u64;
     let block_size = ObjectLayout::DEFAULT_BLOCK_SIZE as usize;
-
-    // If the body is small, store as single block, otherwise chunk it
     let tracking_root_blob_name = bucket.tracking_root_blob_name.as_deref();
-    if body.len() <= block_size {
+
+    // If total size fits in one block, use vectored API to avoid copying
+    if total_size <= block_size {
         blob_client
-            .put_blob(tracking_root_blob_name, blob_guid, 0, body.clone())
+            .put_blob_vectored(tracking_root_blob_name, blob_guid, 0, chunks)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to store blob: {e}");
                 S3Error::InternalError
             })?;
     } else {
-        let num_chunks = body.len().div_ceil(block_size);
-        let mut futures = Vec::with_capacity(num_chunks);
+        let blocks = split_chunks_into_blocks(chunks, block_size);
+        let mut futures = Vec::with_capacity(blocks.len());
 
-        for block_num in 0..num_chunks {
+        for (block_num, block_chunks) in blocks.into_iter().enumerate() {
             let blob_client = blob_client.clone();
-            let start = block_num * block_size;
-            let end = ((block_num + 1) * block_size).min(body.len());
-            let chunk_bytes = body.slice(start..end);
 
             let future = async move {
                 blob_client
-                    .put_blob(
+                    .put_blob_vectored(
                         tracking_root_blob_name,
                         blob_guid,
                         block_num as u32,
-                        chunk_bytes,
+                        block_chunks,
                     )
                     .await
                     .map_err(|e| {

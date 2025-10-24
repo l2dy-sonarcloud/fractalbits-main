@@ -1,10 +1,12 @@
 mod retry;
+mod s3_common;
 mod s3_express_multi_az_storage;
 mod s3_hybrid_single_az_storage;
 
 pub use crate::config::RatelimitConfig;
 pub use data_types::DataBlobGuid;
 pub use retry::S3RetryConfig;
+pub use s3_common::chunks_to_bytestream;
 pub use s3_express_multi_az_storage::S3ExpressMultiAzStorage;
 pub use s3_hybrid_single_az_storage::S3HybridSingleAzStorage;
 pub use volume_group_proxy::DataVgProxy;
@@ -355,6 +357,28 @@ impl BlobStorageImpl {
             BlobStorageImpl::S3ExpressMultiAz(storage) => {
                 storage
                     .put_blob(tracking_root_blob_name, blob_id, block_number, body)
+                    .await
+            }
+        }
+    }
+
+    pub async fn put_blob_vectored(
+        &self,
+        tracking_root_blob_name: Option<&str>,
+        blob_id: Uuid,
+        volume_id: u16,
+        block_number: u32,
+        chunks: Vec<actix_web::web::Bytes>,
+    ) -> Result<(), BlobStorageError> {
+        match self {
+            BlobStorageImpl::HybridSingleAz(storage) => {
+                storage
+                    .put_blob_vectored(blob_id, volume_id, block_number, chunks)
+                    .await
+            }
+            BlobStorageImpl::S3ExpressMultiAz(storage) => {
+                storage
+                    .put_blob_vectored(tracking_root_blob_name, blob_id, block_number, chunks)
                     .await
             }
         }

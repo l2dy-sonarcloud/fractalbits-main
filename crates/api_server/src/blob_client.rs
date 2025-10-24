@@ -190,6 +190,24 @@ impl BlobClient {
             .await
     }
 
+    pub async fn put_blob_vectored(
+        &self,
+        tracking_root_blob_name: Option<&str>,
+        blob_guid: DataBlobGuid,
+        block_number: u32,
+        chunks: Vec<actix_web::web::Bytes>,
+    ) -> Result<(), BlobStorageError> {
+        self.storage
+            .put_blob_vectored(
+                tracking_root_blob_name,
+                blob_guid.blob_id,
+                blob_guid.volume_id,
+                block_number,
+                chunks,
+            )
+            .await
+    }
+
     pub async fn get_blob(
         &self,
         blob_guid: DataBlobGuid,
