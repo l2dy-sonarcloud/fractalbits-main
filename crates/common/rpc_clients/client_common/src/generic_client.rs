@@ -1,6 +1,4 @@
 use crate::RpcError;
-#[cfg(feature = "io_uring")]
-use crate::io_uring;
 use bytes::BytesMut;
 use metrics::{counter, gauge};
 use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
@@ -56,18 +54,10 @@ pub trait RpcCodec<Header: MessageHeaderTrait>: Default + Clone + Send + Sync + 
 
 pub struct RpcClient<Codec: RpcCodec<Header>, Header: MessageHeaderTrait> {
     requests: RequestMap<Header>,
-    #[cfg(not(feature = "io_uring"))]
     writer: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
-    #[cfg(feature = "io_uring")]
-    writer_fd: RawFd,
     recv_task_handle: AbortHandle,
     socket_fd: RawFd,
     is_closed: Arc<AtomicBool>,
-    // For io_uring: we use the raw FD directly, but must keep the Socket alive
-    // to prevent it from being dropped and closing the FD. This field ensures
-    // proper RAII ownership - the socket is closed when RpcClient is dropped.
-    #[cfg(feature = "io_uring")]
-    _socket_owner: Socket,
     _phantom: PhantomData<Codec>,
 }
 
@@ -107,28 +97,6 @@ where
         })
     }
 
-    #[cfg(feature = "io_uring")]
-    async fn create_raw_socket_io_uring(addr: SocketAddr) -> Result<(RawFd, Socket), io::Error> {
-        use socket2::{Domain, Protocol, Type};
-
-        let domain = Domain::for_address(addr);
-        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
-
-        Self::configure_tcp_socket(&socket)?;
-
-        match socket.connect(&addr.into()) {
-            Ok(_) => {}
-            Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {
-                // EINPROGRESS is expected for non-blocking connect
-            }
-            Err(e) => return Err(e),
-        }
-
-        let fd = socket.as_raw_fd();
-        Ok((fd, socket))
-    }
-
-    #[cfg(not(feature = "io_uring"))]
     async fn new_internal_tokio(stream: tokio::net::TcpStream) -> Result<Self, RpcError> {
         let rpc_type = Codec::RPC_TYPE;
         let socket_fd = stream.as_raw_fd();
@@ -165,61 +133,6 @@ where
         })
     }
 
-    #[cfg(feature = "io_uring")]
-    async fn new_internal_io_uring(addr: SocketAddr) -> Result<Self, RpcError> {
-        let rpc_type = Codec::RPC_TYPE;
-        let (socket_fd, socket) = Self::create_raw_socket_io_uring(addr)
-            .await
-            .map_err(RpcError::IoError)?;
-
-        let requests: RequestMap<Header> = Arc::new(parking_lot::Mutex::new(HashMap::new()));
-        let is_closed = Arc::new(AtomicBool::new(false));
-
-        // Receive task
-        let recv_handle = {
-            let receiver_requests = requests.clone();
-            let is_closed = is_closed.clone();
-            tokio::task::spawn_local(async move {
-                if let Err(e) =
-                    Self::receive_task_io_uring(socket_fd, &receiver_requests, rpc_type).await
-                {
-                    warn!(%rpc_type, %socket_fd, %e, "receive task failed");
-                }
-                is_closed.store(true, Ordering::SeqCst);
-                Self::drain_pending_requests(socket_fd, &receiver_requests, DrainFrom::ReceiveTask);
-            })
-            .abort_handle()
-        };
-
-        debug!(%rpc_type, %socket_fd, "Creating RPC client (io_uring)");
-
-        Ok(RpcClient {
-            requests,
-            writer_fd: socket_fd,
-            recv_task_handle: recv_handle,
-            socket_fd,
-            is_closed,
-            _socket_owner: socket,
-            _phantom: PhantomData,
-        })
-    }
-
-    #[cfg(feature = "io_uring")]
-    async fn receive_task_io_uring(
-        socket_fd: RawFd,
-        requests: &RequestMap<Header>,
-        rpc_type: &'static str,
-    ) -> Result<(), RpcError> {
-        let transport = io_uring::get_current_reactor().expect("io_uring reactor missing");
-        while let Ok(frame) = transport.recv(socket_fd).await {
-            Self::handle_incoming_frame(frame, requests, socket_fd, rpc_type);
-        }
-
-        warn!(%rpc_type, %socket_fd, "connection closed, receive message task quit");
-        Ok(())
-    }
-
-    #[cfg(not(feature = "io_uring"))]
     async fn receive_task_tokio(
         mut receiver: tokio::net::tcp::OwnedReadHalf,
         requests: &RequestMap<Header>,
@@ -325,7 +238,6 @@ where
         }
     }
 
-    #[cfg(not(feature = "io_uring"))]
     async fn send_request_internal<B: AsRef<[u8]>>(
         &self,
         request_id: u32,
@@ -384,63 +296,6 @@ where
         result.map_err(|e| RpcError::InternalResponseError(e.to_string()))
     }
 
-    #[cfg(feature = "io_uring")]
-    async fn send_request_internal<B: AsRef<[u8]>>(
-        &self,
-        request_id: u32,
-        retry_count: u32,
-        mut frame: MessageFrame<Header, B>,
-        timeout: Option<Duration>,
-    ) -> Result<MessageFrame<Header>, RpcError> {
-        if self.is_closed.load(Ordering::SeqCst) {
-            return Err(RpcError::InternalRequestError(
-                "Connection is closed".into(),
-            ));
-        }
-
-        let rpc_type = Codec::RPC_TYPE;
-        let trace_id = frame.header.get_trace_id();
-        frame.header.set_id(request_id);
-        frame.header.set_retry_count(retry_count);
-
-        let (tx, rx) = oneshot::channel();
-        self.requests.lock().insert(request_id, tx);
-        gauge!("rpc_request_pending_in_resp_map", "type" => rpc_type).increment(1.0);
-
-        debug!(%rpc_type, socket_fd=%self.socket_fd, %request_id, %trace_id, "sending request via io_uring");
-
-        let mut header_bytes = BytesMut::with_capacity(Header::SIZE);
-        frame.header.encode(&mut header_bytes);
-        let header = header_bytes.freeze();
-
-        let body_buf = frame.body.as_ref();
-        let iov = if body_buf.is_empty() {
-            vec![IoSlice::new(&header)]
-        } else {
-            vec![IoSlice::new(&header), IoSlice::new(body_buf)]
-        };
-
-        let transport = io_uring::get_current_reactor().expect("io_uring reactor missing");
-        transport
-            .send_vectored(self.writer_fd, &iov, false)
-            .await
-            .map_err(RpcError::IoError)?;
-
-        counter!("rpc_request_sent", "type" => rpc_type, "name" => "all").increment(1);
-
-        let result = match timeout {
-            None => rx.await,
-            Some(rpc_timeout) => match tokio::time::timeout(rpc_timeout, rx).await {
-                Ok(result) => result,
-                Err(_) => {
-                    warn!(%rpc_type, socket_fd=%self.socket_fd, %request_id, "rpc request timeout via io_uring");
-                    return Err(RpcError::InternalResponseError("timeout".into()));
-                }
-            },
-        };
-        result.map_err(|e| RpcError::InternalResponseError(e.to_string()))
-    }
-
     pub async fn send_request<B: AsRef<[u8]>>(
         &self,
         request_id: u32,
@@ -458,42 +313,6 @@ where
     pub fn is_closed(&self) -> bool {
         self.is_closed.load(Ordering::SeqCst)
     }
-}
-
-macro_rules! establish_connection_with_retry {
-    ($addr_key:expr, $connect_fn:expr) => {{
-        const MAX_CONNECTION_RETRIES: usize = 100 * 3600 * 24;
-        let start = std::time::Instant::now();
-        let retry_strategy = FixedInterval::from_millis(10)
-            .map(jitter)
-            .take(MAX_CONNECTION_RETRIES);
-
-        let client = Retry::spawn(retry_strategy, $connect_fn)
-            .await
-            .map_err(|e| {
-                warn!(rpc_type = %Codec::RPC_TYPE, addr = %$addr_key, error = %e, "failed to connect RPC server");
-                RpcError::IoError(io::Error::other(e.to_string()))
-            })?;
-
-        let duration = start.elapsed();
-        if duration > Duration::from_secs(1) {
-            warn!(
-                rpc_type = %Codec::RPC_TYPE,
-                addr = %$addr_key,
-                duration_ms = %duration.as_millis(),
-                "Slow connection establishment to RPC server"
-            );
-        } else if duration > Duration::from_millis(100) {
-            debug!(
-                rpc_type = %Codec::RPC_TYPE,
-                addr = %$addr_key,
-                duration_ms = %duration.as_millis(),
-                "Connection established to RPC server"
-            );
-        }
-
-        Ok(client)
-    }};
 }
 
 impl<Codec, Header> RpcClient<Codec, Header>
@@ -516,13 +335,19 @@ where
         Ok(())
     }
 
-    #[cfg(not(feature = "io_uring"))]
     pub async fn establish_connection(addr: String) -> Result<Self, RpcError>
     where
         Header: Default,
     {
+        const MAX_CONNECTION_RETRIES: usize = 100 * 3600 * 24;
+        let start = std::time::Instant::now();
+        let retry_strategy = FixedInterval::from_millis(10)
+            .map(jitter)
+            .take(MAX_CONNECTION_RETRIES);
+
         debug!(rpc_type=%Codec::RPC_TYPE, %addr, "Trying to connect to rpc server");
-        establish_connection_with_retry!(&addr, || async {
+
+        let client = Retry::spawn(retry_strategy, || async {
             let socket_addr = Self::resolve_address(&addr).await?;
             let stream = tokio::net::TcpStream::connect(socket_addr).await?;
 
@@ -535,17 +360,29 @@ where
 
             Self::new_internal_tokio(configured_stream).await
         })
-    }
+        .await
+        .map_err(|e| {
+            warn!(rpc_type = %Codec::RPC_TYPE, addr = %addr, error = %e, "failed to connect RPC server");
+            RpcError::IoError(io::Error::other(e.to_string()))
+        })?;
 
-    #[cfg(feature = "io_uring")]
-    pub async fn establish_connection(addr: String) -> Result<Self, RpcError>
-    where
-        Header: Default,
-    {
-        debug!(rpc_type=%Codec::RPC_TYPE, %addr, "Trying to connect to rpc server via io_uring");
-        establish_connection_with_retry!(&addr, || async {
-            let socket_addr = Self::resolve_address(&addr).await?;
-            Self::new_internal_io_uring(socket_addr).await
-        })
+        let duration = start.elapsed();
+        if duration > Duration::from_secs(1) {
+            warn!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr,
+                duration_ms = %duration.as_millis(),
+                "Slow connection establishment to RPC server"
+            );
+        } else if duration > Duration::from_millis(100) {
+            debug!(
+                rpc_type = %Codec::RPC_TYPE,
+                addr = %addr,
+                duration_ms = %duration.as_millis(),
+                "Connection established to RPC server"
+            );
+        }
+
+        Ok(client)
     }
 }

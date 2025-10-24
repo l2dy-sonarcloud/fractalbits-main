@@ -119,10 +119,7 @@ pub fn build_rust_servers(mode: BuildMode) -> CmdResult {
                 info "Building rust-based servers in debug mode ...";
                 $[build_envs] cargo build --workspace
                     --exclude fractalbits-bootstrap
-                    --exclude rewrk*
-                    --exclude api_server;
-                info "Building api_server ..."; // for some additional features (e.g rpc_io_uring)
-                $[build_envs] cargo build --package api_server;
+                    --exclude rewrk*;
             }
         }
         BuildMode::Release => {

@@ -9,8 +9,6 @@ use tokio::sync::RwLock;
 use tracing::{debug, error};
 
 pub mod generic_client;
-#[cfg(feature = "io_uring")]
-pub mod io_uring;
 pub use generic_client::{
     RpcCodec, get_request_bump, register_request_bump, unregister_request_bump,
 };

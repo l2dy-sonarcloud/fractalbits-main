@@ -4,12 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-io_uring = [
-    "dep:io-uring",
-    "dep:core_affinity",
-    "dep:crossbeam-channel",
-    "dep:libc",
-]
 metrics = []
 
 [dependencies]
@@ -30,7 +24,3 @@ socket2.workspace = true
 rpc_codec_common.workspace = true
 futures.workspace = true
 async-trait.workspace = true
-io-uring = { workspace = true, optional = true }
-core_affinity = { workspace = true, optional = true }
-crossbeam-channel = { workspace = true, optional = true }
-libc = { workspace = true, optional = true }

@@ -119,19 +119,32 @@ pub fn build(
             if rust_cpu.is_empty() {
                 continue;
             }
-            run_cmd! {
-                info "Building Rust projects for $rust_target ($rust_cpu)";
-                RUSTFLAGS="-C target-cpu=$rust_cpu"
-                $[build_envs] cargo zigbuild
-                    --target $rust_target $rust_build_opt --workspace
-                    --exclude xtask
-                    --exclude fractalbits-bootstrap
-                    --exclude api_server;
-                info "Building api_server ...";
-                $[api_server_build_env] $[build_envs] cargo zigbuild
-                    --target $rust_target $rust_build_opt
-                    --package api_server;
-            }?;
+            if api_server_build_env.is_empty() {
+                run_cmd! {
+                    info "Building Rust projects for $rust_target ($rust_cpu)";
+                    RUSTFLAGS="-C target-cpu=$rust_cpu"
+                    $[build_envs] cargo zigbuild
+                        --target $rust_target $rust_build_opt --workspace
+                        --exclude xtask
+                        --exclude fractalbits-bootstrap;
+                }?;
+            } else {
+                run_cmd! {
+                    info "Building Rust projects for $rust_target ($rust_cpu)";
+                    RUSTFLAGS="-C target-cpu=$rust_cpu"
+                    $[build_envs] cargo zigbuild
+                        --target $rust_target $rust_build_opt --workspace
+                        --exclude xtask
+                        --exclude fractalbits-bootstrap
+                        --exclude api_server;
+
+                    info "Building api_server ...";
+                    RUSTFLAGS="-C target-cpu=$rust_cpu"
+                    $[api_server_build_env] $[build_envs] cargo zigbuild
+                        --target $rust_target $rust_build_opt
+                        --package api_server;
+                }?;
+            }
 
             // Copy Rust binaries to deploy directory (excluding fractalbits-bootstrap)
             let deploy_dir = format!("prebuilt/deploy/{}/{}", target.arch, target.name);

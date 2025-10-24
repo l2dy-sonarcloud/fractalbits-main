@@ -73,11 +73,8 @@ arrayvec.workspace = true
 governor.workspace = true
 futures-util.workspace = true
 socket2.workspace = true
-libc.workspace = true
 num_cpus.workspace = true
 core_affinity.workspace = true
-io-uring.workspace = true
-crossbeam-channel.workspace = true
 async-trait.workspace = true
 parking_lot.workspace = true
 
@@ -93,6 +90,5 @@ reqwest.workspace = true
 
 [features]
 default = []
-rpc_io_uring = ["rpc_client_common/io_uring"]
 metrics_statsd = ["dep:metrics-exporter-statsd", "rpc_client_common/metrics"]
 metrics_prometheus = ["dep:metrics-exporter-prometheus", "rpc_client_common/metrics"]
