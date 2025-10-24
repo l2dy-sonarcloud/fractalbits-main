@@ -67,11 +67,12 @@ impl Deref for PooledBump {
 
 impl Drop for PooledBump {
     fn drop(&mut self) {
-        BUMP_POOL.with(|pool| {
-            let mut pool = pool.borrow_mut();
-            self.inner.reset();
-            let bump = std::mem::replace(&mut self.inner, Bump::new());
-            pool.push(Rc::new(PooledBump { inner: bump }));
+        let _ = BUMP_POOL.try_with(|pool| {
+            if let Ok(mut pool) = pool.try_borrow_mut() {
+                self.inner.reset();
+                let bump = std::mem::replace(&mut self.inner, Bump::new());
+                pool.push(Rc::new(PooledBump { inner: bump }));
+            }
         });
     }
 }
