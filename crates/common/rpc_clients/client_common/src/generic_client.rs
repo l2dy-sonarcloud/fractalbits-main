@@ -248,13 +248,22 @@ where
                 Err(e) => return Err(RpcError::IoError(e)),
             };
 
-            // Read body using bump allocator if available
+            // Read body directly into uninitialized buffer to avoid memset overhead
             let body_size = header.get_body_size();
             let body = if body_size > 0 {
-                let mut body_buf = bytes::BytesMut::with_capacity(body_size);
-                body_buf.resize(body_size, 0);
-                receiver.read_exact(&mut body_buf).await?;
-                body_buf.freeze()
+                let mut body_buf = Vec::<u8>::with_capacity(body_size);
+                // Safety: We create an uninitialized buffer and read data directly into it.
+                // This is safe because:
+                // 1. The buffer has allocated capacity >= body_size
+                // 2. read_exact guarantees it fills the entire buffer or returns an error
+                // 3. We only set_len after read_exact succeeds, ensuring all bytes are initialized
+                unsafe {
+                    let buf_ptr = body_buf.as_mut_ptr();
+                    let slice = std::slice::from_raw_parts_mut(buf_ptr, body_size);
+                    receiver.read_exact(slice).await?;
+                    body_buf.set_len(body_size);
+                }
+                Bytes::from(body_buf)
             } else {
                 bytes::Bytes::new()
             };
