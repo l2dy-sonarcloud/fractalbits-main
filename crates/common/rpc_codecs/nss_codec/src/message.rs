@@ -2,14 +2,11 @@ use crate::Command;
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use rpc_codec_common::MessageHeaderTrait;
-use xxhash_rust::xxh64::xxh64;
+use xxhash_rust::xxh32::xxh32;
 
 #[repr(C)]
 #[derive(Pod, Debug, Default, Clone, Copy, Zeroable)]
 pub struct MessageHeader {
-    /// Trace ID for distributed tracing
-    pub trace_id: u64,
-
     /// A checksum covering only the remainder of this header.
     /// This allows the header to be trusted without having to fetch the associated body.
     /// Using xxhash64 & UINT32_MAX.
@@ -18,6 +15,9 @@ pub struct MessageHeader {
     /// A checksum covering only the associated body after this header.
     /// Using xxhash64 & UINT32_MAX.
     pub checksum_body: u32,
+
+    /// Trace ID for distributed tracing
+    pub trace_id: u64,
 
     /// The size of the Header structure (always), plus any associated body.
     pub size: u32,
@@ -70,8 +70,8 @@ impl MessageHeader {
         let checksum_offset = std::mem::offset_of!(MessageHeader, checksum);
         let bytes: &[u8] = bytemuck::bytes_of(self);
         let bytes_to_hash = &bytes[checksum_offset + size_of::<u32>()..Self::SIZE];
-        let hash = xxh64(bytes_to_hash, 0);
-        self.checksum = (hash & 0xFFFFFFFF) as u32;
+        let hash = xxh32(bytes_to_hash, 0);
+        self.checksum = hash;
     }
 
     /// Verify that the checksum field matches the calculated checksum.
@@ -80,9 +80,8 @@ impl MessageHeader {
         let checksum_offset = std::mem::offset_of!(MessageHeader, checksum);
         let bytes: &[u8] = bytemuck::bytes_of(self);
         let bytes_to_hash = &bytes[checksum_offset + size_of::<u32>()..Self::SIZE];
-        let hash = xxh64(bytes_to_hash, 0);
-        let calculated = (hash & 0xFFFFFFFF) as u32;
-        self.checksum == calculated
+        let hash = xxh32(bytes_to_hash, 0);
+        self.checksum == hash 
     }
 }
 
