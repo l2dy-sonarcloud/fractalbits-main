@@ -7,7 +7,7 @@ mod head;
 mod post;
 mod put;
 
-use crate::AppState;
+use crate::{AppState, http_stats::HttpStatsGuard};
 use actix_web::{
     HttpRequest, HttpResponse, ResponseError,
     web::{self, Payload},
@@ -160,6 +160,7 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
 
     let endpoint_name = endpoint.as_str();
     let gauge_guard = InflightRequestGuard::new(endpoint_name);
+    let http_stats_guard = HttpStatsGuard::new(endpoint_name);
 
     // Get app state and per-core context
     let app_data = req
@@ -183,6 +184,7 @@ pub async fn any_handler(req: HttpRequest, payload: Payload) -> Result<HttpRespo
     .await;
     let duration = start.elapsed();
     drop(gauge_guard);
+    drop(http_stats_guard);
 
     let result = match result {
         Ok(result) => result,

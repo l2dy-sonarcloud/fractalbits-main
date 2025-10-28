@@ -76,6 +76,7 @@ num_cpus.workspace = true
 core_affinity.workspace = true
 async-trait.workspace = true
 parking_lot.workspace = true
+dashmap.workspace = true
 
 [dev-dependencies]
 aws_signature = { workspace = true, features = ["testutils"] }

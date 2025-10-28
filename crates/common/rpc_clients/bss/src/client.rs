@@ -1,4 +1,3 @@
-use crate::stats::{BssNodeStats, get_global_registry};
 use rpc_client_common::AutoReconnectRpcClient;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,7 +8,6 @@ pub struct RpcClient {
     connections:
         Vec<Arc<AutoReconnectRpcClient<bss_codec::MessageCodec, bss_codec::MessageHeader>>>,
     next_conn: AtomicUsize,
-    stats: Arc<BssNodeStats>,
 }
 
 impl RpcClient {
@@ -21,13 +19,9 @@ impl RpcClient {
             connections.push(Arc::new(inner));
         }
 
-        let registry = get_global_registry();
-        let stats = registry.register_node(address);
-
         Self {
             connections,
             next_conn: AtomicUsize::new(0),
-            stats,
         }
     }
 
@@ -52,7 +46,8 @@ impl RpcClient {
     ) -> Result<rpc_codec_common::MessageFrame<bss_codec::MessageHeader>, rpc_client_common::RpcError>
     {
         if let Some(op) = operation {
-            self.stats.increment(op);
+            let stats = crate::stats::get_global_bss_stats();
+            stats.increment(op);
         }
 
         let result = self
@@ -61,7 +56,8 @@ impl RpcClient {
             .await;
 
         if let Some(op) = operation {
-            self.stats.decrement(op);
+            let stats = crate::stats::get_global_bss_stats();
+            stats.decrement(op);
         }
 
         result
@@ -77,7 +73,8 @@ impl RpcClient {
     ) -> Result<rpc_codec_common::MessageFrame<bss_codec::MessageHeader>, rpc_client_common::RpcError>
     {
         if let Some(op) = operation {
-            self.stats.increment(op);
+            let stats = crate::stats::get_global_bss_stats();
+            stats.increment(op);
         }
 
         let result = self
@@ -86,7 +83,8 @@ impl RpcClient {
             .await;
 
         if let Some(op) = operation {
-            self.stats.decrement(op);
+            let stats = crate::stats::get_global_bss_stats();
+            stats.decrement(op);
         }
 
         result

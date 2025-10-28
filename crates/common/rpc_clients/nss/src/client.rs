@@ -42,10 +42,19 @@ impl RpcClient {
         frame: rpc_codec_common::MessageFrame<nss_codec::MessageHeader, bytes::Bytes>,
         timeout: Option<std::time::Duration>,
         trace_id: Option<u64>,
+        operation: crate::stats::NssOperation,
     ) -> Result<rpc_codec_common::MessageFrame<nss_codec::MessageHeader>, rpc_client_common::RpcError>
     {
-        self.get_connection()
+        let stats = crate::stats::get_global_nss_stats();
+        stats.increment(operation);
+
+        let result = self
+            .get_connection()
             .send_request(request_id, frame, timeout, trace_id)
-            .await
+            .await;
+
+        stats.decrement(operation);
+
+        result
     }
 }
