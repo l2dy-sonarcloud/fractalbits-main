@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 bytes.workspace = true
+bytemuck.workspace = true
+xxhash-rust.workspace = true
