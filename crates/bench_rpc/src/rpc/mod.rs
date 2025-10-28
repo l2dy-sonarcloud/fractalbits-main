@@ -305,7 +305,7 @@ async fn benchmark_bss_read(
                 };
                 let mut content = Bytes::new();
                 let result = rpc_client
-                    .get_data_blob(blob_guid, 0, &mut content, None, None, 0)
+                    .get_data_blob(blob_guid, 0, &mut content, BLOB_SIZE - 256, None, None, 0)
                     .await
                     .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
                 (request_start, result.map(|_| content))
@@ -344,7 +344,7 @@ async fn benchmark_bss_read(
                 };
                 let mut content = Bytes::new();
                 let result = rpc_client
-                    .get_data_blob(blob_guid, 0, &mut content, None, None, 0)
+                    .get_data_blob(blob_guid, 0, &mut content, BLOB_SIZE - 256, None, None, 0)
                     .await
                     .map_err(|e| anyhow::anyhow!(e)); // Convert RpcErrorBss to anyhow::Error
                 (request_start, result.map(|_| content))

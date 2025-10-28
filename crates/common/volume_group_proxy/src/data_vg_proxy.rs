@@ -103,8 +103,9 @@ impl DataVgProxy {
         bss_node: &BssNode,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        content_len: usize,
     ) -> Result<Bytes, RpcError> {
-        tracing::debug!(%blob_guid, bss_address=%bss_node.address, block_number, "get_blob_from_node_instance calling BSS");
+        tracing::debug!(%blob_guid, bss_address=%bss_node.address, block_number, content_len, "get_blob_from_node_instance calling BSS");
 
         let bss_client = bss_node.get_client();
 
@@ -119,6 +120,7 @@ impl DataVgProxy {
                     blob_guid,
                     block_number,
                     &mut body,
+                    content_len,
                     Some(self.rpc_timeout),
                     None,
                     retry_count,
@@ -449,6 +451,7 @@ impl DataVgProxy {
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        content_len: usize,
         body: &mut Bytes,
     ) -> Result<(), DataVgError> {
         let start = Instant::now();
@@ -475,7 +478,7 @@ impl DataVgProxy {
                 selected_node.address
             );
             match self
-                .get_blob_from_node_instance(selected_node, blob_guid, block_number)
+                .get_blob_from_node_instance(selected_node, blob_guid, block_number, content_len)
                 .await
             {
                 Ok(blob_data) => {
@@ -504,7 +507,13 @@ impl DataVgProxy {
         // Create read futures for all nodes
         let mut read_futures = FuturesUnordered::new();
         for bss_node in &volume.bss_nodes {
-            let fut = Self::get_blob_from_node_instance(self, bss_node, blob_guid, block_number);
+            let fut = Self::get_blob_from_node_instance(
+                self,
+                bss_node,
+                blob_guid,
+                block_number,
+                content_len,
+            );
             let address = bss_node.address.clone();
             read_futures.push(async move {
                 let result = fut.await;

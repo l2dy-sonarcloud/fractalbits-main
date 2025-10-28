@@ -130,6 +130,7 @@ impl S3HybridSingleAzStorage {
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        content_len: usize,
         location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
@@ -137,7 +138,7 @@ impl S3HybridSingleAzStorage {
             BlobLocation::DataVgProxy => {
                 // Small blob - get from DataVgProxy
                 self.data_vg_proxy
-                    .get_blob(blob_guid, block_number, body)
+                    .get_blob(blob_guid, block_number, content_len, body)
                     .await?;
             }
             BlobLocation::S3 => {

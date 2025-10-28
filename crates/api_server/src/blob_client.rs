@@ -212,11 +212,12 @@ impl BlobClient {
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        content_len: usize,
         location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
         self.storage
-            .get_blob(blob_guid, block_number, location, body)
+            .get_blob(blob_guid, block_number, content_len, location, body)
             .await
     }
 

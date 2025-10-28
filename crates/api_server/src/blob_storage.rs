@@ -388,13 +388,14 @@ impl BlobStorageImpl {
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
+        content_len: usize,
         location: BlobLocation,
         body: &mut Bytes,
     ) -> Result<(), BlobStorageError> {
         match self {
             BlobStorageImpl::HybridSingleAz(storage) => {
                 storage
-                    .get_blob(blob_guid, block_number, location, body)
+                    .get_blob(blob_guid, block_number, content_len, location, body)
                     .await
             }
             BlobStorageImpl::S3ExpressMultiAz(storage) => {

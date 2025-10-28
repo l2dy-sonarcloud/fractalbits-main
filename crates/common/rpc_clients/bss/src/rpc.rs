@@ -76,11 +76,13 @@ impl RpcClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_data_blob(
         &self,
         blob_guid: DataBlobGuid,
         block_number: u32,
         body: &mut Bytes,
+        content_len: usize,
         timeout: Option<Duration>,
         trace_id: Option<u64>,
         retry_count: u32,
@@ -95,6 +97,9 @@ impl RpcClient {
         header.command = Command::GetDataBlob;
         header.size = MessageHeader::SIZE as u32;
         header.retry_count = retry_count;
+
+        let total_size = MessageHeader::SIZE + content_len;
+        header.aligned_size = total_size.next_multiple_of(4096) as u32;
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self

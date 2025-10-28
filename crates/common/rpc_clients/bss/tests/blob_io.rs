@@ -35,7 +35,15 @@ async fn test_basic_blob_io_with_fixed_bytes() {
             .unwrap();
 
         rpc_client
-            .get_data_blob(blob_guid, 0, &mut readback_content, None, None, 0)
+            .get_data_blob(
+                blob_guid,
+                0,
+                &mut readback_content,
+                content.len(),
+                None,
+                None,
+                0,
+            )
             .await
             .unwrap();
         assert_eq!(content, readback_content);
@@ -68,7 +76,15 @@ async fn test_basic_blob_io_with_random_bytes() {
             .unwrap();
 
         rpc_client
-            .get_data_blob(blob_guid, 0, &mut readback_content, None, None, 0)
+            .get_data_blob(
+                blob_guid,
+                0,
+                &mut readback_content,
+                content.len(),
+                None,
+                None,
+                0,
+            )
             .await
             .unwrap();
         assert_eq!(content, readback_content);
