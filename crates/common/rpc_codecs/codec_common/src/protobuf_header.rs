@@ -1,8 +1,37 @@
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use xxhash_rust::xxh32::xxh32;
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::MessageHeaderTrait;
+
+/// XXH3-64 hash of an empty buffer (seed=0)
+/// This is the correct checksum value for empty message bodies
+pub const EMPTY_BODY_CHECKSUM: u64 = 0x2d06800538d394c2;
+
+/// Verify header checksum on raw bytes before decoding.
+/// This is critical for security: verifying BEFORE decode prevents UB from corrupted enum values.
+///
+/// # Safety
+/// This function verifies the checksum field matches the hash of the remaining header bytes.
+/// Only after this returns true is it safe to decode/cast the bytes into a typed header struct.
+pub fn verify_header_checksum_raw(header_bytes: &[u8], header_size: usize) -> bool {
+    if header_bytes.len() < header_size {
+        return false;
+    }
+
+    // Read stored checksum (first 8 bytes, little-endian u64)
+    let stored_checksum = u64::from_le_bytes(
+        header_bytes[0..8]
+            .try_into()
+            .expect("slice is exactly 8 bytes"),
+    );
+
+    // Hash everything after the checksum field (bytes 8..header_size)
+    let bytes_to_hash = &header_bytes[8..header_size];
+    let calculated = xxh3_64(bytes_to_hash);
+
+    stored_checksum == calculated
+}
 
 /// Generic protobuf-based message header implementation
 ///
@@ -15,32 +44,28 @@ where
     Command: Pod + Zeroable + Default + Clone + Copy + Send + Sync + 'static,
 {
     /// A checksum covering only the remainder of this header.
-    /// This allows the header to be trusted without having to fetch the associated body.
-    /// Using xxhash32
-    pub checksum: u32,
-
-    /// A checksum covering only the associated body after this header.
-    /// Using xxhash32
-    pub checksum_body: u32,
+    /// This allows the header to be trusted without having to recv() or read() the associated body.
+    checksum: u64,
+    /// The current protocol version, note the position should never be changed
+    /// so that we can upgrade proto version in the future.
+    pub proto_version: u32,
+    /// The size of the Header structure, plus any associated body.
+    pub size: u32,
 
     /// Trace ID for distributed tracing
     pub trace_id: u64,
-
-    /// The size of the Header structure (always), plus any associated body.
-    pub size: u32,
-
     /// Every request would be sent with a unique id, so the client can get the right response
     pub id: u32,
-
     /// The protocol command (method) for this message.
     /// i32 size, defined as protobuf enum type
     pub command: Command,
 
+    /// A checksum covering only the associated body after this header.
+    pub checksum_body: u64,
     /// Number of retry attempts for this request (0 = first attempt)
     pub retry_count: u8,
-
     /// Reserved for future use
-    reserved: [u8; 3],
+    reserved: [u8; 7],
 }
 
 // Safety: ProtobufMessageHeader has the same layout requirements as its fields.
@@ -62,7 +87,7 @@ impl<Command> ProtobufMessageHeader<Command>
 where
     Command: Pod + Zeroable + Default + Clone + Copy + Send + Sync + 'static,
 {
-    const _SIZE_OK: () = assert!(size_of::<Self>() == 32);
+    const _SIZE_OK: () = assert!(size_of::<Self>() == 48);
     pub const SIZE: usize = size_of::<Self>();
 
     pub fn encode(&self, dst: &mut BytesMut) {
@@ -84,23 +109,43 @@ where
 
     /// Calculate and set the checksum field for this header.
     /// The checksum covers all header fields after the checksum field itself.
-    /// Using xxh32
     pub fn set_checksum(&mut self) {
         let checksum_offset = std::mem::offset_of!(Self, checksum);
         let bytes: &[u8] = bytemuck::bytes_of(self);
-        let bytes_to_hash = &bytes[checksum_offset + size_of::<u32>()..Self::SIZE];
-        let hash = xxh32(bytes_to_hash, 0);
-        self.checksum = hash;
+        let bytes_to_hash = &bytes[checksum_offset + size_of::<u64>()..Self::SIZE];
+        self.checksum = xxh3_64(bytes_to_hash);
     }
 
-    /// Verify that the checksum field matches the calculated checksum.
-    /// Returns true if valid, false if invalid.
-    pub fn verify_checksum(&self) -> bool {
-        let checksum_offset = std::mem::offset_of!(Self, checksum);
-        let bytes: &[u8] = bytemuck::bytes_of(self);
-        let bytes_to_hash = &bytes[checksum_offset + size_of::<u32>()..Self::SIZE];
-        let hash = xxh32(bytes_to_hash, 0);
-        self.checksum == hash
+    /// Calculate and set the body checksum field.
+    /// The checksum covers the message body after this header.
+    pub fn set_body_checksum(&mut self, body: &[u8]) {
+        self.checksum_body = if body.is_empty() {
+            EMPTY_BODY_CHECKSUM
+        } else {
+            xxh3_64(body)
+        };
+    }
+
+    /// Verify that the body checksum field matches the calculated checksum.
+    /// Returns true if valid, false otherwise.
+    pub fn verify_body_checksum(&self, body: &[u8]) -> bool {
+        let calculated = if body.is_empty() {
+            EMPTY_BODY_CHECKSUM
+        } else {
+            xxh3_64(body)
+        };
+        self.checksum_body == calculated
+    }
+
+    /// Calculate and set the body checksum field from multiple chunks.
+    /// Uses streaming hash to avoid concatenation.
+    pub fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]) {
+        use xxhash_rust::xxh3::Xxh3;
+        let mut hasher = Xxh3::new();
+        for chunk in chunks {
+            hasher.update(chunk.as_ref());
+        }
+        self.checksum_body = hasher.digest();
     }
 }
 
@@ -161,7 +206,15 @@ where
         self.set_checksum()
     }
 
-    fn verify_checksum(&self) -> bool {
-        self.verify_checksum()
+    fn set_body_checksum(&mut self, body: &[u8]) {
+        self.set_body_checksum(body)
+    }
+
+    fn verify_body_checksum(&self, body: &[u8]) -> bool {
+        self.verify_body_checksum(body)
+    }
+
+    fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]) {
+        self.set_body_checksum_vectored(chunks)
     }
 }

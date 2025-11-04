@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 
 pub mod protobuf_header;
-pub use protobuf_header::ProtobufMessageHeader;
+pub use protobuf_header::{EMPTY_BODY_CHECKSUM, ProtobufMessageHeader, verify_header_checksum_raw};
 
 pub trait MessageHeaderTrait: Sized + Clone + Copy + Send + Sync + 'static {
     const SIZE: usize;
@@ -18,7 +18,9 @@ pub trait MessageHeaderTrait: Sized + Clone + Copy + Send + Sync + 'static {
     fn get_trace_id(&self) -> u64;
     fn set_trace_id(&mut self, trace_id: u64);
     fn set_checksum(&mut self);
-    fn verify_checksum(&self) -> bool;
+    fn set_body_checksum(&mut self, body: &[u8]);
+    fn verify_body_checksum(&self, body: &[u8]) -> bool;
+    fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]);
 }
 
 pub struct MessageFrame<H: MessageHeaderTrait, B = Bytes> {
@@ -77,8 +79,16 @@ macro_rules! impl_protobuf_message_header {
                 self.0.set_checksum()
             }
 
-            pub fn verify_checksum(&self) -> bool {
-                self.0.verify_checksum()
+            pub fn set_body_checksum(&mut self, body: &[u8]) {
+                self.0.set_body_checksum(body)
+            }
+
+            pub fn verify_body_checksum(&self, body: &[u8]) -> bool {
+                self.0.verify_body_checksum(body)
+            }
+
+            pub fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]) {
+                self.0.set_body_checksum_vectored(chunks)
             }
         }
 
@@ -147,8 +157,16 @@ macro_rules! impl_protobuf_message_header {
                 self.0.set_checksum()
             }
 
-            fn verify_checksum(&self) -> bool {
-                self.0.verify_checksum()
+            fn set_body_checksum(&mut self, body: &[u8]) {
+                self.0.set_body_checksum(body)
+            }
+
+            fn verify_body_checksum(&self, body: &[u8]) -> bool {
+                self.0.verify_body_checksum(body)
+            }
+
+            fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]) {
+                self.0.set_body_checksum_vectored(chunks)
             }
         }
     };

@@ -6,16 +6,20 @@ use rpc_codec_common::MessageHeaderTrait;
 use std::mem::size_of;
 use xxhash_rust::xxh3::Xxh3;
 
+/// XXH3-64 hash of an empty buffer (seed=0)
+/// This is the correct checksum value for empty message bodies
+const EMPTY_BODY_CHECKSUM: u64 = 0x2d06800538d394c2;
+
 #[repr(C)]
 #[derive(Pod, Debug, Clone, Copy, Zeroable)]
 pub struct MessageHeader {
     /// A checksum covering only the remainder of this header.
     /// This allows the header to be trusted without having to recv() or read() the associated body.
     checksum: u64,
-    /// The current protocol version, note all the members until here should never be changed so
-    /// that we can upgrade proto version in the future.
+    /// The current protocol version, note the position should never be changed
+    /// so that we can upgrade proto version in the future.
     pub proto_version: u32,
-    /// The size of the Header structure (always), plus any associated body.
+    /// The size of the Header structure, plus any associated body.
     pub size: u32,
 
     /// A checksum covering only the associated body after this header.
@@ -89,7 +93,7 @@ impl Default for MessageHeader {
             proto_version: 1,
             checksum: 0,
             size: 0,
-            checksum_body: 0,
+            checksum_body: EMPTY_BODY_CHECKSUM,
             command: Command::Invalid,
             id: 0,
             bucket_id: [0u8; 16],
@@ -162,8 +166,6 @@ impl MessageHeaderTrait for MessageHeader {
     }
 
     fn decode(src: &[u8]) -> Self {
-        // Note: Header checksum verification should be done after decode by calling verify_checksum()
-        // This is handled in the generic RPC client (generic_client.rs)
         bytemuck::pod_read_unaligned::<Self>(&src[..Self::SIZE]).to_owned()
     }
 
@@ -214,13 +216,19 @@ impl MessageHeaderTrait for MessageHeader {
         self.checksum = xxhash_rust::xxh3::xxh3_64(bytes_to_hash);
     }
 
-    fn verify_checksum(&self) -> bool {
-        let header_bytes: &[u8] = bytemuck::bytes_of(self);
-        let checksum_offset = std::mem::offset_of!(MessageHeader, checksum);
-        let bytes_to_hash = &header_bytes[checksum_offset + size_of::<u64>()..Self::SIZE];
+    fn set_body_checksum(&mut self, body: &[u8]) {
+        self.set_body_checksum(body)
+    }
 
-        let calculated = xxhash_rust::xxh3::xxh3_64(bytes_to_hash);
+    fn verify_body_checksum(&self, body: &[u8]) -> bool {
+        self.verify_body_checksum(body)
+    }
 
-        self.checksum == calculated
+    fn set_body_checksum_vectored(&mut self, chunks: &[impl AsRef<[u8]>]) {
+        let mut hasher = Xxh3::new();
+        for chunk in chunks {
+            hasher.update(chunk.as_ref());
+        }
+        self.checksum_body = hasher.digest();
     }
 }

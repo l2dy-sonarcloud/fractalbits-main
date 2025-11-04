@@ -160,7 +160,15 @@ where
                 let request_id = frame.header.get_id();
                 debug!(%rpc_type, %socket_fd, %request_id, "sending request");
 
+                if frame.body.is_empty() {
+                    frame.header.set_body_checksum(&[]);
+                } else if frame.body.len() == 1 {
+                    frame.header.set_body_checksum(&frame.body[0]);
+                } else {
+                    frame.header.set_body_checksum_vectored(&frame.body);
+                }
                 frame.header.set_checksum();
+
                 let mut header_buf = BytesMut::with_capacity(Header::SIZE);
                 frame.header.encode(&mut header_buf);
 
@@ -239,15 +247,20 @@ where
 
         loop {
             // Read fixed-size header into stack buffer
-            let mut header_buf = [0u8; 256];
+            let mut header_buf = [0u8; 128];
             let header = match receiver.read_exact(&mut header_buf[..header_size]).await {
                 Ok(_) => {
-                    let header = Header::decode(&header_buf[..header_size]);
-                    if !header.verify_checksum() {
+                    // Verify checksum on raw bytes BEFORE decoding
+                    // This prevents UB from corrupted enum values in the Command field
+                    if !rpc_codec_common::verify_header_checksum_raw(
+                        &header_buf[..header_size],
+                        header_size,
+                    ) {
                         warn!(%rpc_type, %socket_fd, "header checksum verification failed");
                         return Err(RpcError::ChecksumMismatch);
                     }
-                    header
+                    // Now safe to decode - checksum verified
+                    Header::decode(&header_buf[..header_size])
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     warn!(%rpc_type, %socket_fd, "connection closed, receive message task quit");
@@ -276,11 +289,11 @@ where
                 bytes::Bytes::new()
             };
 
-            // Verify header checksum before processing the frame
-            if !header.verify_checksum() {
+            // Verify body checksum (works for empty bodies too - they have a known XXH3 hash)
+            if !header.verify_body_checksum(&body) {
                 error!(%rpc_type, %socket_fd, request_id = %header.get_id(),
-                    "Response header checksum verification failed, dropping response");
-                counter!("rpc_response_checksum_failed", "type" => rpc_type).increment(1);
+                    "Response body checksum verification failed, dropping response");
+                counter!("rpc_response_body_checksum_failed", "type" => rpc_type).increment(1);
                 continue;
             }
 
