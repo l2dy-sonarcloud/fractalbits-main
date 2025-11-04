@@ -154,31 +154,36 @@ fn main() -> std::io::Result<()> {
         mgmt_port, worker_count, "Starting server with per-core threads (SO_REUSEPORT)"
     );
 
-    let stats_dir = config.stats_dir.clone();
-    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
-    let stats_writer_handle = thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build stats writer runtime");
+    let stats_writer_handle = if config.enable_stats_writer {
+        let stats_dir = config.stats_dir.clone();
+        let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
+        let handle = thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build stats writer runtime");
 
-        rt.block_on(async {
-            match api_server::unified_stats::init_unified_stats_writer(stats_dir).await {
-                Ok(mut writer) => {
-                    info!("Unified stats writer initialized");
-                    let shutdown_rx_async = tokio::task::spawn_blocking(move || {
-                        let _ = shutdown_rx.recv();
-                    });
-                    let _ = shutdown_rx_async.await;
-                    info!("Unified stats writer shutting down");
-                    writer.stop().await;
+            rt.block_on(async {
+                match api_server::unified_stats::init_unified_stats_writer(stats_dir).await {
+                    Ok(mut writer) => {
+                        info!("Unified stats writer initialized");
+                        let shutdown_rx_async = tokio::task::spawn_blocking(move || {
+                            let _ = shutdown_rx.recv();
+                        });
+                        let _ = shutdown_rx_async.await;
+                        info!("Unified stats writer shutting down");
+                        writer.stop().await;
+                    }
+                    Err(e) => {
+                        error!("Failed to initialize unified stats writer: {}", e);
+                    }
                 }
-                Err(e) => {
-                    error!("Failed to initialize unified stats writer: {}", e);
-                }
-            }
+            });
         });
-    });
+        Some((handle, shutdown_tx))
+    } else {
+        None
+    };
 
     let mut handles = Vec::with_capacity(worker_count);
     let mut server_handles = Vec::new();
@@ -369,10 +374,12 @@ fn main() -> std::io::Result<()> {
         error!("Signal handler thread panicked: {e:?}");
     }
 
-    info!("All worker threads exited, shutting down stats writer");
-    let _ = shutdown_tx.send(());
-    if let Err(e) = stats_writer_handle.join() {
-        error!("Stats writer thread panicked: {e:?}");
+    if let Some((stats_writer_handle, shutdown_tx)) = stats_writer_handle {
+        info!("All worker threads exited, shutting down stats writer");
+        let _ = shutdown_tx.send(());
+        if let Err(e) = stats_writer_handle.join() {
+            error!("Stats writer thread panicked: {e:?}");
+        }
     }
 
     Ok(())

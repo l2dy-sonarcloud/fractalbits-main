@@ -108,6 +108,7 @@ pub struct Config {
     pub http_request_timeout_seconds: u64,
     pub rpc_timeout_seconds: u64,
     pub stats_dir: String,
+    pub enable_stats_writer: bool,
     pub blob_storage: BlobStorageConfig,
     pub allow_missing_or_bad_signature: bool,
 }
@@ -157,6 +158,7 @@ impl Config {
             http_request_timeout_seconds: 30,
             rpc_timeout_seconds: 10,
             stats_dir: "data/api-server/local/stats".into(),
+            enable_stats_writer: false,
             blob_storage: BlobStorageConfig {
                 backend: BlobStorageBackend::S3ExpressMultiAz,
                 s3_hybrid_single_az: None,
@@ -182,6 +184,7 @@ impl Config {
             http_request_timeout_seconds: 30,
             rpc_timeout_seconds: 10,
             stats_dir: "data/api-server/local/stats".into(),
+            enable_stats_writer: false,
             blob_storage: BlobStorageConfig {
                 backend: BlobStorageBackend::S3HybridSingleAz,
                 s3_hybrid_single_az: Some(S3HybridSingleAzConfig {

@@ -76,6 +76,7 @@ with_metrics = true
 http_request_timeout_seconds = 5
 rpc_timeout_seconds = 4
 stats_dir = "/data/local/stats"
+enable_stats_writer = false
 allow_missing_or_bad_signature = false
 
 [https]
@@ -131,6 +132,7 @@ with_metrics = true
 http_request_timeout_seconds = 5
 rpc_timeout_seconds = 4
 stats_dir = "/data/local/stats"
+enable_stats_writer = false
 allow_missing_or_bad_signature = false
 
 [https]
