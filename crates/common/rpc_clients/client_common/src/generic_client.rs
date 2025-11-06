@@ -160,13 +160,6 @@ where
                 let request_id = frame.header.get_id();
                 debug!(%rpc_type, %socket_fd, %request_id, "sending request");
 
-                if frame.body.is_empty() {
-                    frame.header.set_body_checksum(&[]);
-                } else if frame.body.len() == 1 {
-                    frame.header.set_body_checksum(&frame.body[0]);
-                } else {
-                    frame.header.set_body_checksum_vectored(&frame.body);
-                }
                 frame.header.set_checksum();
 
                 let mut header_buf = BytesMut::with_capacity(Header::SIZE);

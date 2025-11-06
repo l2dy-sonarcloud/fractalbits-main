@@ -5,7 +5,7 @@ use bss_codec::{Command, MessageHeader};
 use bytes::Bytes;
 use data_types::{DataBlobGuid, MetaBlobGuid};
 use rpc_client_common::{InflightRpcGuard, RpcError};
-use rpc_codec_common::{MessageFrame, MessageHeaderTrait};
+use rpc_codec_common::MessageFrame;
 use tracing::error;
 
 /// Check the errno field in the response header and return appropriate error
@@ -50,7 +50,6 @@ impl RpcClient {
         header.aligned_size = header.size.next_multiple_of(4096);
         header.retry_count = retry_count as u8;
         header.checksum_body = body_checksum;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, body);
         let resp_frame = self
@@ -90,7 +89,6 @@ impl RpcClient {
         header.aligned_size = header.size.next_multiple_of(4096);
         header.retry_count = retry_count as u8;
         header.checksum_body = body_checksum;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, chunks);
         let resp_frame = self
@@ -130,7 +128,6 @@ impl RpcClient {
 
         let total_size = MessageHeader::SIZE + content_len;
         header.aligned_size = total_size.next_multiple_of(4096) as u32;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
@@ -166,7 +163,6 @@ impl RpcClient {
         header.command = Command::DeleteDataBlob;
         header.size = MessageHeader::SIZE as u32;
         header.retry_count = retry_count as u8;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
@@ -209,7 +205,6 @@ impl RpcClient {
         header.aligned_size = header.size.next_multiple_of(4096);
         header.retry_count = retry_count as u8;
         header.set_body_checksum(&body);
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, body);
         let resp_frame = self
@@ -247,7 +242,6 @@ impl RpcClient {
         header.command = Command::GetMetadataBlob;
         header.size = MessageHeader::SIZE as u32;
         header.retry_count = retry_count as u8;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
@@ -282,7 +276,6 @@ impl RpcClient {
         header.command = Command::DeleteMetadataBlob;
         header.size = MessageHeader::SIZE as u32;
         header.retry_count = retry_count as u8;
-        header.set_checksum();
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self

@@ -36,6 +36,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -91,6 +92,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -146,6 +148,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -193,6 +196,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -242,6 +246,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -293,6 +298,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -336,6 +342,7 @@ impl RpcClient {
         header.command = Command::GetAzStatus;
         header.size = MessageHeader::SIZE as u32;
         header.retry_count = retry_count as u8;
+        header.set_body_checksum(&[]);
 
         let frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
@@ -388,6 +395,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -442,6 +450,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -493,6 +502,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -537,6 +547,7 @@ impl RpcClient {
         header.size = (MessageHeader::SIZE + body.encoded_len()) as u32;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)
@@ -596,6 +607,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
         header.trace_id = trace_id.unwrap_or(0);
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id)

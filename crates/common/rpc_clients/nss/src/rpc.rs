@@ -35,6 +35,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::PutInode)
@@ -74,6 +75,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::GetInode)
@@ -124,6 +126,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::ListInodes)
@@ -163,6 +166,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::DeleteInode)
@@ -200,6 +204,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::CreateRootInode)
@@ -235,6 +240,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::DeleteRootInode)
@@ -274,6 +280,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::RenameFolder)
@@ -325,6 +332,7 @@ impl RpcClient {
         header.retry_count = retry_count as u8;
 
         let body_bytes = encode_protobuf(body, trace_id)?;
+        header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
             .send_request(request_id, frame, timeout, trace_id, crate::NssOperation::RenameObject)
