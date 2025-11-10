@@ -4,7 +4,6 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
-import { execSync } from "child_process";
 
 import {
   createInstance,
@@ -30,6 +29,7 @@ export interface FractalbitsVpcStackProps extends cdk.StackProps {
   benchClientInstanceType: string;
   browserIp?: string;
   dataBlobStorage: "s3HybridSingleAz" | "s3ExpressMultiAz";
+  rootServerHa: boolean;
 }
 
 export class FractalbitsVpcStack extends cdk.Stack {
@@ -192,20 +192,24 @@ export class FractalbitsVpcStack extends cdk.Stack {
         sg: privateSg,
       },
       {
-        id: "rss-B",
-        instanceType: rssInstanceType,
-        // For s3HybridSingleAz, place rss-B in same AZ as rss-A
-        specificSubnet:
-          dataBlobStorage === "s3HybridSingleAz" ? subnet1 : subnet2,
-        sg: privateSg,
-      },
-      {
         id: "nss-A",
         instanceType: nssInstanceType,
         specificSubnet: subnet1,
         sg: privateSg,
       },
     ];
+
+    // Only create rss-B when rootServerHa is enabled
+    if (props.rootServerHa) {
+      instanceConfigs.splice(1, 0, {
+        id: "rss-B",
+        instanceType: rssInstanceType,
+        // For s3HybridSingleAz, place rss-B in same AZ as rss-A
+        specificSubnet:
+          dataBlobStorage === "s3HybridSingleAz" ? subnet1 : subnet2,
+        sg: privateSg,
+      });
+    }
 
     // Only create nss-B for s3ExpressMultiAz mode
     if (dataBlobStorage === "s3ExpressMultiAz") {
@@ -326,6 +330,20 @@ export class FractalbitsVpcStack extends cdk.Stack {
       );
     }
 
+    // Create RSS PrivateLink (always, even in non-HA mode to avoid circular dependencies)
+    // In HA mode: use both rss-A and rss-B as targets
+    // In non-HA mode: use only rss-A as target
+    const rssTargets = props.rootServerHa
+      ? [instances["rss-A"], instances["rss-B"]]
+      : [instances["rss-A"]];
+    const rssPrivateLink = createPrivateLinkNlb(
+      this,
+      "Rss",
+      this.vpc,
+      rssTargets,
+      servicePort,
+    );
+
     // Only create mirrord for s3ExpressMultiAz mode
     let mirrordPrivateLink: any;
     if (dataBlobStorage === "s3ExpressMultiAz") {
@@ -338,19 +356,14 @@ export class FractalbitsVpcStack extends cdk.Stack {
       );
     }
 
-    const rssPrivateLink = createPrivateLinkNlb(
-      this,
-      "Rss",
-      this.vpc,
-      [instances["rss-A"], instances["rss-B"]],
-      servicePort,
-    );
-
     // Determine NSS endpoint based on mode
     const nssEndpoint =
       dataBlobStorage === "s3ExpressMultiAz"
         ? nssPrivateLink.endpointDns
         : `${instances["nss-A"].instancePrivateIp}`;
+
+    // Always use RSS PrivateLink endpoint (avoids circular dependency)
+    const rssEndpoint = rssPrivateLink.endpointDns;
 
     // Reusable function to create bootstrap options for api_server and gui_server
     const createApiServerBootstrapOptions = (serviceName: string) => {
@@ -359,7 +372,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
           `${forBenchFlag} ${serviceName} ` +
           `--remote_az=${azPair[1]} ` +
           `--nss_endpoint=${nssPrivateLink.endpointDns} ` +
-          `--rss_endpoint=${rssPrivateLink.endpointDns} `
+          `--rss_endpoint=${rssEndpoint} `
         );
       } else {
         // Single-AZ: use direct NSS IP to avoid VPC endpoint latency
@@ -367,7 +380,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
           `${forBenchFlag} ${serviceName} ` +
           `--bucket=${bucketName} ` +
           `--nss_endpoint=${nssEndpoint} ` +
-          `--rss_endpoint=${rssPrivateLink.endpointDns} `
+          `--rss_endpoint=${rssEndpoint} `
         );
       }
     };
@@ -446,7 +459,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
         `--bucket=${bucketName}`,
         `--volume_id=${volumeId}`,
         `--iam_role=${ec2Role.roleName}`,
-        `--rss_endpoint=${rssPrivateLink.endpointDns}`,
+        `--rss_endpoint=${rssEndpoint}`,
       ];
       // Only add mirrord_endpoint for s3ExpressMultiAz mode
       if (dataBlobStorage === "s3ExpressMultiAz" && mirrordPrivateLink) {
@@ -465,24 +478,30 @@ export class FractalbitsVpcStack extends cdk.Stack {
           (nssB ? `--nss_b_id=${nssB} ` : "") +
           `--volume_a_id=${ebsVolumeAId} ` +
           (ebsVolumeBId ? `--volume_b_id=${ebsVolumeBId} ` : "") +
-          `--follower_id=${instances["rss-B"].instanceId}` +
+          (props.rootServerHa
+            ? `--follower_id=${instances["rss-B"].instanceId} --ha_enabled `
+            : "") +
           (dataBlobStorage === "s3ExpressMultiAz"
-            ? ` --remote_az=${azPair[1]}`
-            : ` --num_bss_nodes=${props.numBssNodes}`),
-      },
-      {
-        id: "rss-B",
-        bootstrapOptions:
-          `${forBenchFlag} root_server ` +
-          `--nss_endpoint=${nssEndpoint} ` +
-          `--nss_a_id=${nssA} ` +
-          `--volume_a_id=${ebsVolumeAId}`,
+            ? `--remote_az=${azPair[1]}`
+            : `--num_bss_nodes=${props.numBssNodes}`),
       },
       {
         id: "nss-A",
         bootstrapOptions: createNssBootstrapOptions(ebsVolumeAId),
       },
     ];
+
+    // Only add rss-B bootstrap for HA mode
+    if (props.rootServerHa) {
+      instanceBootstrapOptions.splice(1, 0, {
+        id: "rss-B",
+        bootstrapOptions:
+          `${forBenchFlag} root_server ` +
+          `--nss_endpoint=${nssEndpoint} ` +
+          `--nss_a_id=${nssA} ` +
+          `--volume_a_id=${ebsVolumeAId}`,
+      });
+    }
 
     // Only add nss-B bootstrap for s3ExpressMultiAz mode
     if (dataBlobStorage === "s3ExpressMultiAz" && ebsVolumeBId) {
@@ -526,6 +545,7 @@ export class FractalbitsVpcStack extends cdk.Stack {
       description: "DNS name of the API NLB",
     });
 
+    // RSS endpoint output - always use PrivateLink
     new cdk.CfnOutput(this, "RssEndpointDns", {
       value: rssPrivateLink.endpointDns,
       description: "VPC Endpoint DNS for RSS service",

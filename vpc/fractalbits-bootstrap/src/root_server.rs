@@ -25,6 +25,7 @@ pub fn bootstrap(
     follower_id: Option<&str>,
     remote_az: Option<&str>,
     num_bss_nodes: Option<usize>,
+    ha_enabled: bool,
     _for_bench: bool,
 ) -> CmdResult {
     // download_binaries(&["rss_admin", "root_server", "ebs-failover"])?;
@@ -35,65 +36,68 @@ pub fn bootstrap(
         initialize_az_status_in_ddb(remote_az)?;
     }
 
-    create_rss_config(nss_endpoint)?;
+    create_rss_config(nss_endpoint, ha_enabled)?;
     // setup_cloudwatch_agent()?;
-    create_systemd_unit_file("rss", follower_id.is_some())?;
+    create_systemd_unit_file("rss", !ha_enabled || follower_id.is_some())?;
 
-    // Initialize NSS formatting and root server startup if follower_id is provided
-    if let Some(follower_id) = follower_id {
-        // Create S3 Express buckets if remote_az is provided
-        if let Some(remote_az) = remote_az {
-            // Create local S3 Express bucket
-            let local_az = get_current_aws_az_id()?;
-            create_s3_express_bucket(&local_az, S3EXPRESS_LOCAL_BUCKET_CONFIG)?;
+    // Initialize NSS formatting and root server startup
+    // Create S3 Express buckets if remote_az is provided
+    if let Some(remote_az) = remote_az {
+        // Create local S3 Express bucket
+        let local_az = get_current_aws_az_id()?;
+        create_s3_express_bucket(&local_az, S3EXPRESS_LOCAL_BUCKET_CONFIG)?;
 
-            // Create remote S3 Express bucket
-            create_s3_express_bucket(remote_az, S3EXPRESS_REMOTE_BUCKET_CONFIG)?;
-        }
+        // Create remote S3 Express bucket
+        create_s3_express_bucket(remote_az, S3EXPRESS_REMOTE_BUCKET_CONFIG)?;
+    }
 
-        // Initialize NSS role states in DynamoDB
-        initialize_nss_roles_in_ddb(nss_a_id, nss_b_id)?;
+    // Initialize NSS role states in DynamoDB
+    initialize_nss_roles_in_ddb(nss_a_id, nss_b_id)?;
 
-        // Initialize BSS volume group configurations in DynamoDB (only for single-AZ mode)
-        if remote_az.is_none() {
-            let total_bss_nodes = num_bss_nodes.unwrap_or(TOTAL_BSS_NODES);
-            initialize_bss_volume_groups_in_ddb(total_bss_nodes)?;
-        }
+    // Initialize BSS volume group configurations in DynamoDB (only for single-AZ mode)
+    if remote_az.is_none() {
+        let total_bss_nodes = num_bss_nodes.unwrap_or(TOTAL_BSS_NODES);
+        initialize_bss_volume_groups_in_ddb(total_bss_nodes)?;
+    }
 
-        // Format nss-B first if it exists, then nss-A
-        if let (Some(nss_b_id), Some(volume_b_id)) = (nss_b_id, volume_b_id) {
-            info!("Formatting NSS instance {nss_b_id} (standby) with volume {volume_b_id}");
-            let ebs_dev = get_volume_dev(volume_b_id);
-            wait_for_ssm_ready(nss_b_id);
-            let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
-            info!("Running format_nss on {nss_b_id} (standby) with device {ebs_dev}");
-            run_cmd_with_ssm(
-                nss_b_id,
-                &format!(
-                    r##"sudo bash -c "{bootstrap_bin} format_nss --ebs_dev {ebs_dev} &>>{CLOUD_INIT_LOG}""##
-                ),
-            )?;
-            info!("Successfully formatted {nss_b_id} (standby)");
-        }
-
-        // Always format nss-A
-        let role = if nss_b_id.is_some() { "active" } else { "solo" };
-        info!("Formatting NSS instance {nss_a_id} ({role}) with volume {volume_a_id}");
-        let ebs_dev = get_volume_dev(volume_a_id);
-        wait_for_ssm_ready(nss_a_id);
+    // Format nss-B first if it exists, then nss-A
+    if let (Some(nss_b_id), Some(volume_b_id)) = (nss_b_id, volume_b_id) {
+        info!("Formatting NSS instance {nss_b_id} (standby) with volume {volume_b_id}");
+        let ebs_dev = get_volume_dev(volume_b_id);
+        wait_for_ssm_ready(nss_b_id);
         let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
-        info!("Running format_nss on {nss_a_id} ({role}) with device {ebs_dev}");
+        info!("Running format_nss on {nss_b_id} (standby) with device {ebs_dev}");
         run_cmd_with_ssm(
-            nss_a_id,
+            nss_b_id,
             &format!(
                 r##"sudo bash -c "{bootstrap_bin} format_nss --ebs_dev {ebs_dev} &>>{CLOUD_INIT_LOG}""##
             ),
         )?;
-        info!("Successfully formatted {nss_a_id} ({role})");
+        info!("Successfully formatted {nss_b_id} (standby)");
+    }
 
+    // Always format nss-A
+    let role = if nss_b_id.is_some() { "active" } else { "solo" };
+    info!("Formatting NSS instance {nss_a_id} ({role}) with volume {volume_a_id}");
+    let ebs_dev = get_volume_dev(volume_a_id);
+    wait_for_ssm_ready(nss_a_id);
+    let bootstrap_bin = "/opt/fractalbits/bin/fractalbits-bootstrap";
+    info!("Running format_nss on {nss_a_id} ({role}) with device {ebs_dev}");
+    run_cmd_with_ssm(
+        nss_a_id,
+        &format!(
+            r##"sudo bash -c "{bootstrap_bin} format_nss --ebs_dev {ebs_dev} &>>{CLOUD_INIT_LOG}""##
+        ),
+    )?;
+    info!("Successfully formatted {nss_a_id} ({role})");
+
+    if ha_enabled {
         wait_for_leadership()?;
-        run_cmd!($BIN_PATH/rss_admin --rss-addr=127.0.0.1:8088 api-key init-test)?;
+    }
+    run_cmd!($BIN_PATH/rss_admin --rss-addr=127.0.0.1:8088 api-key init-test)?;
 
+    // Start follower root server if follower_id is provided
+    if let Some(follower_id) = follower_id {
         start_follower_root_server(follower_id)?;
 
         // Only bootstrap ebs_failover service if nss_b_id exists
@@ -526,7 +530,7 @@ fencing_timeout_seconds = 300                  # Max time to wait for instance t
     Ok(())
 }
 
-fn create_rss_config(nss_endpoint: &str) -> CmdResult {
+fn create_rss_config(nss_endpoint: &str, ha_enabled: bool) -> CmdResult {
     let region = get_current_aws_region()?;
     let instance_id = get_instance_id()?;
     let config_content = format!(
@@ -553,7 +557,7 @@ nss_addr = "{nss_endpoint}:8088"
 # Leader Election Configuration
 [leader_election]
 # Whether leader election is disabled
-disabled = false
+enabled = {ha_enabled}
 
 # Instance ID for this root server
 instance_id = "{instance_id}"

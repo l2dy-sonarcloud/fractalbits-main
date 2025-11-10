@@ -9,24 +9,12 @@ pub fn bootstrap(
 ) -> CmdResult {
     download_binaries(&["api_server"])?;
 
-    let is_multi_az = remote_az.is_some();
     for (role, endpoint) in [("rss", rss_endpoint), ("nss", nss_endpoint)] {
         info!("Waiting for {role} node {endpoint} to be ready");
         while run_cmd!(nc -z $endpoint 8088 &>/dev/null).is_err() {
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
         info!("{role} node can be reached (`nc -z {endpoint} 8088` is ok)");
-    }
-
-    // For S3 Express multi-az setup, only wait for RSS and NSS
-    if is_multi_az {
-        for (role, ip) in [("rss", rss_endpoint), ("nss", nss_endpoint)] {
-            info!("Waiting for {role} node {ip} to be ready");
-            while run_cmd!(nc -z $ip 8088 &>/dev/null).is_err() {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-            info!("{role} node can be reached (`nc -z {ip} 8088` is ok)");
-        }
     }
 
     create_config(bucket, nss_endpoint, rss_endpoint, remote_az)?;

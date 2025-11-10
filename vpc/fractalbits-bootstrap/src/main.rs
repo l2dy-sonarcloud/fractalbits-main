@@ -97,7 +97,7 @@ enum Command {
         #[clap(long, long_help = "Mirrord endpoint for NSS communication")]
         mirrord_endpoint: Option<String>,
 
-        #[clap(long, long_help = "Root server (RSS) endpoint")]
+        #[clap(long, long_help = "root_server endpoint")]
         rss_endpoint: String,
     },
 
@@ -126,6 +126,13 @@ enum Command {
 
         #[clap(long, long_help = "Number of BSS nodes")]
         num_bss_nodes: Option<usize>,
+
+        #[clap(
+            long,
+            default_value = "false",
+            long_help = "Enable HA mode for root server"
+        )]
+        ha_enabled: bool,
     },
 
     #[clap(
@@ -263,6 +270,7 @@ fn main() -> CmdResult {
             follower_id,
             remote_az,
             num_bss_nodes,
+            ha_enabled,
         } => root_server::bootstrap(
             &nss_endpoint,
             &nss_a_id,
@@ -272,6 +280,7 @@ fn main() -> CmdResult {
             follower_id.as_deref(),
             remote_az.as_deref(),
             num_bss_nodes,
+            ha_enabled,
             for_bench,
         )?,
         Command::FormatNss { ebs_dev } => nss_server::format_nss(ebs_dev)?,

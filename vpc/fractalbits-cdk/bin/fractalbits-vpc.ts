@@ -22,6 +22,7 @@ const benchClientInstanceType =
 const browserIp = app.node.tryGetContext("browserIp") ?? null;
 const dataBlobStorage =
   app.node.tryGetContext("dataBlobStorage") ?? "s3HybridSingleAz";
+const rootServerHa = app.node.tryGetContext("rootServerHa") ?? false;
 
 // Get the current region - CDK will auto-detect from AWS config/credentials
 const env = {
@@ -50,6 +51,7 @@ const vpcStack = new FractalbitsVpcStack(app, "FractalbitsVpcStack", {
   apiServerInstanceType: apiServerInstanceType,
   benchClientInstanceType: benchClientInstanceType,
   dataBlobStorage: dataBlobStorage,
+  rootServerHa: rootServerHa,
 });
 
 if (benchType === "service_endpoint") {
