@@ -398,3 +398,141 @@ async fn test_deleteobject() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn test_get_large_objects() {
+    const SZ_1MB: usize = 1024 * 1024;
+    const SZ_5MB: usize = 5 * 1024 * 1024;
+
+    let ctx = context();
+    let bucket = ctx.create_bucket("getlarge").await;
+
+    let obj_1mb = vec![0xaa; SZ_1MB];
+    ctx.client
+        .put_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .body(ByteStream::from(obj_1mb))
+        .send()
+        .await
+        .unwrap();
+
+    let obj_5mb = vec![0xbb; SZ_5MB];
+    ctx.client
+        .put_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .body(ByteStream::from(obj_5mb))
+        .send()
+        .await
+        .unwrap();
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.content_length.unwrap(), SZ_1MB as i64);
+    let body = r.body.collect().await.unwrap().into_bytes();
+    assert_eq!(body.len(), SZ_1MB);
+    assert!(body.iter().all(|&b| b == 0xaa));
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.content_length.unwrap(), SZ_5MB as i64);
+    let body = r.body.collect().await.unwrap().into_bytes();
+    assert_eq!(body.len(), SZ_5MB);
+    assert!(body.iter().all(|&b| b == 0xbb));
+}
+
+#[tokio::test]
+async fn test_delete_large_objects() {
+    const SZ_1MB: usize = 1024 * 1024;
+    const SZ_5MB: usize = 5 * 1024 * 1024;
+
+    let ctx = context();
+    let bucket = ctx.create_bucket("deletelarge").await;
+
+    let obj_1mb = vec![0xaa; SZ_1MB];
+    ctx.client
+        .put_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .body(ByteStream::from(obj_1mb))
+        .send()
+        .await
+        .unwrap();
+
+    let obj_5mb = vec![0xbb; SZ_5MB];
+    ctx.client
+        .put_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .body(ByteStream::from(obj_5mb))
+        .send()
+        .await
+        .unwrap();
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.content_length.unwrap(), SZ_1MB as i64);
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.content_length.unwrap(), SZ_5MB as i64);
+
+    ctx.client
+        .delete_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .send()
+        .await
+        .unwrap();
+
+    ctx.client
+        .delete_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .send()
+        .await
+        .unwrap();
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-1mb")
+        .send()
+        .await;
+    assert!(r.is_err());
+
+    let r = ctx
+        .client
+        .get_object()
+        .bucket(&bucket)
+        .key("large-5mb")
+        .send()
+        .await;
+    assert!(r.is_err());
+}

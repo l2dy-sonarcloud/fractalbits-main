@@ -29,8 +29,8 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{
-    OnceCell,
-    mpsc::{self, Sender},
+    Mutex, OnceCell,
+    mpsc::{self, Receiver, Sender},
 };
 use tracing::debug;
 pub type BlobId = uuid::Uuid;
@@ -55,6 +55,7 @@ pub struct AppState {
 
     blob_client: OnceCell<Arc<BlobClient>>,
     blob_deletion_tx: Sender<BlobDeletionRequest>,
+    blob_deletion_rx: Mutex<Option<Receiver<BlobDeletionRequest>>>,
     pub data_blob_tracker: OnceCell<Arc<DataBlobTracker>>,
 }
 
@@ -69,7 +70,7 @@ impl AppState {
     ) -> Self {
         debug!("Initializing per-core AppState with lazy RPC client connections");
 
-        let (tx, _rx) = mpsc::channel(1024 * 1024);
+        let (tx, rx) = mpsc::channel(1024 * 1024);
 
         let cache = Arc::new(
             Cache::builder()
@@ -90,6 +91,7 @@ impl AppState {
             rpc_client_rss,
             blob_client: OnceCell::new(),
             blob_deletion_tx: tx,
+            blob_deletion_rx: Mutex::new(Some(rx)),
             cache,
             cache_coordinator,
             az_status_coordinator,
@@ -124,7 +126,13 @@ impl AppState {
         self.blob_client
             .get_or_try_init(|| async {
                 debug!("Creating per-worker BlobClient on-demand");
-                let (_tx, rx) = mpsc::channel::<BlobDeletionRequest>(1024 * 1024);
+
+                let rx = self
+                    .blob_deletion_rx
+                    .lock()
+                    .await
+                    .take()
+                    .ok_or_else(|| "BlobClient already initialized".to_string())?;
 
                 debug!("Fetching DataVgInfo from RSS at {}", self.config.rss_addr);
                 let rss_client = self.get_rss_rpc_client();
