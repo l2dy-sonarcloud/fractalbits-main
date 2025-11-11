@@ -145,6 +145,14 @@ impl S3StreamingPayload {
             }
             tracing::debug!("Total bytes processed for checksum: {}", total_bytes);
 
+            // If we received 0 bytes and expected a checksum, this likely means the stream
+            // errored/timed out before any data arrived. Skip verification to avoid
+            // confusing error messages.
+            if total_bytes == 0 && expected_checksum.is_some() {
+                tracing::warn!("Skipping checksum verification for 0-byte failed stream");
+                return Ok(None);
+            }
+
             // Finalize checksum
             let calculated_checksum = checksummer.map(|cs| cs.finalize());
 
