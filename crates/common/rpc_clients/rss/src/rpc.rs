@@ -17,7 +17,7 @@ impl RpcClient {
         key: &str,
         value: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "put");
@@ -75,7 +75,7 @@ impl RpcClient {
         &self,
         key: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(i64, String), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "get");
@@ -131,7 +131,7 @@ impl RpcClient {
         &self,
         key: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "delete");
@@ -179,7 +179,7 @@ impl RpcClient {
         &self,
         instance_id: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<String, RpcError> {
         let _guard = InflightRpcGuard::new("rss", "get_nss_role");
@@ -229,7 +229,7 @@ impl RpcClient {
         &self,
         prefix: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<Vec<String>, RpcError> {
         let _guard = InflightRpcGuard::new("rss", "list");
@@ -281,7 +281,7 @@ impl RpcClient {
         &self,
         instance_id: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "send_heartbeat");
@@ -330,7 +330,7 @@ impl RpcClient {
     pub async fn get_az_status(
         &self,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<AzStatusMap, RpcError> {
         let _guard = InflightRpcGuard::new("rss", "get_az_status");
@@ -377,7 +377,7 @@ impl RpcClient {
         az_id: &str,
         status: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "set_az_status");
@@ -430,7 +430,7 @@ impl RpcClient {
         api_key_id: &str,
         is_multi_az: bool,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "create_bucket");
@@ -484,7 +484,7 @@ impl RpcClient {
         bucket_name: &str,
         api_key_id: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("rss", "delete_bucket");
@@ -534,7 +534,7 @@ impl RpcClient {
     pub async fn get_data_vg_info(
         &self,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
     ) -> Result<DataVgInfo, RpcError> {
         let _guard = InflightRpcGuard::new("rss", "get_data_vg_info");
         let start = Instant::now();
@@ -593,7 +593,7 @@ impl RpcClient {
     pub async fn get_metadata_vg_info_json(
         &self,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<String, RpcError> {
         let _guard = InflightRpcGuard::new("rss", "get_metadata_vg_info_json");

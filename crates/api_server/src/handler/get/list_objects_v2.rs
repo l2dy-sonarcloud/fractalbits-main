@@ -287,7 +287,7 @@ pub async fn list_objects(
     prefix: String,
     delimiter: String,
     start_after: String,
-    trace_id: u64,
+    trace_id: u128,
 ) -> Result<(Vec<Object>, Vec<Prefix>, Option<String>), S3Error> {
     tracing::debug!(
         "NSS list_inodes call with root_blob_name='{}', max_keys={}, prefix='{}', delimiter='{}', start_after='{}'",

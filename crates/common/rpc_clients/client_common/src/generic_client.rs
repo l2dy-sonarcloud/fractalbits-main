@@ -340,7 +340,7 @@ where
         request_id: u32,
         mut frame: MessageFrame<Header, Bytes>,
         timeout: Option<std::time::Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
     ) -> Result<MessageFrame<Header>, RpcError> {
         if let Some(trace_id) = trace_id {
             frame.header.set_trace_id(trace_id);
@@ -355,7 +355,7 @@ where
         request_id: u32,
         mut frame: MessageFrame<Header, Vec<Bytes>>,
         timeout: Option<std::time::Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
     ) -> Result<MessageFrame<Header>, RpcError> {
         if let Some(trace_id) = trace_id {
             frame.header.set_trace_id(trace_id);

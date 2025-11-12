@@ -37,7 +37,7 @@ pub struct BucketRequestContext {
     pub api_key: Versioned<ApiKey>,
     pub bucket_name: String,
     pub payload: actix_web::dev::Payload,
-    pub trace_id: u64,
+    pub trace_id: u128,
 }
 
 impl BucketRequestContext {
@@ -47,7 +47,7 @@ impl BucketRequestContext {
         api_key: Versioned<ApiKey>,
         bucket_name: String,
         payload: actix_web::dev::Payload,
-        trace_id: u64,
+        trace_id: u128,
     ) -> Self {
         Self {
             app,
@@ -73,7 +73,7 @@ pub struct ObjectRequestContext {
     pub key: String,
     pub checksum_value: Option<ChecksumValue>,
     pub payload: actix_web::dev::Payload,
-    pub trace_id: u64,
+    pub trace_id: u128,
 }
 
 impl ObjectRequestContext {
@@ -87,7 +87,7 @@ impl ObjectRequestContext {
         key: String,
         checksum_value: Option<ChecksumValue>,
         payload: actix_web::dev::Payload,
-        trace_id: u64,
+        trace_id: u128,
     ) -> Self {
         Self {
             app,

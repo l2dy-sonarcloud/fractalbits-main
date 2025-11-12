@@ -15,7 +15,7 @@ impl RpcClient {
         key: &str,
         value: Bytes,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<PutInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "put_inode");
@@ -56,7 +56,7 @@ impl RpcClient {
         root_blob_name: &str,
         key: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<GetInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "get_inode");
@@ -101,7 +101,7 @@ impl RpcClient {
         start_after: &str,
         skip_mpu_parts: bool,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<ListInodesResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "list_inodes");
@@ -147,7 +147,7 @@ impl RpcClient {
         root_blob_name: &str,
         key: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<DeleteInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "delete_inode");
@@ -187,7 +187,7 @@ impl RpcClient {
         bucket: &str,
         az_mirroring: bool,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<CreateRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "create_root_inode");
@@ -224,7 +224,7 @@ impl RpcClient {
         &self,
         root_blob_name: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<DeleteRootInodeResponse, RpcError> {
         let _guard = InflightRpcGuard::new("nss", "delete_root_inode");
@@ -262,7 +262,7 @@ impl RpcClient {
         src_path: &str,
         dst_path: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let _guard = InflightRpcGuard::new("nss", "rename_folder");
@@ -309,7 +309,7 @@ impl RpcClient {
         src_path: &str,
         dst_path: &str,
         timeout: Option<Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
         retry_count: u32,
     ) -> Result<(), RpcError> {
         let mut nss_src_path = src_path.to_string();

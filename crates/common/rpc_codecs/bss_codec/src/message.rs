@@ -29,14 +29,15 @@ pub struct MessageHeader {
     /// Every request would be sent with a unique id, so the client can get the right response
     pub id: u32,
 
+    /// Trace ID for distributed tracing
+    pub trace_id: u128,
+
     /// Bucket Id
     pub bucket_id: [u8; 16],
 
     /// Blob Id
     pub blob_id: [u8; 16],
 
-    /// Trace ID for distributed tracing
-    pub trace_id: u64,
     /// Version number for quorum protocol
     pub version: u64,
 
@@ -54,10 +55,7 @@ pub struct MessageHeader {
     pub is_new: u8,
 
     /// Reserved parts for padding
-    // Note rust arrays of sizes from 0 to 32 (inclusive) implement the Default trait if the element
-    // type allows it. As a stopgap, trait implementations are statically generated up to size 32.
-    // See [doc](https://doc.rust-lang.org/std/primitive.array.html) for more details.
-    reserved: [u8; 32],
+    reserved: [u8; 24],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -106,7 +104,7 @@ impl Default for MessageHeader {
             volume_id: 0,
             retry_count: 0,
             is_new: 0,
-            reserved: [0u8; 32],
+            reserved: [0u8; 24],
         }
     }
 }
@@ -200,11 +198,11 @@ impl MessageHeaderTrait for MessageHeader {
         self.retry_count = retry_count as u8;
     }
 
-    fn get_trace_id(&self) -> u64 {
+    fn get_trace_id(&self) -> u128 {
         self.trace_id
     }
 
-    fn set_trace_id(&mut self, trace_id: u64) {
+    fn set_trace_id(&mut self, trace_id: u128) {
         self.trace_id = trace_id;
     }
 

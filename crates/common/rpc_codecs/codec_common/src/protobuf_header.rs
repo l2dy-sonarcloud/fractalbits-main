@@ -27,20 +27,21 @@ where
     /// The size of the Header structure, plus any associated body.
     pub size: u32,
 
-    /// Trace ID for distributed tracing
-    pub trace_id: u64,
+    /// A checksum covering only the associated body after this header.
+    pub checksum_body: u64,
     /// Every request would be sent with a unique id, so the client can get the right response
     pub id: u32,
     /// The protocol command (method) for this message.
     /// i32 size, defined as protobuf enum type
     pub command: Command,
 
-    /// A checksum covering only the associated body after this header.
-    pub checksum_body: u64,
+    /// Trace ID for distributed tracing
+    pub trace_id: u128,
+
     /// Number of retry attempts for this request (0 = first attempt)
     pub retry_count: u8,
     /// Reserved for future use
-    reserved: [u8; 7],
+    reserved: [u8; 15],
 }
 
 // Safety: ProtobufMessageHeader has the same layout requirements as its fields.
@@ -62,7 +63,7 @@ impl<Command> ProtobufMessageHeader<Command>
 where
     Command: Pod + Zeroable + Default + Clone + Copy + Send + Sync + 'static,
 {
-    const _SIZE_OK: () = assert!(size_of::<Self>() == 48);
+    const _SIZE_OK: () = assert!(size_of::<Self>() == 64);
     pub const SIZE: usize = size_of::<Self>();
 
     pub fn encode(&self, dst: &mut BytesMut) {
@@ -169,11 +170,11 @@ where
         self.retry_count = retry_count as u8;
     }
 
-    fn get_trace_id(&self) -> u64 {
+    fn get_trace_id(&self) -> u128 {
         self.trace_id
     }
 
-    fn set_trace_id(&mut self, trace_id: u64) {
+    fn set_trace_id(&mut self, trace_id: u128) {
         self.trace_id = trace_id;
     }
 

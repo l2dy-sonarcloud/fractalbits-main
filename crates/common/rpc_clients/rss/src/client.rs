@@ -19,7 +19,7 @@ impl RpcClient {
         request_id: u32,
         frame: rpc_codec_common::MessageFrame<rss_codec::MessageHeader, bytes::Bytes>,
         timeout: Option<std::time::Duration>,
-        trace_id: Option<u64>,
+        trace_id: Option<u128>,
     ) -> Result<rpc_codec_common::MessageFrame<rss_codec::MessageHeader>, rpc_client_common::RpcError>
     {
         self.inner

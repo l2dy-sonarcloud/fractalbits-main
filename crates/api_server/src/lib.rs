@@ -22,10 +22,7 @@ use rpc_client_rss::RpcClientRss;
 
 pub use cache_registry::CacheCoordinator;
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 use tokio::sync::{
@@ -34,10 +31,6 @@ use tokio::sync::{
 };
 use tracing::debug;
 pub type BlobId = uuid::Uuid;
-
-thread_local! {
-    static REQUEST_COUNTER: AtomicU32 = const { AtomicU32::new(0) };
-}
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -101,17 +94,8 @@ impl AppState {
         }
     }
 
-    pub fn generate_trace_id(&self) -> u64 {
-        let counter = REQUEST_COUNTER.with(|c| c.fetch_add(1, Ordering::Relaxed));
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // Format: [8 bits worker_id][32 bits timestamp][24 bits counter]
-        ((self.worker_id as u64) << 56)
-            | ((timestamp & 0xFFFFFFFF) << 24)
-            | ((counter as u64) & 0xFFFFFF)
+    pub fn generate_trace_id(&self) -> u128 {
+        uuid::Uuid::now_v7().as_u128()
     }
 
     pub fn get_nss_rpc_client(&self) -> &RpcClientNss {
