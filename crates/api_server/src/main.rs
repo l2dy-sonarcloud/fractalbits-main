@@ -268,6 +268,7 @@ fn main() -> std::io::Result<()> {
                         .workers(1)
                         .max_connections(65536)
                         .max_connection_rate(65536)
+                        .client_request_timeout(config.client_request_timeout())
                         .disable_signals();
 
                     server = server.listen(http_listener).unwrap();
