@@ -26,6 +26,8 @@ pub enum ChecksumMessage {
     Data(Bytes),
     /// Trailer checksums received at the end of the stream
     Trailers(S3Trailers),
+    /// Stream error occurred, partial data should be discarded
+    Error(String),
 }
 
 /// S3-specific trailer information extracted from HTTP trailers
@@ -124,6 +126,7 @@ impl S3StreamingPayload {
 
             // Process messages for checksum calculation
             let mut total_bytes = 0;
+            let mut stream_error: Option<String> = None;
             while let Some(msg) = checksum_rx.recv().await {
                 match msg {
                     ChecksumMessage::Data(data) => {
@@ -141,9 +144,20 @@ impl S3StreamingPayload {
                         tracing::trace!("Received trailer checksums: {:?}", trailers);
                         trailer_checksums = Some(trailers);
                     }
+                    ChecksumMessage::Error(err) => {
+                        tracing::error!("Stream error during checksum calculation: {}", err);
+                        stream_error = Some(err);
+                        break;
+                    }
                 }
             }
             tracing::debug!("Total bytes processed for checksum: {}", total_bytes);
+
+            // If stream error occurred, return error immediately
+            if let Some(err) = stream_error {
+                tracing::error!("Checksum calculation aborted due to stream error: {}", err);
+                return Err(S3Error::InternalError);
+            }
 
             // If we received 0 bytes and expected a checksum, this likely means the stream
             // errored/timed out before any data arrived. Skip verification to avoid
@@ -278,6 +292,14 @@ impl Stream for S3StreamingPayload {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
 
+        // Helper closure to send error and close checksum channel
+        let send_error = |sender: &mut Option<mpsc::UnboundedSender<ChecksumMessage>>,
+                          err: &str| {
+            if let Some(tx) = sender.take() {
+                let _ = tx.send(ChecksumMessage::Error(err.to_string()));
+            }
+        };
+
         loop {
             match this.state.clone() {
                 S3ChunkState::ReadingChunkSize => {
@@ -295,6 +317,10 @@ impl Stream for S3StreamingPayload {
                                         Ok(s) => s,
                                         Err(_) => {
                                             tracing::error!("Invalid UTF-8 in chunk size line");
+                                            send_error(
+                                                this.checksum_sender,
+                                                "Invalid UTF-8 in chunk size line",
+                                            );
                                             return Poll::Ready(Some(Err(
                                                 PayloadError::EncodingCorrupted,
                                             )));
@@ -325,6 +351,10 @@ impl Stream for S3StreamingPayload {
                                             chunk_size_hex,
                                             e
                                         );
+                                        send_error(
+                                            this.checksum_sender,
+                                            &format!("Failed to parse chunk size: {}", e),
+                                        );
                                         return Poll::Ready(Some(Err(
                                             PayloadError::EncodingCorrupted,
                                         )));
@@ -334,7 +364,10 @@ impl Stream for S3StreamingPayload {
                             // Not enough data yet, keep reading
                             continue;
                         }
-                        Some(Err(e)) => return Poll::Ready(Some(Err(e))),
+                        Some(Err(e)) => {
+                            send_error(this.checksum_sender, &format!("Payload error: {:?}", e));
+                            return Poll::Ready(Some(Err(e)));
+                        }
                         None => {
                             // Stream ended - this could be temporary or permanent
                             // If we have some buffered data, try to process it
@@ -349,6 +382,10 @@ impl Stream for S3StreamingPayload {
                                             Ok(s) => s,
                                             Err(_) => {
                                                 tracing::error!("Invalid UTF-8 in chunk size line");
+                                                send_error(
+                                                    this.checksum_sender,
+                                                    "Invalid UTF-8 in final chunk size line",
+                                                );
                                                 return Poll::Ready(Some(Err(
                                                     PayloadError::EncodingCorrupted,
                                                 )));
@@ -375,6 +412,10 @@ impl Stream for S3StreamingPayload {
                                                 "Failed to parse final chunk size '{}': {}",
                                                 chunk_size_hex,
                                                 e
+                                            );
+                                            send_error(
+                                                this.checksum_sender,
+                                                &format!("Failed to parse final chunk size: {}", e),
                                             );
                                             return Poll::Ready(Some(Err(
                                                 PayloadError::EncodingCorrupted,
@@ -412,7 +453,13 @@ impl Stream for S3StreamingPayload {
                                 }
                                 return Poll::Ready(Some(Ok(data)));
                             }
-                            Some(Err(e)) => return Poll::Ready(Some(Err(e))),
+                            Some(Err(e)) => {
+                                send_error(
+                                    this.checksum_sender,
+                                    &format!("Payload error in pass-through mode: {:?}", e),
+                                );
+                                return Poll::Ready(Some(Err(e)));
+                            }
                             None => {
                                 // End of stream in pass-through mode
                                 if let Some(sender) = this.checksum_sender.take() {
@@ -438,6 +485,10 @@ impl Stream for S3StreamingPayload {
                                 this.current_chunk_buffer,
                             ) {
                                 tracing::error!("Chunk signature verification failed: {:?}", e);
+                                send_error(
+                                    this.checksum_sender,
+                                    &format!("Chunk signature verification failed: {:?}", e),
+                                );
                                 return Poll::Ready(Some(Err(PayloadError::EncodingCorrupted)));
                             }
 
@@ -503,9 +554,19 @@ impl Stream for S3StreamingPayload {
                             };
                             return Poll::Ready(Some(Ok(chunk_data)));
                         }
-                        Some(Err(e)) => return Poll::Ready(Some(Err(e))),
+                        Some(Err(e)) => {
+                            send_error(
+                                this.checksum_sender,
+                                &format!("Payload error while reading chunk data: {:?}", e),
+                            );
+                            return Poll::Ready(Some(Err(e)));
+                        }
                         None => {
                             tracing::error!("Unexpected end of stream while reading chunk data");
+                            send_error(
+                                this.checksum_sender,
+                                "Unexpected end of stream while reading chunk data",
+                            );
                             return Poll::Ready(Some(Err(PayloadError::Incomplete(None))));
                         }
                     }
@@ -517,9 +578,19 @@ impl Stream for S3StreamingPayload {
                             Some(Ok(data)) => {
                                 this.trailer_buffer.extend_from_slice(&data);
                             }
-                            Some(Err(e)) => return Poll::Ready(Some(Err(e))),
+                            Some(Err(e)) => {
+                                send_error(
+                                    this.checksum_sender,
+                                    &format!("Payload error while reading chunk end: {:?}", e),
+                                );
+                                return Poll::Ready(Some(Err(e)));
+                            }
                             None => {
                                 tracing::error!("Unexpected end of stream while reading chunk end");
+                                send_error(
+                                    this.checksum_sender,
+                                    "Unexpected end of stream while reading chunk end",
+                                );
                                 return Poll::Ready(Some(Err(PayloadError::Incomplete(None))));
                             }
                         }
@@ -532,6 +603,7 @@ impl Stream for S3StreamingPayload {
                                 "Expected \\r\\n after chunk data, got: {:?}",
                                 chunk_end
                             );
+                            send_error(this.checksum_sender, "Expected \\r\\n after chunk data");
                             return Poll::Ready(Some(Err(PayloadError::EncodingCorrupted)));
                         }
                         *this.state = S3ChunkState::ReadingChunkSize;
@@ -575,7 +647,13 @@ impl Stream for S3StreamingPayload {
                             // Keep reading for more trailer data
                             continue;
                         }
-                        Some(Err(e)) => return Poll::Ready(Some(Err(e))),
+                        Some(Err(e)) => {
+                            send_error(
+                                this.checksum_sender,
+                                &format!("Payload error while reading trailers: {:?}", e),
+                            );
+                            return Poll::Ready(Some(Err(e)));
+                        }
                         None => {
                             // End of stream, close checksum channel
                             if let Some(sender) = this.checksum_sender.take() {
