@@ -864,6 +864,7 @@ Description={service_name} Service
 
 [Service]
 {auto_restart}
+TimeoutStopSec=5
 LimitNOFILE=1000000
 LimitCORE=infinity
 WorkingDirectory={working_dir}{env_settings}
