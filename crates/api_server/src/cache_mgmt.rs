@@ -28,7 +28,8 @@ pub async fn invalidate_bucket(
     let bucket_name = path.into_inner();
     info!("Invalidating bucket cache for: {}", bucket_name);
 
-    app.cache_coordinator.invalidate_entry(&bucket_name).await;
+    let cache_key = format!("bucket:{}", bucket_name);
+    app.cache_coordinator.invalidate_entry(&cache_key).await;
 
     let response = CacheInvalidationResponse {
         status: "success".to_string(),
@@ -46,7 +47,8 @@ pub async fn invalidate_api_key(
     let key_id = path.into_inner();
     info!("Invalidating API key cache for: {}", key_id);
 
-    app.cache_coordinator.invalidate_entry(&key_id).await;
+    let cache_key = format!("api_key:{}", key_id);
+    app.cache_coordinator.invalidate_entry(&cache_key).await;
 
     let response = CacheInvalidationResponse {
         status: "success".to_string(),
