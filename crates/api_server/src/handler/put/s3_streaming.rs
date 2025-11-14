@@ -65,7 +65,6 @@ pin_project! {
         signature_context: Option<ChunkSignatureContext>,
         previous_signature: Option<String>,
         current_chunk_buffer: BytesMut,
-        span: Span,
     }
 }
 
@@ -262,7 +261,6 @@ impl S3StreamingPayload {
             signature_context,
             previous_signature,
             current_chunk_buffer: BytesMut::new(),
-            span: Span::current(),
         };
 
         Ok((streaming_payload, checksum_handle))
@@ -304,10 +302,6 @@ impl Stream for S3StreamingPayload {
     type Item = Result<Bytes, PayloadError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Clone the span before projection so we can enter it
-        let span = self.as_ref().get_ref().span.clone();
-        let _guard = span.enter();
-
         let mut this = self.as_mut().project();
 
         // Helper closure to send error and close checksum channel

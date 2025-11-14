@@ -266,7 +266,6 @@ pub async fn get_object_content(
                 // Create a stream that concatenates all multipart streams
                 // Following the axum pattern for multipart streaming
                 let trace_id = *trace_id;
-                let span = Span::current();
                 let mpu_stream = stream::iter(mpus_vec)
                     .then(move |(_key, mpu_obj)| {
                         let blob_client = blob_client.clone();
@@ -287,7 +286,6 @@ pub async fn get_object_content(
                             )
                             .await
                         }
-                        .instrument(span.clone())
                     })
                     .try_flatten();
 
@@ -381,7 +379,6 @@ async fn get_object_range_content(
                 }
 
                 let trace_id = *trace_id;
-                let span = Span::current();
                 let body_stream = stream::iter(mpu_blobs.into_iter())
                     .then(
                         move |(blob_guid, part_size, part_num_blocks, blob_start, blob_end)| {
@@ -401,7 +398,6 @@ async fn get_object_range_content(
                                     trace_id,
                                 ))
                             }
-                            .instrument(span.clone())
                         },
                     )
                     .try_flatten();
@@ -453,7 +449,6 @@ async fn get_full_blob_stream(
     }
 
     // Multi-block case: stream first block + remaining blocks
-    let span = Span::current();
     let remaining_stream = stream::iter(1..num_blocks).then(move |i| {
         let blob_client = blob_client.clone();
         async move {
@@ -482,7 +477,6 @@ async fn get_full_blob_stream(
                 Ok(_) => Ok(block),
             }
         }
-        .instrument(span.clone())
     });
 
     let full_stream = stream::once(async { Ok(first_block) }).chain(remaining_stream);
