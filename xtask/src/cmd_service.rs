@@ -173,7 +173,18 @@ pub fn init_service(
         stop_service(ServiceName::DdbLocal)?;
         Ok(())
     };
+    let init_all_bss = |count: u32| -> CmdResult {
+        create_bss_service_symlinks(count)?;
+        for id in 0..count {
+            create_dirs_for_bss_server(count, id)?;
+        }
+        Ok(())
+    };
     let init_nss = || -> CmdResult {
+        // nss now requires bss to store metadata blobs
+        init_all_bss(init_config.bss_count)?;
+        start_service(ServiceName::Bss)?;
+
         let format_log = "data/logs/format.log";
         create_dirs_for_nss_server()?;
         let nss_binary = resolve_binary_path("nss_server", build_mode);
@@ -189,18 +200,13 @@ pub fn init_service(
                     |& ts -m $TS_FMT >$format_log;
             }?,
         }
+
+        stop_service(ServiceName::Bss)?;
         Ok(())
     };
     let init_minio = || run_cmd!(mkdir -p data/s3);
     let init_minio_dev_az1 = || run_cmd!(mkdir -p data/s3-localdev-az1);
     let init_minio_dev_az2 = || run_cmd!(mkdir -p data/s3-localdev-az2);
-    let init_all_bss = |count: u32| -> CmdResult {
-        create_bss_service_symlinks(count)?;
-        for id in 0..count {
-            create_dirs_for_bss_server(count, id)?;
-        }
-        Ok(())
-    };
     let init_mirrord = || -> CmdResult {
         let format_log = "data/logs/format_mirrord.log";
         create_dirs_for_mirrord_server()?;
@@ -242,8 +248,7 @@ pub fn init_service(
                 generate_https_certificates()?;
             }
             init_rss()?;
-            init_all_bss(init_config.bss_count)?;
-            init_nss()?;
+            init_nss()?; // bss is initialized inside
             init_mirrord()?;
             init_minio()?;
             init_minio_dev_az1()?;
