@@ -62,10 +62,8 @@ fn run_art_tests() -> CmdResult {
         return Ok(());
     }
 
-    // Start all BSS instances for testing
-    for id in 0..6 {
-        cmd_service::start_bss_instance(id)?;
-    }
+    // Start BSS instance for testing
+    cmd_service::start_bss_instance(0)?;
     run_cmd! {
         mkdir -p data/logs;
         info "Running art tests (random) with log $rand_log";
