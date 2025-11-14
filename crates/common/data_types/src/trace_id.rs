@@ -1,5 +1,5 @@
-use std::fmt;
 use rand::Rng;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TraceId(pub u64);
@@ -22,6 +22,12 @@ impl TraceId {
 
     pub fn worker_id(&self) -> u8 {
         (self.0 & 0xFF) as u8
+    }
+}
+
+impl Default for TraceId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
