@@ -339,28 +339,24 @@ where
 
     pub async fn send_request(
         &self,
-        request_id: u32,
         frame: MessageFrame<Header, Bytes>,
         timeout: Option<std::time::Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
         let vectored_frame = MessageFrame::new(frame.header, vec![frame.body]);
-        self.send_request_vectored_internal(request_id, vectored_frame, timeout)
+        self.send_request_vectored_internal(vectored_frame, timeout)
             .await
     }
 
     pub async fn send_request_vectored(
         &self,
-        request_id: u32,
         frame: MessageFrame<Header, Vec<Bytes>>,
         timeout: Option<std::time::Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
-        self.send_request_vectored_internal(request_id, frame, timeout)
-            .await
+        self.send_request_vectored_internal(frame, timeout).await
     }
 
     async fn send_request_vectored_internal(
         &self,
-        request_id: u32,
         frame: ZcMessageFrame<Header>,
         timeout: Option<Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
@@ -375,6 +371,7 @@ where
         self.requests.lock().insert(frame.header.get_id(), tx);
         gauge!("rpc_request_pending_in_resp_map", "type" => rpc_type).increment(1.0);
 
+        let request_id = frame.header.get_id();
         self.sender
             .send(frame)
             .await

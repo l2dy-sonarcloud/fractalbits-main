@@ -54,7 +54,7 @@ impl RpcClient {
 
         let msg_frame = MessageFrame::new(header, body);
         let resp_frame = self
-            .send_request(request_id, msg_frame, timeout, Some(crate::OperationType::PutData))
+            .send_request(msg_frame, timeout, Some(crate::OperationType::PutData))
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -94,7 +94,7 @@ impl RpcClient {
 
         let msg_frame = MessageFrame::new(header, chunks);
         let resp_frame = self
-            .send_request_vectored(request_id, msg_frame, timeout, Some(crate::OperationType::PutData))
+            .send_request_vectored(msg_frame, timeout, Some(crate::OperationType::PutData))
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -132,7 +132,7 @@ impl RpcClient {
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
-            .send_request(header.id, msg_frame, timeout, Some(crate::OperationType::GetData))
+            .send_request( msg_frame, timeout, Some(crate::OperationType::GetData))
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -168,7 +168,7 @@ impl RpcClient {
 
         let msg_frame = MessageFrame::new(header, Bytes::new());
         let resp_frame = self
-            .send_request(header.id, msg_frame, timeout, Some(crate::OperationType::DeleteData))
+            .send_request( msg_frame, timeout, Some(crate::OperationType::DeleteData))
             .await
             .map_err(|e| {
                 if !e.retryable() {

@@ -16,11 +16,10 @@ impl RpcClient {
 
     pub async fn send_request(
         &self,
-        request_id: u32,
         frame: rpc_codec_common::MessageFrame<rss_codec::MessageHeader, bytes::Bytes>,
         timeout: Option<std::time::Duration>,
     ) -> Result<rpc_codec_common::MessageFrame<rss_codec::MessageHeader>, rpc_client_common::RpcError>
     {
-        self.inner.send_request(request_id, frame, timeout).await
+        self.inner.send_request(frame, timeout).await
     }
 }

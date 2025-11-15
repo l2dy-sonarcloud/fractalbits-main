@@ -129,7 +129,6 @@ where
 
     pub async fn send_request(
         &self,
-        request_id: u32,
         frame: MessageFrame<Header, Bytes>,
         timeout: Option<Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
@@ -138,12 +137,11 @@ where
             let read = self.inner.read().await;
             Arc::clone(read.as_ref().unwrap())
         };
-        client.send_request(request_id, frame, timeout).await
+        client.send_request(frame, timeout).await
     }
 
     pub async fn send_request_vectored(
         &self,
-        request_id: u32,
         frame: MessageFrame<Header, Vec<bytes::Bytes>>,
         timeout: Option<Duration>,
     ) -> Result<MessageFrame<Header>, RpcError> {
@@ -152,9 +150,7 @@ where
             let read = self.inner.read().await;
             Arc::clone(read.as_ref().unwrap())
         };
-        client
-            .send_request_vectored(request_id, frame, timeout)
-            .await
+        client.send_request_vectored(frame, timeout).await
     }
 }
 

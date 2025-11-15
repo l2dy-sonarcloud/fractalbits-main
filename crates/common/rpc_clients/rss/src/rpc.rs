@@ -39,15 +39,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"put", %request_id, %key, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"put", %request_id, %key, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: PutResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -96,15 +93,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"get", %request_id, %key, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"get", %request_id, %key, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: GetResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -153,13 +147,10 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                error!(rpc=%"delete", %request_id, %key, error=?e, "rss rpc failed");
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            error!(rpc=%"delete", %request_id, %key, error=?e, "rss rpc failed");
+            e
+        })?;
         let resp: DeleteResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -202,15 +193,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"get_nss_role", %request_id, %instance_id, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"get_nss_role", %request_id, %instance_id, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: GetNssRoleResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -253,15 +241,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"list", %request_id, %prefix, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"list", %request_id, %prefix, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: ListResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -306,15 +291,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"list", %request_id, %instance_id, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"list", %request_id, %instance_id, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: HeartbeatResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -352,15 +334,12 @@ impl RpcClient {
         header.set_trace_id(trace_id);
 
         let frame = MessageFrame::new(header, Bytes::new());
-        let resp_frame = self
-            .send_request(header.id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"get_az_status", %request_id, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"get_az_status", %request_id, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: GetAzStatusResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -406,7 +385,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout)
+            .send_request( frame, timeout)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -461,15 +440,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"create_bucket", %request_id, %bucket_name, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"create_bucket", %request_id, %bucket_name, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: CreateBucketResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -514,15 +490,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"delete_bucket", %request_id, %bucket_name, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"delete_bucket", %request_id, %bucket_name, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: DeleteBucketResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -560,15 +533,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"get_data_vg_info", %request_id, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"get_data_vg_info", %request_id, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: GetDataVgInfoResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();
@@ -621,15 +591,12 @@ impl RpcClient {
         let body_bytes = encode_protobuf(body, trace_id)?;
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
-        let resp_frame = self
-            .send_request(request_id, frame, timeout)
-            .await
-            .map_err(|e| {
-                if !e.retryable() {
-                    error!(rpc=%"get_metadata_vg_info_json", %request_id, error=?e, "rss rpc failed");
-                }
-                e
-            })?;
+        let resp_frame = self.send_request(frame, timeout).await.map_err(|e| {
+            if !e.retryable() {
+                error!(rpc=%"get_metadata_vg_info_json", %request_id, error=?e, "rss rpc failed");
+            }
+            e
+        })?;
         let resp: GetMetadataVgInfoResponse =
             PbMessage::decode(resp_frame.body).map_err(|e| RpcError::DecodeError(e.to_string()))?;
         let duration = start.elapsed();

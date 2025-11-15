@@ -38,7 +38,6 @@ impl RpcClient {
 
     pub async fn send_request(
         &self,
-        request_id: u32,
         frame: rpc_codec_common::MessageFrame<bss_codec::MessageHeader, bytes::Bytes>,
         timeout: Option<std::time::Duration>,
         operation: Option<crate::stats::OperationType>,
@@ -49,10 +48,7 @@ impl RpcClient {
             stats.increment(op);
         }
 
-        let result = self
-            .get_connection()
-            .send_request(request_id, frame, timeout)
-            .await;
+        let result = self.get_connection().send_request(frame, timeout).await;
 
         if let Some(op) = operation {
             let stats = crate::stats::get_global_bss_stats();
@@ -64,7 +60,6 @@ impl RpcClient {
 
     pub async fn send_request_vectored(
         &self,
-        request_id: u32,
         frame: rpc_codec_common::MessageFrame<bss_codec::MessageHeader, Vec<bytes::Bytes>>,
         timeout: Option<std::time::Duration>,
         operation: Option<crate::stats::OperationType>,
@@ -77,7 +72,7 @@ impl RpcClient {
 
         let result = self
             .get_connection()
-            .send_request_vectored(request_id, frame, timeout)
+            .send_request_vectored(frame, timeout)
             .await;
 
         if let Some(op) = operation {

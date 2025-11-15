@@ -40,7 +40,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::PutInode)
+            .send_request(frame, timeout, crate::NssOperation::PutInode)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -81,7 +81,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::GetInode)
+            .send_request(frame, timeout, crate::NssOperation::GetInode)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -133,7 +133,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::ListInodes)
+            .send_request(frame, timeout, crate::NssOperation::ListInodes)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -174,7 +174,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::DeleteInode)
+            .send_request(frame, timeout, crate::NssOperation::DeleteInode)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -213,7 +213,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::CreateRootInode)
+            .send_request(frame, timeout, crate::NssOperation::CreateRootInode)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -250,7 +250,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::DeleteRootInode)
+            .send_request(frame, timeout, crate::NssOperation::DeleteRootInode)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -291,7 +291,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::RenameFolder)
+            .send_request(frame, timeout, crate::NssOperation::RenameFolder)
             .await
             .map_err(|e| {
                 if !e.retryable() {
@@ -344,7 +344,7 @@ impl RpcClient {
         header.set_body_checksum(&body_bytes);
         let frame = MessageFrame::new(header, body_bytes);
         let resp_frame = self
-            .send_request(request_id, frame, timeout, crate::NssOperation::RenameObject)
+            .send_request(frame, timeout, crate::NssOperation::RenameObject)
             .await
             .map_err(|e| {
                 if !e.retryable() {

@@ -38,7 +38,6 @@ impl RpcClient {
 
     pub async fn send_request(
         &self,
-        request_id: u32,
         frame: rpc_codec_common::MessageFrame<nss_codec::MessageHeader, bytes::Bytes>,
         timeout: Option<std::time::Duration>,
         operation: crate::stats::NssOperation,
@@ -47,10 +46,7 @@ impl RpcClient {
         let stats = crate::stats::get_global_nss_stats();
         stats.increment(operation);
 
-        let result = self
-            .get_connection()
-            .send_request(request_id, frame, timeout)
-            .await;
+        let result = self.get_connection().send_request(frame, timeout).await;
 
         stats.decrement(operation);
 
