@@ -24,7 +24,7 @@ use bytes::Bytes;
 use data_types::DataBlobGuid;
 use data_types::{Bucket, TraceId};
 use futures::{StreamExt, TryStreamExt, stream};
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use serde::Deserialize;
 use tracing::{Instrument, Span};
 

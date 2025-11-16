@@ -1,5 +1,5 @@
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
-use metrics::{counter, histogram};
+use metrics_wrapper::{counter, histogram};
 use rand::Rng;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};

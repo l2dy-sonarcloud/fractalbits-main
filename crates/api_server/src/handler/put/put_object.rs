@@ -1,5 +1,5 @@
 use data_types::DataBlobGuid;
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use rpc_client_common::nss_rpc_retry;
 use std::hash::Hasher;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};

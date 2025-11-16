@@ -6,7 +6,7 @@ use crate::s3_retry;
 use bytes::Bytes;
 use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use data_types::DataBlobGuid;
-use metrics::{counter, histogram};
+use metrics_wrapper::{counter, histogram};
 use moka::future::Cache;
 use std::sync::Arc;
 use std::time::Instant;

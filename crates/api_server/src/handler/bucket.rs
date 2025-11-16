@@ -11,7 +11,7 @@ pub use list_buckets::list_buckets_handler;
 use super::common::{authorization::Authorization, s3_error::S3Error};
 use crate::AppState;
 use data_types::{Bucket, TraceId};
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use rpc_client_common::RpcError;
 use std::{sync::Arc, time::Instant};
 

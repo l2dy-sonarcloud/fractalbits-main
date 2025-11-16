@@ -11,7 +11,6 @@ tracing.workspace = true
 tokio-stream.workspace = true
 uuid.workspace = true
 fake.workspace = true
-metrics.workspace = true
 metrics-exporter-statsd.workspace = true
 tokio-retry.workspace = true
 parking_lot.workspace = true

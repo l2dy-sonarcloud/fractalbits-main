@@ -12,7 +12,6 @@ data_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tokio-stream.workspace = true
-metrics.workspace = true
 metrics-exporter-statsd.workspace = true
 tokio-retry.workspace = true
 parking_lot.workspace = true

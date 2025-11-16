@@ -7,7 +7,7 @@ use crate::{
     object_layout::{MpuState, ObjectLayout, ObjectState},
 };
 use actix_web::HttpResponse;
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use nss_codec::delete_inode_response;
 use rkyv::{self, rancor::Error};
 use rpc_client_common::nss_rpc_retry;

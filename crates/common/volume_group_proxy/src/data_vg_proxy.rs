@@ -2,7 +2,7 @@ use crate::DataVgError;
 use bytes::Bytes;
 use data_types::{DataBlobGuid, DataVgInfo, QuorumConfig, TraceId};
 use futures::stream::{FuturesUnordered, StreamExt};
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use rand::seq::SliceRandom;
 use rpc_client_bss::RpcClientBss;
 use rpc_client_common::RpcError;

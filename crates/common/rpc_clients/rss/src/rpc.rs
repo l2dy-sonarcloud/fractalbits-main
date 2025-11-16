@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::client::RpcClient;
 use bytes::Bytes;
 use data_types::{DataVgInfo, TraceId};
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use prost::Message as PbMessage;
 use rpc_client_common::{InflightRpcGuard, RpcError, encode_protobuf};
 use rpc_codec_common::MessageFrame;

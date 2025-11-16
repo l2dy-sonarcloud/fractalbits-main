@@ -14,7 +14,7 @@ use blob_client::BlobDeletionRequest;
 pub use config::{BlobStorageBackend, BlobStorageConfig, Config, S3HybridSingleAzConfig};
 pub use data_blob_tracking::{DataBlobTracker, DataBlobTrackingError};
 use data_types::{ApiKey, Bucket, TraceId, Versioned};
-use metrics::counter;
+use metrics_wrapper::counter;
 use moka::future::Cache;
 use rpc_client_common::{RpcError, rss_rpc_retry};
 use rpc_client_nss::RpcClientNss;

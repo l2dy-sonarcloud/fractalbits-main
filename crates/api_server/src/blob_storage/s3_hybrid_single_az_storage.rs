@@ -5,7 +5,7 @@ use crate::{config::S3HybridSingleAzConfig, object_layout::ObjectLayout};
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
 use data_types::{DataBlobGuid, DataVgInfo, TraceId};
-use metrics::histogram;
+use metrics_wrapper::histogram;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
