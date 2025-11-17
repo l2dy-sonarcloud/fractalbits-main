@@ -43,7 +43,6 @@ pub fn create_config(
     remote_az: Option<&str>,
 ) -> CmdResult {
     let aws_region = get_current_aws_region()?;
-    let num_cores = run_fun!(nproc)?;
     let config_content = if let Some(remote_az) = remote_az {
         // S3 Express Multi-AZ configuration
         let local_az = get_current_aws_az_id()?;
@@ -53,9 +52,6 @@ pub fn create_config(
         format!(
             r##"nss_addr = "{nss_endpoint}:8088"
 rss_addr = "{rss_endpoint}:8088"
-nss_conn_num = {num_cores}
-rss_conn_num = 1
-bss_conn_num = {num_cores}
 region = "{aws_region}"
 port = 80
 mgmt_port = 18088
@@ -110,9 +106,6 @@ backoff_multiplier = 1.0
         format!(
             r##"nss_addr = "{nss_endpoint}:8088"
 rss_addr = "{rss_endpoint}:8088"
-nss_conn_num = {num_cores}
-rss_conn_num = 1
-bss_conn_num = {num_cores}
 region = "{aws_region}"
 port = 80
 mgmt_port = 18088
