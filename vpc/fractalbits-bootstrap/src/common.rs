@@ -81,11 +81,14 @@ pub fn create_systemd_unit_file(service_name: &str, enable_now: bool) -> CmdResu
     let mut env_settings = String::new();
     let mut managed_service = false;
     let mut scheduling = "";
+    let instance_id = get_instance_id().unwrap_or_else(|_| "unknown".to_string());
     let exec_start = match service_name {
         "api_server" => {
-            env_settings = r##"
-Environment="RUST_LOG=info""##
-                .to_string();
+            env_settings = format!(
+                r##"
+Environment="RUST_LOG=info"
+Environment="HOST_ID={instance_id}""##
+            );
             scheduling = "CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=50
 IOSchedulingClass=realtime
@@ -93,11 +96,13 @@ IOSchedulingPriority=0";
             format!("{BIN_PATH}{service_name} -c {ETC_PATH}{API_SERVER_CONFIG}")
         }
         "gui_server" => {
-            env_settings = r##"
+            env_settings = format!(
+                r##"
 Environment="RUST_LOG=info"
 Environment="GUI_WEB_ROOT={GUI_WEB_ROOT}"
+Environment="HOST_ID={instance_id}"
 "##
-            .to_string();
+            );
             format!("{BIN_PATH}api_server -c {ETC_PATH}{API_SERVER_CONFIG}")
         }
         "nss" => {

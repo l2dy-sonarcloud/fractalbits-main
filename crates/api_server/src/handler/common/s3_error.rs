@@ -791,6 +791,10 @@ impl S3Error {
         resource: &str,
         request_id: TraceId,
     ) -> actix_web::HttpResponse {
+        let host_id = std::env::var("HOST_ID")
+            .map(|id| format!("    <HostId>{}</HostId>\n", id))
+            .unwrap_or_default();
+
         let body = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <Error>
@@ -798,11 +802,12 @@ impl S3Error {
     <Message>{}</Message>
     <Resource>{}</Resource>
     <RequestId>{}</RequestId>
-</Error>"#,
+{}</Error>"#,
             self.as_ref(),
             self,
             resource,
-            request_id
+            request_id,
+            host_id.trim_end()
         );
 
         actix_web::HttpResponse::build(self.http_status_code())
