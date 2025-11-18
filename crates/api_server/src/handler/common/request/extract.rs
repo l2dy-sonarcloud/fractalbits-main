@@ -1,12 +1,12 @@
 mod api_command;
 mod api_signature;
-mod authorization;
+mod authentication;
 mod bucket_name_and_key;
 mod checksum_value;
 
 pub use api_command::{ApiCommand, ApiCommandFromQuery};
 pub use api_signature::{ApiSignature, ApiSignatureExtractor};
-pub use authorization::{
+pub use authentication::{
     AuthError, Authentication, CanonicalRequestHasher, Scope, extract_authentication,
 };
 pub use bucket_name_and_key::BucketAndKeyName;

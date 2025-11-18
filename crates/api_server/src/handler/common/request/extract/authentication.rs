@@ -53,14 +53,17 @@ pub struct Scope<'a> {
 pub fn extract_authentication(req: &HttpRequest) -> Result<Option<Authentication<'_>>, AuthError> {
     const AWS4_HMAC_SHA256: &str = "AWS4-HMAC-SHA256";
 
-    let authorization = match req.headers().get(AUTHORIZATION) {
+    // Note The name of the standard header is unfortunate because it carries authentication
+    // information, not authorization.
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/RESTAuthentication.html#ConstructingTheAuthenticationHeader
+    let authentication = match req.headers().get(AUTHORIZATION) {
         Some(auth) => auth
             .to_str()
             .map_err(|e| AuthError::Invalid(format!("Header error: {e}")))?,
         None => return Ok(None),
     };
 
-    let (auth_kind, rest) = authorization
+    let (auth_kind, rest) = authentication
         .split_once(' ')
         .ok_or(AuthError::Invalid("Authorization field too short".into()))?;
 
