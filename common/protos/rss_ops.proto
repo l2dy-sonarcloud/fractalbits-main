@@ -45,7 +45,7 @@ message PutResponse {
   oneof result {
     google.protobuf.Empty ok = 1;
     google.protobuf.Empty err_retry = 2;
-    string err_others = 3;
+    string err_other = 3;
   }
 }
 
@@ -59,7 +59,7 @@ message GetResponse {
   oneof result {
     ValueWithVersion ok = 1;
     google.protobuf.Empty err_not_found = 2;
-    string err_others = 3;
+    string err_other = 3;
   }
 }
 
@@ -206,7 +206,9 @@ message CreateBucketRequest {
 message CreateBucketResponse {
   oneof result {
     google.protobuf.Empty ok = 1;
-    string error = 2;
+    google.protobuf.Empty err_bucket_already_exists = 2;
+    google.protobuf.Empty err_bucket_already_owned_by_you = 3;
+    string err_other = 4;
   }
 }
 

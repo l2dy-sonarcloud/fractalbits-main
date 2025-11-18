@@ -28,6 +28,8 @@ pub enum RpcError {
     NotFound,
     #[error("Entry already exists")]
     AlreadyExists,
+    #[error("Bucket already owned by you")]
+    BucketAlreadyOwnedByYou,
     #[error("Send error: {0}")]
     SendError(String),
     #[error("Encode error: {0}")]

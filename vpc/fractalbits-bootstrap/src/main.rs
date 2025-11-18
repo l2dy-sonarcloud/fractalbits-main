@@ -52,7 +52,11 @@ enum Command {
         #[clap(long, long_help = "primary nss_server endpoint")]
         nss_endpoint: String,
 
-        #[clap(long, default_value = "false", long_help = "Enable HA mode for root server")]
+        #[clap(
+            long,
+            default_value = "false",
+            long_help = "Enable HA mode for root server"
+        )]
         rss_ha_enabled: bool,
     },
 
@@ -70,7 +74,11 @@ enum Command {
         #[clap(long, long_help = "primary nss_server endpoint")]
         nss_endpoint: String,
 
-        #[clap(long, default_value = "false", long_help = "Enable HA mode for root server")]
+        #[clap(
+            long,
+            default_value = "false",
+            long_help = "Enable HA mode for root server"
+        )]
         rss_ha_enabled: bool,
     },
 
@@ -97,7 +105,11 @@ enum Command {
         #[clap(long, long_help = "Mirrord endpoint for NSS communication")]
         mirrord_endpoint: Option<String>,
 
-        #[clap(long, default_value = "false", long_help = "Enable HA mode for root server")]
+        #[clap(
+            long,
+            default_value = "false",
+            long_help = "Enable HA mode for root server"
+        )]
         rss_ha_enabled: bool,
     },
 

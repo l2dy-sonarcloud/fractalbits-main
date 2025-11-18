@@ -114,11 +114,14 @@ impl AppState {
                     .take()
                     .ok_or_else(|| "BlobClient already initialized".to_string())?;
 
-                debug!("Fetching DataVgInfo from RSS at {:?}", self.config.rss_addrs);
+                debug!(
+                    "Fetching DataVgInfo from RSS at {:?}",
+                    self.config.rss_addrs
+                );
                 let rss_client = self.get_rss_rpc_client();
 
                 let data_vg_info = rss_client
-                    .get_data_vg_info(Some(self.config.rpc_timeout()), &TraceId::new())
+                    .get_data_vg_info(Some(self.config.rss_rpc_timeout()), &TraceId::new())
                     .await
                     .map_err(|e| format!("Failed to fetch DataVgInfo from RSS: {}", e))?;
 
@@ -130,7 +133,7 @@ impl AppState {
                 let (blob_client, az_status_cache) = BlobClient::new_with_data_vg_info(
                     &self.config.blob_storage,
                     rx,
-                    self.config.rpc_timeout(),
+                    self.config.rss_rpc_timeout(),
                     None,
                     data_vg_info,
                 )
@@ -176,7 +179,7 @@ impl AppState {
         let rss_client = self.get_rss_rpc_client();
         let (version, data) = rss_rpc_retry!(
             rss_client,
-            get(&full_key, Some(self.config.rpc_timeout()), trace_id)
+            get(&full_key, Some(self.config.rss_rpc_timeout()), trace_id)
         )
         .await?;
         let json = Versioned::new(version, data);
@@ -211,7 +214,7 @@ impl AppState {
                 versioned_data.version,
                 &full_key,
                 &versioned_data.data,
-                Some(self.config.rpc_timeout()),
+                Some(self.config.rss_rpc_timeout()),
                 trace_id
             )
         )
@@ -231,7 +234,7 @@ impl AppState {
         let rss_client = self.get_rss_rpc_client();
         rss_rpc_retry!(
             rss_client,
-            delete(&full_key, Some(self.config.rpc_timeout()), trace_id)
+            delete(&full_key, Some(self.config.rss_rpc_timeout()), trace_id)
         )
         .await?;
         self.cache_coordinator.invalidate_entry(&full_key).await;
@@ -243,7 +246,7 @@ impl AppState {
         let rss_client = self.get_rss_rpc_client();
         let kvs = rss_rpc_retry!(
             rss_client,
-            list(&prefix, Some(self.config.rpc_timeout()), trace_id)
+            list(&prefix, Some(self.config.rss_rpc_timeout()), trace_id)
         )
         .await?;
         Ok(kvs
@@ -276,7 +279,7 @@ impl AppState {
         let rss_client = self.get_rss_rpc_client();
         let (version, data) = rss_rpc_retry!(
             rss_client,
-            get(&full_key, Some(self.config.rpc_timeout()), trace_id)
+            get(&full_key, Some(self.config.rss_rpc_timeout()), trace_id)
         )
         .await?;
         let json = Versioned::new(version, data);
@@ -302,7 +305,7 @@ impl AppState {
                 bucket_name,
                 api_key_id,
                 is_multi_az,
-                Some(self.config.rpc_timeout()),
+                Some(self.config.rss_rpc_timeout()),
                 &trace_id
             )
         )
@@ -327,7 +330,7 @@ impl AppState {
             delete_bucket(
                 bucket_name,
                 api_key_id,
-                Some(self.config.rpc_timeout()),
+                Some(self.config.rss_rpc_timeout()),
                 &trace_id
             )
         )
@@ -348,7 +351,7 @@ impl AppState {
         let rss_client = self.get_rss_rpc_client();
         let kvs = rss_rpc_retry!(
             rss_client,
-            list(&prefix, Some(self.config.rpc_timeout()), &trace_id)
+            list(&prefix, Some(self.config.rss_rpc_timeout()), &trace_id)
         )
         .await?;
         Ok(kvs

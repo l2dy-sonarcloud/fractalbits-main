@@ -91,9 +91,8 @@ pub async fn create_bucket_handler(ctx: BucketRequestContext) -> Result<HttpResp
         Err(e) => {
             tracing::error!("Failed to create bucket {}: {}", ctx.bucket_name, e);
             match e {
-                RpcError::InternalResponseError(msg) if msg.contains("already exists") => {
-                    Err(S3Error::BucketAlreadyExists)
-                }
+                RpcError::AlreadyExists => Err(S3Error::BucketAlreadyExists),
+                RpcError::BucketAlreadyOwnedByYou => Err(S3Error::BucketAlreadyOwnedByYou),
                 RpcError::InternalResponseError(msg) if msg.contains("API key not found") => {
                     Err(S3Error::AccessDenied)
                 }

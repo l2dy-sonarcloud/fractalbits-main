@@ -28,10 +28,7 @@ const WORKLOAD_CONFIGS: &[WorkloadConfig] = &[
     },
 ];
 
-pub fn bootstrap(
-    api_server_endpoint: String,
-    bench_client_num: usize,
-) -> CmdResult {
+pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdResult {
     install_rpms(&["nmap-ncat"])?;
     download_binaries(&["warp"])?;
     setup_serial_console_password()?;
@@ -71,11 +68,17 @@ pub fn bootstrap(
         )?;
     }
 
-    info!("Waiting for api_server endpoint {} to be ready", api_server_endpoint);
+    info!(
+        "Waiting for api_server endpoint {} to be ready",
+        api_server_endpoint
+    );
     while run_cmd!(nc -z $api_server_endpoint 80 &>/dev/null).is_err() {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    info!("api_server endpoint can be reached (`nc -z {} 80` is ok)", api_server_endpoint);
+    info!(
+        "api_server endpoint can be reached (`nc -z {} 80` is ok)",
+        api_server_endpoint
+    );
 
     create_bench_start_script(&region, &api_server_endpoint)?;
 

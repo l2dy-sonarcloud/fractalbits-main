@@ -54,8 +54,8 @@ impl RpcClient {
                     .record(duration.as_nanos() as f64);
                 Ok(())
             }
-            rss_codec::put_response::Result::ErrOthers(resp) => {
-                histogram!("rss_rpc_nanos", "status" => "Put_ErrOthers")
+            rss_codec::put_response::Result::ErrOther(resp) => {
+                histogram!("rss_rpc_nanos", "status" => "Put_ErrOther")
                     .record(duration.as_nanos() as f64);
                 error!(rpc=%"put", %key, "rss rpc failed: {resp}");
                 Err(RpcError::InternalResponseError(resp))
@@ -114,8 +114,8 @@ impl RpcClient {
                 warn!(rpc=%"get", %key, "could not find entry");
                 Err(RpcError::NotFound)
             }
-            rss_codec::get_response::Result::ErrOthers(resp) => {
-                histogram!("rss_rpc_nanos", "status" => "Get_ErrOthers")
+            rss_codec::get_response::Result::ErrOther(resp) => {
+                histogram!("rss_rpc_nanos", "status" => "Get_ErrOther")
                     .record(duration.as_nanos() as f64);
                 error!(rpc=%"get", %key, "rss rpc failed: {resp}");
                 Err(RpcError::InternalResponseError(resp))
@@ -455,7 +455,19 @@ impl RpcClient {
                     .record(duration.as_nanos() as f64);
                 Ok(())
             }
-            rss_codec::create_bucket_response::Result::Error(err) => {
+            rss_codec::create_bucket_response::Result::ErrBucketAlreadyExists(()) => {
+                histogram!("rss_rpc_nanos", "status" => "CreateBucket_AlreadyExists")
+                    .record(duration.as_nanos() as f64);
+                error!(rpc=%"create_bucket", %bucket_name, "Bucket already exists");
+                Err(RpcError::AlreadyExists)
+            }
+            rss_codec::create_bucket_response::Result::ErrBucketAlreadyOwnedByYou(()) => {
+                histogram!("rss_rpc_nanos", "status" => "CreateBucket_AlreadyOwnedByYou")
+                    .record(duration.as_nanos() as f64);
+                error!(rpc=%"create_bucket", %bucket_name, "Bucket already owned by you");
+                Err(RpcError::BucketAlreadyOwnedByYou)
+            }
+            rss_codec::create_bucket_response::Result::ErrOther(err) => {
                 histogram!("rss_rpc_nanos", "status" => "CreateBucket_Error")
                     .record(duration.as_nanos() as f64);
                 error!(rpc=%"create_bucket", %bucket_name, "rss rpc failed: {err}");
