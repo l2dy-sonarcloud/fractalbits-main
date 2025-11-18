@@ -6,6 +6,8 @@ pub fn create_mixed_workload_config(
     region: &str,
     service_endpoint: &str,
     duration: &str,
+    size_kb: usize,
+    concurrent_ops: usize,
 ) -> CmdResult {
     let config_content = format!(
         r##"warp:
@@ -79,7 +81,7 @@ pub fn create_mixed_workload_config(
     duration: {duration}
 
     # Concurrent operations to run per warp instance.
-    concurrent: 48
+    concurrent: {concurrent_ops}
 
     # The number of objects to upload before starting the benchmark.
     # Upload enough objects to ensure that any remote caching is bypassed.
@@ -96,7 +98,7 @@ pub fn create_mixed_workload_config(
     # Properties of uploaded objects.
     obj:
       # Size of each uploaded object
-      size: 4KiB
+      size: {size_kb}KiB
 
       # Randomize the size of each object within certain constraints.
       # See https://github.com/minio/warp?tab=readme-ov-file#random-file-sizes
@@ -204,8 +206,7 @@ pub fn create_mixed_workload_config(
     );
     run_cmd! {
         mkdir -p $ETC_PATH;
-        echo $config_content > $ETC_PATH/bench_mixed.yml;
-        echo $config_content > $ETC_PATH/bench_mixed.yml.orig;
+        echo $config_content > $ETC_PATH/bench_mixed_${size_kb}k.yml;
     }?;
     Ok(())
 }

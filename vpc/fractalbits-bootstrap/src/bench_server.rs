@@ -7,6 +7,7 @@ use cmd_lib::*;
 use {yaml_get::*, yaml_mixed::*, yaml_put::*};
 
 pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdResult {
+    install_rpms(&["nmap-ncat"])?;
     download_binaries(&["warp"])?;
     setup_serial_console_password()?;
 
@@ -18,11 +19,39 @@ pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdRes
         warp_client_ips.push_str(&format!("  - {ip}:7761\n"));
     }
 
-    create_bench_start_script(&region, &api_server_endpoint)?;
+    for (size_kb, concurrent_ops) in [(4, 96), (64, 12)] {
+        create_put_workload_config(
+            &warp_client_ips,
+            &region,
+            &api_server_endpoint,
+            "2m",
+            size_kb,
+            concurrent_ops,
+        )?;
+        create_get_workload_config(
+            &warp_client_ips,
+            &region,
+            &api_server_endpoint,
+            "2m",
+            size_kb,
+            concurrent_ops,
+        )?;
+        create_mixed_workload_config(
+            &warp_client_ips,
+            &region,
+            &api_server_endpoint,
+            "2m",
+            size_kb,
+            concurrent_ops,
+        )?;
+    }
 
-    create_put_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m", "")?;
-    create_get_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m", "")?;
-    create_mixed_workload_config(&warp_client_ips, &region, &api_server_endpoint, "2m")?;
+    info!("Waiting for api_server endpoint {api_server_endpoint} to be ready");
+    while run_cmd!(nc -z $api_server_endpoint 80 &>/dev/null).is_err() {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    info!("api_server endpoint can be reached (`nc -z {api_server_endpoint} 80` is ok)");
+    create_bench_start_script(&region, &api_server_endpoint)?;
 
     Ok(())
 }
@@ -41,7 +70,7 @@ bench_bucket=warp-benchmark-bucket
 
 aws s3api create-bucket --bucket $bench_bucket &> /dev/null || true
 
-/opt/fractalbits/bin/warp run /opt/fractalbits/etc/bench_${{WORKLOAD:-put}}.yml
+/opt/fractalbits/bin/warp run /opt/fractalbits/etc/bench_${{WORKLOAD:-put_4k}}.yml
 "##
     );
     run_cmd! {

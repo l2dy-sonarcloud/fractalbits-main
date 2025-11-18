@@ -6,7 +6,8 @@ pub fn create_put_workload_config(
     region: &str,
     api_server_ips: &str,
     duration: &str,
-    rps_limit_str: &str,
+    size_kb: usize,
+    concurrent_ops: usize,
 ) -> CmdResult {
     let config_content = format!(
         r##"warp:
@@ -80,7 +81,7 @@ pub fn create_put_workload_config(
     duration: {duration}
 
     # Concurrent operations to run per warp instance.
-    concurrent: 96
+    concurrent: {concurrent_ops}
 
     # Use POST Object operations for upload.
     # post: false
@@ -88,7 +89,7 @@ pub fn create_put_workload_config(
     # Properties of uploaded objects.
     obj:
       # Size of each uploaded object
-      size: 4KiB
+      size: {size_kb}KiB
 
       # Randomize the size of each object within certain constraints.
       # See https://github.com/minio/warp?tab=readme-ov-file#random-file-sizes
@@ -174,7 +175,7 @@ pub fn create_put_workload_config(
     http2: false
 
     # Rate limit each instance to this number of requests per second
-    rps-limit: {rps_limit_str}
+    rps-limit:
 
     # Host selection algorithm.
     # Can be 'weighed' or 'roundrobin'
@@ -196,8 +197,7 @@ pub fn create_put_workload_config(
     );
     run_cmd! {
         mkdir -p $ETC_PATH;
-        echo $config_content > $ETC_PATH/bench_put.yml;
-        echo $config_content > $ETC_PATH/bench_put.yml.orig;
+        echo $config_content > $ETC_PATH/bench_put_${size_kb}k.yml;
     }?;
     Ok(())
 }
