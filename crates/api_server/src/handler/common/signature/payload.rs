@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use actix_web::{HttpRequest, http::header::HOST, web::Query};
-use aws_signature::{get_signing_key, verify_signature};
+use aws_signature::{get_signing_key_cached, verify_signature};
 use data_types::{ApiKey, TraceId, Versioned};
 
 pub async fn check_signature_impl(
@@ -153,8 +153,9 @@ async fn verify_v4(
 ) -> Result<Versioned<ApiKey>, SignatureError> {
     let key = app.get_api_key(auth.key_id.to_string(), trace_id).await?;
 
-    let signing_key = get_signing_key(auth.date, &key.data.secret_key, &app.config.region)
-        .map_err(|e| SignatureError::Other(format!("Unable to build signing key: {}", e)))?;
+    let signing_key =
+        get_signing_key_cached(auth.date, &key.data.secret_key, &app.config.region)
+            .map_err(|e| SignatureError::Other(format!("Unable to build signing key: {}", e)))?;
 
     if !verify_signature(&signing_key, string_to_sign, auth.signature)? {
         return Err(SignatureError::Other("signature mismatch".into()));

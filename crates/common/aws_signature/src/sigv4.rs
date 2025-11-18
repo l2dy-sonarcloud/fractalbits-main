@@ -2,7 +2,8 @@ use crate::{AWS4_HMAC_SHA256, HmacSha256, streaming::SignatureError};
 use chrono::{DateTime, Utc};
 use hmac::Mac;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Format a scope string for AWS SigV4
 pub fn format_scope_string(date: &DateTime<Utc>, region: &str, service: &str) -> String {
@@ -54,6 +55,64 @@ pub fn get_signing_key(
     let signing_key = mac.finalize().into_bytes();
 
     Ok(signing_key.to_vec())
+}
+
+#[derive(Hash, Eq, PartialEq, Clone)]
+struct SigningKeyCacheKey {
+    date: String,
+    secret_key: String,
+    region: String,
+}
+
+struct CachedSigningKey {
+    key: Vec<u8>,
+    date: String,
+}
+
+thread_local! {
+    static SIGNING_KEY_CACHE: RefCell<HashMap<SigningKeyCacheKey, CachedSigningKey>> =
+        RefCell::new(HashMap::new());
+}
+
+pub fn get_signing_key_cached(
+    datetime: DateTime<Utc>,
+    secret_key: &str,
+    region: &str,
+) -> Result<Vec<u8>, SignatureError> {
+    let date_str = datetime.format("%Y%m%d").to_string();
+
+    let cache_key = SigningKeyCacheKey {
+        date: date_str.clone(),
+        secret_key: secret_key.to_string(),
+        region: region.to_string(),
+    };
+
+    SIGNING_KEY_CACHE.with(|cache| {
+        let mut cache_map = cache.borrow_mut();
+
+        if let Some(cached) = cache_map.get(&cache_key) {
+            return Ok(cached.key.clone());
+        }
+
+        let today = Utc::now().format("%Y%m%d").to_string();
+        let yesterday = (Utc::now() - chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string();
+
+        cache_map.retain(|_, v| v.date == today || v.date == yesterday);
+
+        let signing_key = get_signing_key(datetime, secret_key, region)?;
+
+        cache_map.insert(
+            cache_key,
+            CachedSigningKey {
+                key: signing_key.clone(),
+                date: date_str,
+            },
+        );
+
+        Ok(signing_key)
+    })
 }
 
 /// URI encode a string for AWS SigV4

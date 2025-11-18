@@ -5,7 +5,7 @@ use std::hash::Hasher;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use actix_web::{HttpResponse, http::header};
-use aws_signature::{STREAMING_PAYLOAD, sigv4::get_signing_key};
+use aws_signature::{STREAMING_PAYLOAD, sigv4::get_signing_key_cached};
 use crc32c::Crc32cHasher as Crc32c;
 use crc32fast::Hasher as Crc32;
 use futures::{StreamExt, TryStreamExt};
@@ -771,7 +771,7 @@ fn extract_chunk_signature_context(
 
         // Create signing key
         let signing_key =
-            get_signing_key(auth.date, &api_key.data.secret_key, &ctx.app.config.region)
+            get_signing_key_cached(auth.date, &api_key.data.secret_key, &ctx.app.config.region)
                 .map_err(|_| S3Error::InternalError)?;
 
         let chunk_context = ChunkSignatureContext {
