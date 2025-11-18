@@ -183,18 +183,21 @@ impl CanonicalRequestHasher {
     }
 
     /// Add HTTP method to canonical request
+    #[inline]
     pub fn add_method(&mut self, method: &str) {
         self.write_str(method);
         self.write_byte(b'\n');
     }
 
     /// Add URI path to canonical request
+    #[inline]
     pub fn add_uri(&mut self, uri: &str) {
         self.write_str(uri);
         self.write_byte(b'\n');
     }
 
     /// Add query string to canonical request
+    #[inline]
     pub fn add_query(&mut self, query: &str) {
         self.write_str(query);
         self.write_byte(b'\n');

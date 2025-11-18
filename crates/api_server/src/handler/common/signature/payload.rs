@@ -1,3 +1,4 @@
+use aws_signature::sigv4::uri_encode;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -28,13 +29,8 @@ async fn check_header_based_signature(
     request: &HttpRequest,
     trace_id: &TraceId,
 ) -> Result<Versioned<ApiKey>, SignatureError> {
-    let query_params = Query::<BTreeMap<String, String>>::from_query(request.query_string())
-        .unwrap_or_else(|_| Query(Default::default()))
-        .into_inner();
-
     let canonical_hash = hash_canonical_request_streaming(
         request,
-        &query_params,
         &authentication.signed_headers,
         authentication.content_sha256,
     )?;
@@ -54,7 +50,6 @@ async fn check_header_based_signature(
 /// Stream canonical request directly to hasher
 fn hash_canonical_request_streaming(
     request: &HttpRequest,
-    query_params: &BTreeMap<String, String>,
     signed_headers: &BTreeSet<&str>,
     payload_hash: &str,
 ) -> Result<String, SignatureError> {
@@ -67,7 +62,7 @@ fn hash_canonical_request_streaming(
     hasher.add_uri(request.path());
 
     // Build and stream canonical query string
-    let query_str = build_canonical_query_string(query_params);
+    let query_str = build_canonical_query_string(request.query_string());
     hasher.add_query(&query_str);
 
     // Stream canonical headers
@@ -112,20 +107,23 @@ fn hash_canonical_request_streaming(
     Ok(hasher.finalize())
 }
 
-fn build_canonical_query_string(query_params: &BTreeMap<String, String>) -> String {
-    if query_params.is_empty() {
+fn build_canonical_query_string(query_str: &str) -> String {
+    if query_str.is_empty() {
         return String::new();
     }
-    let mut items = Vec::with_capacity(query_params.len());
+    let query_params = Query::<BTreeMap<String, String>>::from_query(query_str)
+        .unwrap_or_else(|_| Query(Default::default()))
+        .into_inner();
+    let mut items = String::with_capacity(query_str.len() * 2);
     for (key, value) in query_params.iter() {
-        let mut item = String::with_capacity(key.len() + value.len() + 10);
-        item.push_str(&aws_signature::sigv4::uri_encode(key, true));
-        item.push('=');
-        item.push_str(&aws_signature::sigv4::uri_encode(value, true));
-        items.push(item);
+        if !items.is_empty() {
+            items.push('&');
+        }
+        items.push_str(&uri_encode(key, true));
+        items.push('=');
+        items.push_str(&uri_encode(value, true));
     }
-    items.sort();
-    items.join("&")
+    items
 }
 
 fn build_string_to_sign(
