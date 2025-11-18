@@ -26,7 +26,7 @@ pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdRes
             &api_server_endpoint,
             "2m",
             size_kb,
-            concurrent_ops,
+            concurrent_ops / 2,
         )?;
         create_get_workload_config(
             &warp_client_ips,
@@ -42,7 +42,7 @@ pub fn bootstrap(api_server_endpoint: String, bench_client_num: usize) -> CmdRes
             &api_server_endpoint,
             "2m",
             size_kb,
-            concurrent_ops,
+            2 * concurrent_ops / 3,
         )?;
     }
 
