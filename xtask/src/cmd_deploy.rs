@@ -354,8 +354,11 @@ pub fn create_vpc() -> CmdResult {
         run_cmd! {
             info "Node modules not found. Installing dependencies...";
             cd $cdk_dir;
-            npm install;
-            info "Dependencies installed successfully";
+            npm install &>/dev/null;
+
+            info "Disabling CDK collecting telemetry data...";
+            npx cdk acknowledge 34892 &>/dev/null; // https://github.com/aws/aws-cdk/issues/34892
+            npx cdk cli-telemetry --disable;
         }?;
     }
 
