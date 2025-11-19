@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use strum::AsRefStr;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     oneshot,
@@ -87,7 +87,7 @@ where
         let socket_fd = stream.as_raw_fd();
         let (reader, writer) = stream.into_split();
         let requests: Arc<Mutex<HashMap<u32, oneshot::Sender<MessageFrame<Header>>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+            Arc::new(Mutex::new(HashMap::with_capacity(1024 * 32)));
         let (sender, receiver) = mpsc::channel::<ZcMessageFrame<Header>>(1024 * 32);
         let is_closed = Arc::new(AtomicBool::new(false));
 
@@ -245,13 +245,12 @@ where
         socket_fd: RawFd,
         rpc_type: &'static str,
     ) -> Result<(), RpcError> {
-        use tokio::io::AsyncReadExt;
-
         let header_size = size_of::<Header>();
+        assert!(header_size <= 96);
+        let mut header_buf = [0u8; 96];
 
         loop {
             // Read fixed-size header into stack buffer
-            let mut header_buf = [0u8; 128];
             let header = match receiver.read_exact(&mut header_buf[..header_size]).await {
                 Ok(_) => {
                     // Verify checksum on raw bytes BEFORE decoding
