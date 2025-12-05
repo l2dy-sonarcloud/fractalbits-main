@@ -3,6 +3,7 @@
 **High-Performance S3-Compatible Object Storage**
 
 [![CI](https://github.com/fractalbits-labs/fractalbits-main/actions/workflows/ci.yml/badge.svg)](https://github.com/fractalbits-labs/fractalbits-main/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 > **Beta Software**: FractalBits is currently in beta. While it demonstrates exceptional performance, we recommend thorough testing before production use. We welcome feedback, bug reports, and contributions!
 
